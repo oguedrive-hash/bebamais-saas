@@ -49,6 +49,7 @@ export async function enviarComMidia(opts: {
       audio: tts.audio,
       filename: "msg.mp3",
       mimeType: tts.mimeType,
+      content: texto, // persiste o texto falado pra auditoria no painel (áudio sem legenda some do histórico)
     });
     if ("error" in sent) {
       console.warn(

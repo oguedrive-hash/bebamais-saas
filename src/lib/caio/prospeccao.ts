@@ -53,6 +53,16 @@ function aplicarTemplate(
     const re = new RegExp(`\\{${chave}\\}`, "g");
     texto = texto.replace(re, valor);
   }
+  // Rede de seguranca: placeholder sem valor (ex: {empresa} quando o lead nao
+  // tem o dado) NUNCA pode vazar cru pro lead. Remove o token junto com uma
+  // preposicao/artigo imediatamente antes ("dono da {empresa}?" -> "dono?") e
+  // depois limpa qualquer placeholder remanescente + espacos/pontuacao orfa.
+  texto = texto
+    .replace(/\s+(?:d[aeo]s?|n[aeo]s?|[ao]s?|em|pra|para|com)\s+\{[^}]+\}/gi, "")
+    .replace(/\s*\{[^}]+\}/g, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([?!.,;:])/g, "$1")
+    .trim();
   return texto;
 }
 
