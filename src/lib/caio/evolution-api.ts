@@ -21,6 +21,7 @@ async function postEvolution(
   instance: string,
   rota: string,
   body: unknown,
+  grupo: "message" | "chat" = "message",
 ): Promise<{ id: string } | { error: string }> {
   let url: string, key: string;
   try {
@@ -32,7 +33,7 @@ async function postEvolution(
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
   try {
-    const res = await fetch(`${url}/message/${rota}/${instance}`, {
+    const res = await fetch(`${url}/${grupo}/${rota}/${instance}`, {
       method: "POST",
       headers: { apikey: key, "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -63,6 +64,25 @@ export async function evoSendText(opts: {
     number: soDigitos(opts.telefone),
     text: opts.texto,
   });
+}
+
+/**
+ * Mostra "digitando..." (composing) ou "gravando áudio..." (recording) pro lead.
+ * Fire-and-forget — se falhar, não atrapalha o envio. O `delay` (ms) é quanto a
+ * Evolution mantém o status. Endpoint /chat/sendPresence.
+ */
+export async function evoSendPresence(opts: {
+  instance: string;
+  telefone: string;
+  presence: "composing" | "recording" | "paused" | "available";
+  delayMs?: number;
+}): Promise<{ id: string } | { error: string }> {
+  return postEvolution(
+    opts.instance,
+    "sendPresence",
+    { number: soDigitos(opts.telefone), presence: opts.presence, delay: opts.delayMs ?? 0 },
+    "chat",
+  );
 }
 
 export async function evoSendAudio(opts: {

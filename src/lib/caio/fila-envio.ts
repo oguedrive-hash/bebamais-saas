@@ -10,8 +10,8 @@
  * dispensa Redis. Se um dia virar multi-réplica, migrar pra lock distribuído.
  */
 
-const INTERVALO_BASE_MS = 5000; // 5s fixos
-const INTERVALO_JITTER_MS = 5000; // + 0..5s aleatório → 5–10s entre envios
+const INTERVALO_BASE_MS = 7000; // 7s fixos
+const INTERVALO_JITTER_MS = 6000; // + 0..6s aleatório → 7–13s entre envios
 
 const cadeiaPorOrg = new Map<string, Promise<unknown>>();
 const ultimoEnvioMs = new Map<string, number>();

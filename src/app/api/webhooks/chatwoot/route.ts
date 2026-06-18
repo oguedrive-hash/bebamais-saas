@@ -23,6 +23,7 @@ import { classificarAdiamento } from "@/lib/caio/classificador-adiamento";
 import {
   enviarMensagem,
   enviarMensagemComAudio,
+  sinalizarPresenca,
 } from "@/lib/caio/chatwoot-api";
 import {
   normalizeMessageType,
@@ -182,14 +183,27 @@ async function processWebhook(webhook: ChatwootWebhook) {
 }
 
 /**
- * Calcula um tempo de "digitacao" realista pra simular humano antes de
- * mandar a resposta. ~8 chars/segundo + jitter +/- 30%. Min 5s, max 22s.
- * Pra cada lead/resposta o tempo varia — evita padrao de bot quando varios
- * contatos escrevem ao mesmo tempo (gatilho de restricao do WhatsApp).
+ * Calcula um tempo de "digitacao" realista pra simular humano antes de mandar
+ * a resposta. Calibrado com a velocidade real do Lucas digitando (~490-560
+ * ms/char medido); usamos 400 ms/char (desconta o "pensar", que ja esta no
+ * tempo de geracao da resposta). SEM TETO de proposito: teto faria toda
+ * resposta grande sair com ~o mesmo tempo, criando padrao que o WhatsApp
+ * detecta. Proporcional puro + jitter +/-35% => cada resposta com tempo unico.
+ * Minimo 6s (msg curta tambem nao sai instantanea).
  */
+const MS_POR_CHAR = 400;
 function calcularTempoDigitacao(texto: string): number {
   const len = (texto || "").length;
-  const base = Math.min(22000, Math.max(5000, len * 125));
+  const base = Math.max(6000, len * MS_POR_CHAR);
+  const jitter = 1 + (Math.random() - 0.5) * 0.7; // 0.65x a 1.35x
+  return Math.floor(base * jitter);
+}
+// Áudio: o tempo é o de GRAVAR (≈ falar), bem mais rápido que digitar. ~90 ms/char
+// dá perto da duração real da fala. Sem teto (mesmo motivo do texto), jitter +/-30%.
+const MS_POR_CHAR_AUDIO = 90;
+function calcularTempoAudio(texto: string): number {
+  const len = (texto || "").length;
+  const base = Math.max(5000, len * MS_POR_CHAR_AUDIO);
   const jitter = 1 + (Math.random() - 0.5) * 0.6;
   return Math.floor(base * jitter);
 }
@@ -204,6 +218,7 @@ async function enviarComoCaio(opts: {
 }): Promise<ReturnType<typeof enviarMensagem>> {
   const ms = calcularTempoDigitacao(opts.content);
   console.log("[caio:typing]", ms, "ms para", opts.content.length, "chars");
+  void sinalizarPresenca(opts.conversationId, "composing", ms); // "digitando..." no WhatsApp
   await new Promise((r) => setTimeout(r, ms));
   return enviarMensagem(opts);
 }
@@ -1046,11 +1061,18 @@ async function gerarERespondeCaio(
       return;
     }
 
+    // Áudio também leva tempo "humano" (gravar) — antes saía quase instantâneo,
+    // o que o Lucas notou. Mesma fórmula de digitação sobre o texto falado.
+    const msAudio = calcularTempoAudio(texto);
+    console.log("[caio:typing] audio", msAudio, "ms para", texto.length, "chars");
+    void sinalizarPresenca(conversationId, "recording", msAudio); // "gravando áudio..." no WhatsApp
+    await new Promise((r) => setTimeout(r, msAudio));
     const sent = await enviarMensagemComAudio({
       conversationId,
       audio: tts.audio,
       filename: "caio.mp3",
       mimeType: tts.mimeType,
+      content: texto, // texto falado vira a "transcrição" exibida no painel
     });
     if ("error" in sent) {
       console.error(

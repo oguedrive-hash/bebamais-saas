@@ -10,7 +10,8 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { enviarSerializado } from "./fila-envio";
-import { evoSendText, evoSendAudio, evoSendMedia } from "./evolution-api";
+import { evoSendText, evoSendAudio, evoSendMedia, evoSendPresence } from "./evolution-api";
+import { salvarAudioBase64 } from "./storage-audio";
 
 function config() {
   if (process.env.EVOLUTION_RECEBE === "1") throw new Error("Chatwoot desativado (migrado p/ Evolution)");
@@ -575,6 +576,26 @@ export async function enviarMensagem(opts: {
   });
 }
 
+/**
+ * Mostra "digitando..."/"gravando..." pro lead durante o tempo de preparo da
+ * resposta. Resolve o telefone pelo conversationId e dispara presença na
+ * Evolution. Fire-and-forget — nunca bloqueia nem derruba o envio.
+ */
+export async function sinalizarPresenca(
+  conversationId: number,
+  presence: "composing" | "recording",
+  delayMs: number,
+): Promise<void> {
+  try {
+    const d = await dadosEnvio(conversationId);
+    if (d.instance && d.telefone && canaryEvolution(d.telefone)) {
+      await evoSendPresence({ instance: d.instance, telefone: d.telefone, presence, delayMs });
+    }
+  } catch (e) {
+    console.warn("[caio:presenca] falhou:", e instanceof Error ? e.message : e);
+  }
+}
+
 export async function enviarMensagemComAudio(opts: {
   conversationId: number;
   audio: ArrayBuffer;
@@ -589,7 +610,7 @@ export async function enviarMensagemComAudio(opts: {
       const r = await evoSendAudio({ instance: d.instance, telefone: d.telefone, audioBase64: b64 });
       if (!("error" in r)) {
         if (process.env.EVOLUTION_RECEBE === "1" && d.leadId) {
-          try { const orgId = d.chave.startsWith("org:") ? d.chave.slice(4) : null; await createAdminClient().from("mensagens").insert({ organization_id: orgId, lead_id: d.leadId, direcao: "saida", tipo: "audio", conteudo: opts.content ?? "" }); } catch (e) { console.error("[evo] persist audio out:", e); }
+          try { const orgId = d.chave.startsWith("org:") ? d.chave.slice(4) : null; const attachmentUrl = await salvarAudioBase64(b64, "mp3", opts.mimeType ?? "audio/mpeg"); await createAdminClient().from("mensagens").insert({ organization_id: orgId, lead_id: d.leadId, direcao: "saida", tipo: "audio", conteudo: opts.content ?? "", attachment_url: attachmentUrl }); } catch (e) { console.error("[evo] persist audio out:", e); }
         }
         return { id: 0 };
       }

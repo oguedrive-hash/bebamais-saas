@@ -3,6 +3,7 @@
  * número, sem Chatwoot). Não é fatal — se falhar, só loga e segue.
  */
 import { evoSendText } from "@/lib/caio/evolution-api";
+import { enviarSerializado } from "@/lib/caio/fila-envio";
 
 const INSTANCE = "facilita";
 
@@ -22,7 +23,9 @@ export async function notificarAdminFalha(opts: {
     const leadLabel = opts.leadNome ? `${opts.leadNome} (${opts.leadTelefone})` : opts.leadTelefone;
     const recorte = opts.conteudoLead?.slice(0, 200) ?? "(sem conteúdo)";
     const texto = `🚨 *Caio precisou de ajuda*\n\nLead: ${leadLabel}\nÚltima msg dele: "${recorte}"\n\nErro: ${opts.erro}\n\nResponda esse lead manualmente pelo painel.`;
-    const sent = await evoSendText({ instance: INSTANCE, telefone: adminNumero, texto });
+    const sent = await enviarSerializado("org:" + opts.organizationId, () =>
+      evoSendText({ instance: INSTANCE, telefone: adminNumero, texto }),
+    );
     if ("error" in sent) {
       console.warn("[notificar-admin] falha ao enviar:", sent.error);
       return;
@@ -52,7 +55,9 @@ export async function notificarAdminAgendamento(opts: {
     const leadLabel = opts.leadNome ? `${opts.leadNome} (${opts.leadTelefone})` : opts.leadTelefone;
     const resumoBloco = opts.resumoIA?.trim() ? `\n\n*Contexto rapido:*\n${opts.resumoIA.trim()}` : "";
     const texto = `🟢 *Caio agendou uma sessao*\n\nLead: ${leadLabel}\nQuando: ${dataStr}${resumoBloco}\n\nConversa: https://facilitaplus.com.br/dashboard/contatos/${opts.leadId}`;
-    const sent = await evoSendText({ instance: INSTANCE, telefone: adminNumero, texto });
+    const sent = await enviarSerializado("org:" + opts.organizationId, () =>
+      evoSendText({ instance: INSTANCE, telefone: adminNumero, texto }),
+    );
     if ("error" in sent) {
       console.warn("[notificar-admin:agendamento] falha enviar:", sent.error);
       return;
@@ -80,7 +85,9 @@ export async function notificarAdminHandoff(opts: {
     const leadLabel = opts.leadNome ? `${opts.leadNome} (${opts.leadTelefone})` : opts.leadTelefone;
     const recorte = opts.conteudoLead?.slice(0, 200) ?? "(sem conteudo)";
     const texto = `🔔 *Caio passou pra voce*\n\nLead: ${leadLabel}\nMotivo: ${motivoTexto}.\nUltima msg: "${recorte}"\n\nCaio ja avisou o lead que voce vai entrar em contato. Responda pelo painel.`;
-    const sent = await evoSendText({ instance: INSTANCE, telefone: adminNumero, texto });
+    const sent = await enviarSerializado("org:" + opts.organizationId, () =>
+      evoSendText({ instance: INSTANCE, telefone: adminNumero, texto }),
+    );
     if ("error" in sent) {
       console.warn("[notificar-admin:handoff] falha enviar:", sent.error);
       return;

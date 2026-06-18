@@ -3,9 +3,10 @@
  * texto E áudio (transcreve via Whisper), acha/cria lead por telefone, salva e
  * dispara o Caio. Cutover = flag on + guard no webhook Chatwoot.
  */
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, type NextRequest, after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { agendarRespostaCaioComDebounce } from "../chatwoot/route";
+import { salvarAudioBase64 } from "@/lib/caio/storage-audio";
 
 const ORG_ID = "455b9a80-6bb9-461b-b62d-188f0a28c110"; // Facilita
 
@@ -80,14 +81,53 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  // Dedup: a Evolution RE-ENTREGA o webhook se não receber 200 rápido. Sem isto a
+  // mesma mensagem era processada várias vezes (duplicava no painel + Caio em loop).
+  if (jaProcessado(d?.key?.id)) {
+    console.log("[evo:webhook] duplicado, ignorando", d?.key?.id);
+    return NextResponse.json({ ok: true });
+  }
+  // Responde 200 NA HORA e processa em segundo plano. O processamento é longo
+  // (transcrição Whisper + debounce 10-18s + digitação 60s+ + envio); segurar a
+  // resposta fazia a Evolution achar que falhou e re-entregar — causa do loop.
+  after(() =>
+    processarEvolution(d, telefone, instance).catch((e) =>
+      console.error("[evo:webhook] erro bg:", e),
+    ),
+  );
+  return NextResponse.json({ ok: true });
+}
+
+// Dedup em memória — guarda os IDs de mensagem já vistos (limpa quando passa de 500).
+const processados = new Set<string>();
+function jaProcessado(id: string | undefined): boolean {
+  if (!id) return false;
+  if (processados.has(id)) return true;
+  processados.add(id);
+  if (processados.size > 500) {
+    const arr = [...processados];
+    processados.clear();
+    arr.slice(-200).forEach((x) => processados.add(x));
+  }
+  return false;
+}
+
+async function processarEvolution(
+  d: EvoData | undefined,
+  telefone: string,
+  instance: string,
+): Promise<void> {
   let texto: string | null = d?.message?.conversation ?? d?.message?.extendedTextMessage?.text ?? null;
   let tipo = "texto";
+  let attachmentUrl: string | null = null;
   if (!texto && d?.message?.audioMessage) {
     const b64 = await getAudioBase64(instance, d.key);
     const t = b64 ? await transcrever(b64) : null;
     if (t) {
       texto = t;
       tipo = "audio";
+      // Guarda o arquivo de áudio no Storage pra o painel poder TOCAR (não só a transcrição)
+      if (b64) attachmentUrl = await salvarAudioBase64(b64, "ogg", "audio/ogg");
       console.log("[evo:webhook] audio transcrito:", t.slice(0, 60));
     } else {
       console.error("[evo:webhook] falha ao transcrever audio");
@@ -95,7 +135,7 @@ export async function POST(request: NextRequest) {
   }
   if (!texto) {
     console.log("[evo:webhook] sem texto/audio aproveitavel", d?.messageType);
-    return NextResponse.json({ ok: true });
+    return;
   }
 
   try {
@@ -117,9 +157,9 @@ export async function POST(request: NextRequest) {
     }
     if (!leadId) {
       console.error("[evo:webhook] sem leadId");
-      return NextResponse.json({ ok: false });
+      return;
     }
-    await admin.from("mensagens").insert({ organization_id: ORG_ID, lead_id: leadId, direcao: "entrada", tipo, conteudo: texto });
+    await admin.from("mensagens").insert({ organization_id: ORG_ID, lead_id: leadId, direcao: "entrada", tipo, conteudo: texto, attachment_url: attachmentUrl });
     // Lead respondeu -> zera cadencias e reengaja (replica o que o webhook do Chatwoot fazia)
     const agora = new Date().toISOString();
     await admin.from("leads").update({ numero_followup: 0, numero_reativacao: 0, numero_prospeccao: 0, proximo_followup_em: null, ultima_msg_lead_em: agora }).eq("id", leadId);
@@ -131,5 +171,4 @@ export async function POST(request: NextRequest) {
   } catch (e) {
     console.error("[evo:webhook] erro:", e);
   }
-  return NextResponse.json({ ok: true });
 }

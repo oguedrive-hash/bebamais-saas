@@ -14,10 +14,8 @@ import {
   enviarComMidia,
   type TipoMidia,
 } from "@/lib/caio/enviar-com-midia";
-import {
-  criarConversaProspeccao,
-  enviarMensagem,
-} from "@/lib/caio/chatwoot-api";
+import { evoSendText } from "@/lib/caio/evolution-api";
+import { enviarSerializado } from "@/lib/caio/fila-envio";
 
 type RegraLembrete = {
   nivel: number;
@@ -283,20 +281,6 @@ async function processarLembretesAdmin(
     }
 
     try {
-      const conv = await criarConversaProspeccao({
-        organizationId: ag.organization_id,
-        telefone: adminNumero,
-        nome: "Alerta Caio",
-      });
-      if ("error" in conv) {
-        console.warn(
-          "[lembrete:admin]",
-          ag.id,
-          `nivel ${regra.nivel}`,
-          conv.error,
-        );
-        continue;
-      }
       const dataStr = dataInicio.toLocaleString("pt-BR", {
         weekday: "long",
         day: "2-digit",
@@ -315,10 +299,10 @@ Quando: ${dataStr}
 
 Conversa: https://facilitaplus.com.br/dashboard/contatos/${ag.lead.id}`;
 
-      const sent = await enviarMensagem({
-        conversationId: conv.conversationId,
-        content: texto,
-      });
+      // Chatwoot desativado: envia direto pro admin via Evolution, pela esteira
+      const sent = await enviarSerializado("org:" + ag.organization_id, () =>
+        evoSendText({ instance: "facilita", telefone: adminNumero, texto }),
+      );
       if ("error" in sent) {
         console.warn(
           "[lembrete:admin]",
