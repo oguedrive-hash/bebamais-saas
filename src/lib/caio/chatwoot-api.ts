@@ -570,7 +570,8 @@ export async function enviarMensagem(opts: {
         }
         return { id: 0, content: opts.content };
       }
-      console.error("[evo] envio falhou, fallback Chatwoot:", (r as { error: string }).error);
+      console.error("[evo] envio falhou:", (r as { error: string }).error);
+      return r; // Evolution é o canal ativo — propaga o erro real (ex: número inexistente) em vez de mascarar com o fallback morto do Chatwoot
     }
     return enviarMensagemRaw(opts);
   });
@@ -614,7 +615,8 @@ export async function enviarMensagemComAudio(opts: {
         }
         return { id: 0 };
       }
-      console.error("[evo] envio audio falhou, fallback Chatwoot:", (r as { error: string }).error);
+      console.error("[evo] envio audio falhou:", (r as { error: string }).error);
+      return r; // propaga erro real da Evolution (canal ativo), sem fallback morto do Chatwoot
     }
     return enviarMensagemComAudioRaw(opts);
   });
@@ -637,7 +639,8 @@ export async function enviarMensagemComAnexoUrl(opts: {
         }
         return { id: 0 };
       }
-      console.error("[evo] envio media falhou, fallback Chatwoot:", (r as { error: string }).error);
+      console.error("[evo] envio media falhou:", (r as { error: string }).error);
+      return r; // propaga erro real da Evolution (canal ativo), sem fallback morto do Chatwoot
     }
     return enviarMensagemComAnexoUrlRaw(opts);
   });

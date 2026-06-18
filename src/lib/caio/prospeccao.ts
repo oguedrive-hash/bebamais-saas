@@ -160,6 +160,26 @@ export async function processarProspeccaoLead(
   });
 
   if ("error" in sent) {
+    // Número inexistente no WhatsApp é erro PERMANENTE — não adianta retentar
+    // a cada 15s (vira retry-storm + sinal de spam/risco de ban). Encerra o lead.
+    if (/"exists"\s*:\s*false/i.test(sent.error)) {
+      await supabase
+        .from("leads")
+        .update({
+          status: "perdido",
+          proximo_contato_em: null,
+          dados_extras: { ...(lead.dados_extras ?? {}), erro_envio: "numero_invalido" },
+        })
+        .eq("id", lead.id);
+      await logarEvento({
+        leadId: lead.id,
+        organizationId: lead.organization_id,
+        tipo: "prospeccao_numero_invalido",
+        descricao: `Número ${lead.telefone} não existe no WhatsApp — prospecção encerrada.`,
+        autorNome: "Caio (automático)",
+      }).catch(() => {});
+      return { ok: true, acao: "esgotou" };
+    }
     return { error: `envio falhou: ${sent.error}` };
   }
 

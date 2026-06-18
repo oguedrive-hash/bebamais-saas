@@ -16,6 +16,7 @@ export type TipoEvento =
   | "lead_criado"
   | "reativacao_enviada"
   | "prospeccao_enviada"
+  | "prospeccao_numero_invalido"
   | "handoff_humano";
 
 export async function logarEvento(opts: {
