@@ -10,9 +10,9 @@ import {
   getLabels,
   toggleConversationStatus,
 } from "@/lib/caio/chatwoot-api";
-import { chatCompletion, transcreverAudio } from "@/lib/caio/openai";
-import { RESUMO_PROMPT } from "@/lib/caio/system-prompt";
+import { transcreverAudio } from "@/lib/caio/openai";
 import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
+import { gerarResumoLead } from "@/lib/caio/resumo-ia";
 import { logarEvento } from "@/lib/caio/eventos";
 import { STATUS_CONFIG, type StatusLead } from "@/lib/status-config";
 
@@ -100,6 +100,15 @@ export async function responderLead(formData: FormData): Promise<
     privada: false,
   });
 
+  // Resposta manual enviada — limpa o flag de "aguardando humano".
+  await admin
+    .from("leads")
+    .update({
+      precisa_resposta_humana: false,
+      precisa_resposta_em: null,
+    })
+    .eq("id", lead.id);
+
   // Loga evento
   const {
     data: { user: userMsg },
@@ -160,12 +169,16 @@ export async function toggleCaio(formData: FormData): Promise<
   }
 
   // Espelha no Supabase pra listagem ficar consistente sem precisar
-  // bater na API do Chatwoot toda vez.
+  // bater na API do Chatwoot toda vez. Se religou Caio (temAgenteOff=true
+  // significa que estava off e agora vira on), tambem limpa precisa_resposta_humana
+  // — Caio voltou, vai cuidar.
   const admin = createAdminClient();
-  await admin
-    .from("leads")
-    .update({ caio_ativo: temAgenteOff })
-    .eq("id", leadId);
+  const updates: Record<string, unknown> = { caio_ativo: temAgenteOff };
+  if (temAgenteOff) {
+    updates.precisa_resposta_humana = false;
+    updates.precisa_resposta_em = null;
+  }
+  await admin.from("leads").update(updates).eq("id", leadId);
 
   // Loga evento
   const { data: leadOrg } = await admin
@@ -398,65 +411,19 @@ export async function gerarResumoIA(formData: FormData): Promise<
   }
 
   const supabase = await createClient();
-
-  const { data: lead, error: leadErr } = await supabase
+  // Checa acesso via RLS antes de chamar a funcao admin
+  const { error: leadErr } = await supabase
     .from("leads")
-    .select("nome, telefone")
+    .select("id")
     .eq("id", leadId)
     .single();
-  if (leadErr || !lead) return { error: "Lead não encontrado" };
+  if (leadErr) return { error: "Lead não encontrado" };
 
-  const { data: mensagens, error: msgErr } = await supabase
-    .from("mensagens")
-    .select("conteudo, direcao, tipo, created_at")
-    .eq("lead_id", leadId)
-    .order("created_at", { ascending: true })
-    .limit(40);
-  if (msgErr) return { error: msgErr.message };
-  if (!mensagens || mensagens.length === 0) {
-    return { error: "Esse lead ainda não tem mensagens pra resumir" };
-  }
-
-  // Formata conversa pra OpenAI
-  const transcript = mensagens
-    .map((m) => {
-      const quem = m.direcao === "entrada" ? lead.nome ?? "Lead" : "Caio";
-      const conteudo =
-        m.tipo !== "texto"
-          ? `[${m.tipo}${m.conteudo ? `: ${m.conteudo}` : ""}]`
-          : m.conteudo ?? "";
-      return `${quem}: ${conteudo}`;
-    })
-    .join("\n");
-
-  const result = await chatCompletion({
-    messages: [
-      { role: "system", content: RESUMO_PROMPT },
-      {
-        role: "user",
-        content: `Lead: ${lead.nome ?? "(sem nome)"} (${lead.telefone})\n\nConversa:\n${transcript}\n\nGere o resumo:`,
-      },
-    ],
-    temperature: 0.3,
-    max_tokens: 400,
-  });
-
-  if ("error" in result) {
-    return { error: `Falha na OpenAI: ${result.error}` };
-  }
-
-  // Salva no banco
-  const admin = createAdminClient();
-  await admin
-    .from("leads")
-    .update({
-      resumo_ia: result.content,
-      resumo_gerado_em: new Date().toISOString(),
-    })
-    .eq("id", leadId);
+  const result = await gerarResumoLead({ leadId, salvar: true });
+  if ("error" in result) return { error: result.error };
 
   revalidatePath(`/dashboard/contatos/${leadId}`);
-  return { ok: true, resumo: result.content };
+  return { ok: true, resumo: result.resumo };
 }
 
 /**

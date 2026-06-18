@@ -1,5 +1,28 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { chatCompletion, type ChatMessage } from "./openai";
+import { getAgendaConfig } from "./agenda-config";
+
+const NOMES_DIAS = [
+  "",
+  "segunda",
+  "terça",
+  "quarta",
+  "quinta",
+  "sexta",
+  "sábado",
+  "domingo",
+];
+
+function descreverDias(dias: number[]): string {
+  if (dias.length === 7) return "todos os dias";
+  if (
+    dias.length === 5 &&
+    [1, 2, 3, 4, 5].every((d) => dias.includes(d))
+  ) {
+    return "de segunda a sexta";
+  }
+  return dias.map((d) => NOMES_DIAS[d] ?? "").join(", ");
+}
 
 /**
  * Gera uma resposta como Caio responderia, baseado no histórico do lead.
@@ -13,6 +36,13 @@ import { chatCompletion, type ChatMessage } from "./openai";
 export async function gerarRespostaCaio(opts: {
   leadId: string;
   limit?: number;
+  /**
+   * Linhas extras a injetar no bloco [Contexto] do system prompt. Usado por
+   * callers que querem dar instruções específicas pra essa resposta (ex:
+   * propor horários, confirmar agendamento criado). Cada string vira um
+   * parágrafo separado.
+   */
+  extrasContexto?: string[];
 }): Promise<{ resposta: string } | { error: string }> {
   const limit = opts.limit ?? 30;
   const supabase = createAdminClient();
@@ -20,7 +50,7 @@ export async function gerarRespostaCaio(opts: {
   const [{ data: lead }, { data: mensagens }] = await Promise.all([
     supabase
       .from("leads")
-      .select("nome, organization_id, origem, dados_extras")
+      .select("nome, organization_id, origem, origem_inicial, dados_extras")
       .eq("id", opts.leadId)
       .single(),
     supabase
@@ -45,7 +75,9 @@ export async function gerarRespostaCaio(opts: {
   }
   const { data: org } = await supabase
     .from("organizations")
-    .select("prompt_system, prompt_system_prospeccao, base_conhecimento")
+    .select(
+      "prompt_system, prompt_system_prospeccao, base_conhecimento, agenda_config",
+    )
     .eq("id", lead.organization_id)
     .single();
   // Comportamento (como Caio age) varia por canal. Base de conhecimento
@@ -78,9 +110,13 @@ export async function gerarRespostaCaio(opts: {
   const historico: ChatMessage[] = mensagens.map((m) => {
     let content: string;
     if (m.tipo !== "texto") {
-      content = m.conteudo
-        ? `[${m.tipo}: ${m.conteudo}]`
-        : `[${m.tipo} sem transcrição]`;
+      // Audio/imagem/video transcritos vao como TEXTO PURO — sem prefixo
+      // "[audio: ...]" porque o LLM costuma incorporar a tag na resposta
+      // ("Audio, legal!"). Sem transcricao, anota o tipo entre parenteses
+      // discreto pra dar contexto sem virar bordao.
+      content = m.conteudo?.trim()
+        ? m.conteudo.trim()
+        : `(mensagem de ${m.tipo} sem transcricao)`;
     } else {
       content = m.conteudo ?? "";
     }
@@ -97,10 +133,86 @@ export async function gerarRespostaCaio(opts: {
       `O lead se chama ${lead.nome}. Use o nome quando fizer sentido.`,
     );
   }
-  if (lead?.origem === "prospeccao") {
-    extras.push(
-      `Esse lead veio de prospecção ativa — VOCÊ iniciou o contato, ele NÃO entrou em contato com a gente primeiro. NÃO diga "obrigado por entrar em contato" ou frases similares. Trate como continuação natural do contato que você começou.`,
-    );
+
+  // Disponibilidade da agenda — sempre incluída pra que o Caio responda
+  // perguntas tipo "atendem sábado?" sem precisar escalar pra humano.
+  if (org?.agenda_config) {
+    const agenda = getAgendaConfig(org.agenda_config);
+    const diasDesc = descreverDias(agenda.dias_semana);
+
+    if (agenda.modo === "slot") {
+      // Lista textual dos horários de INÍCIO (que é o que importa pro lead
+      // escolher). Com instrução EXPLÍCITA de não alterar. Sem isso o LLM
+      // tende a "regularizar" pra hora cheia (ex: 13:00 vira 14:00).
+      const inicios = agenda.slots.map((s) => `"${s.inicio}"`).join(", ");
+      const slotsDetalhe = agenda.slots
+        .map(
+          (s, i) =>
+            `${i + 1}) ${s.inicio} (até ${s.fim})`,
+        )
+        .join("\n");
+      const diasPorNome = agenda.dias_semana
+        .map((d) => NOMES_DIAS[d])
+        .filter(Boolean)
+        .join(", ");
+      extras.push(
+        `[Disponibilidade da Facilita]
+Dias ATENDIDOS (use EXATAMENTE esta lista; ignore respostas anteriores suas que possam ter sido incompletas): ${diasPorNome}.
+Resumo: ${diasDesc} (fuso de Brasília).
+
+Horários FIXOS de início de consultoria (NÃO altere esses números, NÃO arredonde, NÃO invente outros — 13:00 NÃO vira 14:00):
+${slotsDetalhe}
+
+Em texto livre, os únicos horários de início válidos são EXATAMENTE: ${inicios}. NUNCA cite outros números.
+
+Regras:
+- Se o lead perguntar quando atendem, cite TODOS os dias acima e os horários acima exatamente. NÃO omita nenhum dia.
+- Se ele perguntar sobre um dia específico que ESTÁ na lista (ex: "atendem terça?"), confirme que sim e ofereça os horários.
+- Se ele pedir um dia FORA da lista (ex: sábado, domingo), explique que não atendemos e ofereça os dias da lista.
+- NÃO escale pra humano por causa de horário/dia — só por casos genuinamente complexos.
+
+[POSTURA — VOCÊ CONDUZ]
+Você é o Caio e SEMPRE conduz a conversa pra agendar a consultoria. NUNCA deixe a decisão de avançar na mão do lead. Em qualquer interação onde ele demonstrou o mínimo de interesse:
+1. Pergunte DIRETAMENTE qual dia da semana é melhor pra ele (entre os dias atendidos)
+2. Depois que ele indicar o dia, oferece os horários daquele dia (isso será tratado automaticamente)
+3. Se ele desviar o assunto, responde a pergunta dele e em seguida volta pra agendar
+4. NUNCA termine uma resposta com "me avisa quando quiser" ou "fica à vontade" — sempre termine com uma pergunta que faz ele avançar (ex: "qual dia da semana funciona melhor pra você?")`,
+      );
+    } else {
+      // Modo duracao: lista as janelas + a duração padrão
+      const janelas = agenda.slots
+        .map((s) => `${s.inicio} às ${s.fim}`)
+        .join(", ");
+      extras.push(
+        `[Disponibilidade da Facilita]
+Dias atendidos: ${diasDesc} (fuso de Brasília).
+Janelas de atendimento: ${janelas}.
+Duração padrão da consultoria: ${agenda.duracao_padrao} minutos.
+
+Regras:
+- Se o lead pedir dia/horário fora disso, explique e ofereça alternativas dentro das janelas.
+- NÃO escale pra humano por causa de horário/dia — só por casos genuinamente complexos.`,
+      );
+    }
+  }
+  // Contexto de prospecção: cobre tanto cadência ATIVA (origem=prospeccao)
+  // quanto lead que foi prospectado no passado, virou "perdido", e agora
+  // respondeu (origem virou "inbound" mas origem_inicial continua "prospeccao").
+  // Sem esse contexto, o Caio trataria como inbound novo e responderia tipo
+  // "obrigado por entrar em contato", o que confunde o lead que lembra que
+  // foi a Facilita que iniciou.
+  const foiProspectado =
+    lead?.origem === "prospeccao" || lead?.origem_inicial === "prospeccao";
+  if (foiProspectado) {
+    if (lead?.origem === "prospeccao") {
+      extras.push(
+        `Esse lead veio de prospecção ATIVA — VOCÊ iniciou o contato, ele NÃO procurou a Facilita. NÃO use frases que sugiram que ele veio até nós, tipo: "obrigado por entrar em contato", "como posso te ajudar", "no que posso te ajudar", "em que posso ajudar", "como posso te ajudar hoje". Essas frases confundem o lead — ele lembra que foi a Facilita que falou com ele. Em vez disso: trate como continuação natural do contato que VOCÊ começou. Já se apresentou, agora avance o objetivo (entender o cenário, identificar dor, propor consultoria). Se o lead estranhar/perguntar por que você o contatou, explique brevemente o trabalho da Facilita e o que motivou a aproximação.`,
+      );
+    } else {
+      extras.push(
+        `Esse lead foi prospectado pela Facilita NO PASSADO — VOCÊ iniciou o contato originalmente. Ele não respondeu na época e a cadência se encerrou, mas agora ele está retomando a conversa por conta própria. NÃO use frases tipo "obrigado por entrar em contato", "como posso te ajudar", "no que posso te ajudar" — ele lembra que foi a Facilita que falou com ele primeiro, e essas frases vão confundi-lo. Se ele perguntar "por que você entrou em contato" ou similar, explique brevemente o trabalho da Facilita (soluções de IA para empresas) e pergunte se ele tem algum desafio específico que a gente possa ajudar.`,
+      );
+    }
     const dadosExtras = lead.dados_extras as Record<string, string> | null;
     if (dadosExtras && Object.keys(dadosExtras).length > 0) {
       const linhasExtras = Object.entries(dadosExtras)
@@ -111,11 +223,18 @@ export async function gerarRespostaCaio(opts: {
       );
     }
   }
+  // Extras injetados pelo caller (ex: lista de horários disponíveis,
+  // confirmação de agendamento criado). Concatena APÓS os extras automáticos
+  // (origem, dados_extras) pra ter preferência na hora do Caio formular.
+  const extrasFinal = [...extras, ...(opts.extrasContexto ?? [])];
   const systemContent =
-    extras.length > 0
-      ? `${promptBase}\n\n[Contexto:\n${extras.join("\n\n")}]`
+    extrasFinal.length > 0
+      ? `${promptBase}\n\n[Contexto:\n${extrasFinal.join("\n\n")}]`
       : promptBase;
 
+  // Usa o modelo configurado em OPENAI_MODEL (default gpt-4o-mini). A
+  // alucinação de horários (ex: 13:00 → 14:00) é corrigida pelo pós-
+  // processamento abaixo, sem depender de um modelo mais caro.
   const result = await chatCompletion({
     messages: [{ role: "system", content: systemContent }, ...historico],
     temperature: 0.8,
@@ -123,5 +242,54 @@ export async function gerarRespostaCaio(opts: {
   });
 
   if ("error" in result) return result;
-  return { resposta: result.content.trim() };
+
+  // Pós-processamento: se a config tem slots, substitui horários inválidos
+  // pelo válido mais próximo. Rede de segurança contra alucinação residual.
+  let resposta = result.content.trim();
+  if (org?.agenda_config) {
+    const agenda = getAgendaConfig(org.agenda_config);
+    if (agenda.modo === "slot") {
+      const permitidos = new Set(agenda.slots.map((s) => s.inicio));
+      // Inclui também os horários de FIM como permitidos (caso o Caio cite
+      // a faixa completa "13:00 às 15:30")
+      agenda.slots.forEach((s) => permitidos.add(s.fim));
+      const minutos = (hhmm: string) => {
+        const [h, m] = hhmm.split(":").map(Number);
+        return h * 60 + m;
+      };
+      const validosSorted = Array.from(permitidos).sort(
+        (a, b) => minutos(a) - minutos(b),
+      );
+      resposta = resposta.replace(/\b(\d{1,2}):(\d{2})\b/g, (match, h, m) => {
+        const horaPad = String(h).padStart(2, "0");
+        const candidato = `${horaPad}:${m}`;
+        if (permitidos.has(candidato)) return candidato;
+        // Encontra o mais próximo (distância em minutos)
+        const tgt = minutos(candidato);
+        let melhor = validosSorted[0];
+        let melhorDist = Math.abs(minutos(melhor) - tgt);
+        for (const cand of validosSorted) {
+          const d = Math.abs(minutos(cand) - tgt);
+          if (d < melhorDist) {
+            melhor = cand;
+            melhorDist = d;
+          }
+        }
+        // Só substitui se a distância é razoável (até 90 min); senão deixa
+        // como está (provavelmente é referência a horário do lead, não slot)
+        if (melhorDist <= 90) {
+          console.log(
+            "[caio:fix-horario] substituindo",
+            match,
+            "→",
+            melhor,
+          );
+          return melhor;
+        }
+        return match;
+      });
+    }
+  }
+
+  return { resposta };
 }

@@ -4,6 +4,11 @@ import { createClient } from "@/lib/supabase/server";
 import { logoutAction } from "@/app/login/actions";
 import { Logo } from "@/components/logo";
 import { NavLink } from "@/components/nav-link";
+import {
+  SinoHandoff,
+  type LeadHandoff,
+  type LeadAguardando,
+} from "@/components/sino-handoff";
 
 export default async function DashboardLayout({
   children,
@@ -28,6 +33,39 @@ export default async function DashboardLayout({
   type OrgRef = { name?: string } | { name?: string }[] | null;
   const orgRef = profile?.organizations as OrgRef;
   const orgName = Array.isArray(orgRef) ? orgRef[0]?.name : orgRef?.name;
+
+  // Notificacoes do sino: leads com handoff disparado (precisa_humano)
+  // + leads com Caio desligado e msg nova nao respondida (precisa_resposta_humana).
+  // RLS filtra pela org do operador.
+  const [
+    { count: precisaHumanoCount },
+    { data: leadsHandoffData },
+    { count: aguardandoCount },
+    { data: leadsAguardandoData },
+  ] = await Promise.all([
+    supabase
+      .from("leads")
+      .select("id", { count: "exact", head: true })
+      .eq("precisa_humano", true),
+    supabase
+      .from("leads")
+      .select("id, nome, telefone, precisa_humano_motivo, precisa_humano_em")
+      .eq("precisa_humano", true)
+      .order("precisa_humano_em", { ascending: false })
+      .limit(10),
+    supabase
+      .from("leads")
+      .select("id", { count: "exact", head: true })
+      .eq("precisa_resposta_humana", true),
+    supabase
+      .from("leads")
+      .select("id, nome, telefone, precisa_resposta_em")
+      .eq("precisa_resposta_humana", true)
+      .order("precisa_resposta_em", { ascending: false })
+      .limit(10),
+  ]);
+  const leadsHandoff: LeadHandoff[] = leadsHandoffData ?? [];
+  const leadsAguardando: LeadAguardando[] = leadsAguardandoData ?? [];
 
   return (
     <div className="min-h-screen bg-offwhite">
@@ -55,6 +93,12 @@ export default async function DashboardLayout({
           </div>
 
           <div className="flex items-center gap-4">
+            <SinoHandoff
+              leads={leadsHandoff}
+              total={precisaHumanoCount ?? 0}
+              leadsAguardando={leadsAguardando}
+              totalAguardando={aguardandoCount ?? 0}
+            />
             <div className="text-right">
               <p className="text-sm font-heading font-semibold text-preto">
                 {profile?.nome ?? user.email}
@@ -79,3 +123,4 @@ export default async function DashboardLayout({
     </div>
   );
 }
+

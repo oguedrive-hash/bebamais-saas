@@ -9,8 +9,11 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { enviarSerializado } from "./fila-envio";
+import { evoSendText, evoSendAudio, evoSendMedia } from "./evolution-api";
 
 function config() {
+  if (process.env.EVOLUTION_RECEBE === "1") throw new Error("Chatwoot desativado (migrado p/ Evolution)");
   // trim pra remover espaços que podem entrar por copy/paste no Vercel UI
   const url = (process.env.CHATWOOT_URL ?? "").trim().replace(/\/+$/, "");
   const accountId = (process.env.CHATWOOT_ACCOUNT_ID ?? "").trim();
@@ -44,7 +47,7 @@ async function safeFetch(
 /**
  * Envia uma mensagem outgoing numa conversa.
  */
-export async function enviarMensagem(opts: {
+async function enviarMensagemRaw(opts: {
   conversationId: number;
   content: string;
 }): Promise<{ id: number; content: string } | { error: string }> {
@@ -90,7 +93,7 @@ export async function enviarMensagem(opts: {
  * Envia uma mensagem outgoing COM áudio anexado.
  * Usa multipart/form-data porque tem arquivo.
  */
-export async function enviarMensagemComAudio(opts: {
+async function enviarMensagemComAudioRaw(opts: {
   conversationId: number;
   audio: ArrayBuffer;
   filename?: string;
@@ -158,7 +161,7 @@ export async function enviarMensagemComAudio(opts: {
  *
  * Usado pra mandar imagens/videos pre-carregados em regras de follow-up.
  */
-export async function enviarMensagemComAnexoUrl(opts: {
+async function enviarMensagemComAnexoUrlRaw(opts: {
   conversationId: number;
   url: string;
   mimeType: string;
@@ -363,6 +366,11 @@ export async function criarConversaProspeccao(opts: {
   telefone: string;
   nome: string;
 }): Promise<{ conversationId: number } | { error: string }> {
+  // Migrado pra Evolution: não cria conversa no Chatwoot, só devolve um ID interno
+  // único; quem chamou salva no lead e envia pela Evolution (por telefone).
+  if (process.env.EVOLUTION_RECEBE === "1") {
+    return { conversationId: Math.floor(Math.random() * 2000000000) };
+  }
   let baseUrl: string;
   let token: string;
   try {
@@ -506,4 +514,110 @@ export async function criarConversaProspeccao(opts: {
       }`,
     };
   }
+}
+
+
+// ===== Fila de envio serializada por org (anti-rajada no WhatsApp) =====
+// Resolve a chave de fila a partir da conversa (cacheado): mensagens da mesma
+// org saem uma por vez e espacadas; orgs diferentes nao se bloqueiam. Sem org
+// (ex.: notificacao de admin) -> serializa pela propria conversa.
+const _cacheDados = new Map<number, { chave: string; telefone: string | null; instance: string | null; leadId: string | null }>();
+async function dadosEnvio(conversationId: number) {
+  const c = _cacheDados.get(conversationId);
+  if (c) return c;
+  const r: { chave: string; telefone: string | null; instance: string | null; leadId: string | null } = { chave: `conv:${conversationId}`, telefone: null, instance: null, leadId: null };
+  try {
+    const admin = createAdminClient();
+    const { data } = await admin.from("leads").select("id, organization_id, telefone").eq("chatwoot_conversation_id", conversationId).limit(1);
+    const lead = data?.[0] as { id?: string; organization_id?: string; telefone?: string } | undefined;
+    if (lead?.organization_id) {
+      r.chave = `org:${lead.organization_id}`;
+      r.telefone = lead.telefone ?? null;
+      r.leadId = lead.id ?? null;
+      const { data: orgs } = await admin.from("organizations").select("evolution_instance_name").eq("id", lead.organization_id).limit(1);
+      r.instance = (orgs?.[0] as { evolution_instance_name?: string } | undefined)?.evolution_instance_name ?? null;
+    }
+  } catch {
+    // fallback seguro
+  }
+  _cacheDados.set(conversationId, r);
+  return r;
+}
+async function chaveFila(conversationId: number): Promise<string> {
+  return (await dadosEnvio(conversationId)).chave;
+}
+// Canary: telefones em EVOLUTION_ENVIO_TESTE enviam pela Evolution; o resto segue no Chatwoot.
+function canaryEvolution(telefone: string | null): boolean {
+  if (!telefone) return false;
+  if (process.env.EVOLUTION_ENVIO_TODOS === "1") return true;
+  const tel = telefone.replace(/\D/g, "");
+  const lista = (process.env.EVOLUTION_ENVIO_TESTE ?? "").split(",").map((t) => t.replace(/\D/g, "")).filter(Boolean);
+  return lista.some((t) => tel.endsWith(t) || t.endsWith(tel));
+}
+
+export async function enviarMensagem(opts: {
+  conversationId: number;
+  content: string;
+}): Promise<{ id: number; content: string } | { error: string }> {
+  const d = await dadosEnvio(opts.conversationId);
+  return enviarSerializado(d.chave, async () => {
+    if (d.instance && d.telefone && canaryEvolution(d.telefone)) {
+      const r = await evoSendText({ instance: d.instance, telefone: d.telefone, texto: opts.content });
+      if (!("error" in r)) {
+        if (process.env.EVOLUTION_RECEBE === "1" && d.leadId) {
+          try { const orgId = d.chave.startsWith("org:") ? d.chave.slice(4) : null; await createAdminClient().from("mensagens").insert({ organization_id: orgId, lead_id: d.leadId, direcao: "saida", tipo: "texto", conteudo: opts.content }); } catch (e) { console.error("[evo] persist outgoing falhou:", e); }
+        }
+        return { id: 0, content: opts.content };
+      }
+      console.error("[evo] envio falhou, fallback Chatwoot:", (r as { error: string }).error);
+    }
+    return enviarMensagemRaw(opts);
+  });
+}
+
+export async function enviarMensagemComAudio(opts: {
+  conversationId: number;
+  audio: ArrayBuffer;
+  filename?: string;
+  mimeType?: string;
+  content?: string;
+}): Promise<{ id: number } | { error: string }> {
+  const d = await dadosEnvio(opts.conversationId);
+  return enviarSerializado(d.chave, async () => {
+    if (d.instance && d.telefone && canaryEvolution(d.telefone)) {
+      const b64 = Buffer.from(opts.audio).toString("base64");
+      const r = await evoSendAudio({ instance: d.instance, telefone: d.telefone, audioBase64: b64 });
+      if (!("error" in r)) {
+        if (process.env.EVOLUTION_RECEBE === "1" && d.leadId) {
+          try { const orgId = d.chave.startsWith("org:") ? d.chave.slice(4) : null; await createAdminClient().from("mensagens").insert({ organization_id: orgId, lead_id: d.leadId, direcao: "saida", tipo: "audio", conteudo: opts.content ?? "" }); } catch (e) { console.error("[evo] persist audio out:", e); }
+        }
+        return { id: 0 };
+      }
+      console.error("[evo] envio audio falhou, fallback Chatwoot:", (r as { error: string }).error);
+    }
+    return enviarMensagemComAudioRaw(opts);
+  });
+}
+
+export async function enviarMensagemComAnexoUrl(opts: {
+  conversationId: number;
+  url: string;
+  mimeType: string;
+  caption?: string;
+}): Promise<{ id: number } | { error: string }> {
+  const d = await dadosEnvio(opts.conversationId);
+  return enviarSerializado(d.chave, async () => {
+    if (d.instance && d.telefone && canaryEvolution(d.telefone)) {
+      const mediatype = opts.mimeType.startsWith("image") ? "image" : opts.mimeType.startsWith("video") ? "video" : "document";
+      const r = await evoSendMedia({ instance: d.instance, telefone: d.telefone, media: opts.url, mediatype, mimetype: opts.mimeType, caption: opts.caption });
+      if (!("error" in r)) {
+        if (process.env.EVOLUTION_RECEBE === "1" && d.leadId) {
+          try { const orgId = d.chave.startsWith("org:") ? d.chave.slice(4) : null; const tipo = mediatype === "image" ? "imagem" : mediatype === "video" ? "video" : "arquivo"; await createAdminClient().from("mensagens").insert({ organization_id: orgId, lead_id: d.leadId, direcao: "saida", tipo, conteudo: opts.caption ?? "" }); } catch (e) { console.error("[evo] persist media out:", e); }
+        }
+        return { id: 0 };
+      }
+      console.error("[evo] envio media falhou, fallback Chatwoot:", (r as { error: string }).error);
+    }
+    return enviarMensagemComAnexoUrlRaw(opts);
+  });
 }

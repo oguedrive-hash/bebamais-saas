@@ -3,28 +3,35 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { processarProspeccaoLead } from "@/lib/caio/prospeccao";
 import { getJanela } from "@/lib/caio/janela-prospeccao";
 import { digitosTelefone } from "@/lib/caio/telefone";
 
 export type RelatorioDisparo = {
-  enviados: number;
   agendados: number;
   falhas: { leadId: string; nome: string | null; motivo: string }[];
 };
 
+const OFFSET_PRIMEIRO_SEGUNDOS = 5;
+
 /**
- * Dispara a primeira mensagem da cadência pros leads selecionados,
- * espacando os disparos com o `intervalo_minutos` configurado.
+ * Agenda a primeira mensagem da cadência pros leads selecionados.
  *
- * Pensado pro botão "Disparar agora" em /dashboard/prospeccao. O 1º lead
- * dispara imediatamente; os seguintes ficam agendados no `proximo_contato_em`
- * com `intervalo_minutos` entre cada um — o cron de prospecção pega e
- * dispara cada um quando chega a hora. Isso evita rajada de msgs que o
- * WhatsApp marcaria como spam.
+ * Diferente da versão anterior, NÃO dispara nada de dentro da action — só
+ * marca `proximo_contato_em` e deixa o cron de prospecção fazer o trabalho.
+ * Por que? O cron sempre rodou bem (o calcularProximoEm acerta o delay da
+ * regra 2, etc.). Quando a action chamava `processarProspeccaoLead` direto,
+ * algo no caminho da server action introduzia um delay extra de ~3-4 min no
+ * proximo_contato_em da regra 2. Agendar pelo `proximo_contato_em` evita o
+ * caminho problemático: o cron pega em segundos (até 1 min do tick) e usa o
+ * mesmo path que já funciona pra cadência inteira.
  *
- * Por org: usa um intervalo separado por organização. Se o lote tem leads
- * de orgs diferentes (uso multi-tenant), cada org tem sua propria fila.
+ * Fluxo:
+ *  - 1º lead da org → proximo_contato_em = now + 5s (cron pega no próximo tick)
+ *  - 2º lead da org → now + 1 * intervalo_minutos
+ *  - 3º lead da org → now + 2 * intervalo_minutos
+ *  - ...
+ *
+ * Org separada tem fila própria (multi-tenant).
  */
 export async function dispararPrimeirasMensagensEmLote(
   leadIds: string[],
@@ -36,13 +43,13 @@ export async function dispararPrimeirasMensagensEmLote(
   if (!user) return { error: "Não autenticado" };
 
   if (leadIds.length === 0) {
-    return { ok: true, relatorio: { enviados: 0, agendados: 0, falhas: [] } };
+    return { ok: true, relatorio: { agendados: 0, falhas: [] } };
   }
 
   const { data: leadsVisiveis, error } = await supabase
     .from("leads")
     .select(
-      "id, nome, telefone, status, organization_id, numero_prospeccao, dados_extras, chatwoot_conversation_id, caio_ativo, origem",
+      "id, nome, telefone, organization_id, origem",
     )
     .in("id", leadIds)
     .eq("origem", "prospeccao");
@@ -52,7 +59,7 @@ export async function dispararPrimeirasMensagensEmLote(
     return { error: "Nenhum lead acessível" };
   }
 
-  const relatorio: RelatorioDisparo = { enviados: 0, agendados: 0, falhas: [] };
+  const relatorio: RelatorioDisparo = { agendados: 0, falhas: [] };
 
   // Detecta conflito de telefone duplicado em outro lead da mesma org
   // (Chatwoot rotearia msg pra conversa errada).
@@ -89,7 +96,7 @@ export async function dispararPrimeirasMensagensEmLote(
     }
   }
 
-  // Le intervalo configurado por org (cache local)
+  // Le intervalo configurado por org
   const intervaloPorOrg = new Map<string, number>();
   for (const orgId of orgIds) {
     const { data: org } = await admin
@@ -101,11 +108,8 @@ export async function dispararPrimeirasMensagensEmLote(
     intervaloPorOrg.set(orgId, janela.intervalo_minutos);
   }
 
-  // Conta agendamentos por org (pra calcular o offset de cada lead na fila)
-  const agendadosPorOrg = new Map<string, number>();
-
-  const agora = Date.now();
-  let disparouPrimeiroDaOrg = new Set<string>();
+  // Contador por org pra calcular o offset de cada lead na fila
+  const indicePorOrg = new Map<string, number>();
 
   for (const lead of leadsVisiveis) {
     const conflito = conflitosPorLead.get(lead.id);
@@ -120,56 +124,23 @@ export async function dispararPrimeirasMensagensEmLote(
 
     const orgId = lead.organization_id;
     const intervalo = intervaloPorOrg.get(orgId) ?? 2;
+    const idx = indicePorOrg.get(orgId) ?? 0;
+    indicePorOrg.set(orgId, idx + 1);
 
-    // 1º lead de cada org → dispara imediato.
-    // Demais leads da mesma org → agenda com offset.
-    if (!disparouPrimeiroDaOrg.has(orgId)) {
-      disparouPrimeiroDaOrg.add(orgId);
-      try {
-        const result = await processarProspeccaoLead({
-          id: lead.id,
-          nome: lead.nome,
-          telefone: lead.telefone,
-          status: lead.status,
-          organization_id: lead.organization_id,
-          numero_prospeccao: lead.numero_prospeccao,
-          dados_extras: lead.dados_extras as Record<string, string> | null,
-          chatwoot_conversation_id: lead.chatwoot_conversation_id,
-          caio_ativo: lead.caio_ativo,
-        });
-        if ("error" in result) {
-          relatorio.falhas.push({
-            leadId: lead.id,
-            nome: lead.nome,
-            motivo: result.error,
-          });
-        } else if (result.acao === "enviou") {
-          relatorio.enviados++;
-        } else {
-          relatorio.falhas.push({
-            leadId: lead.id,
-            nome: lead.nome,
-            motivo: `worker devolveu '${result.acao}' (esperado 'enviou')`,
-          });
-        }
-      } catch (err) {
-        relatorio.falhas.push({
-          leadId: lead.id,
-          nome: lead.nome,
-          motivo: err instanceof Error ? err.message : String(err),
-        });
-      }
-      continue;
-    }
+    // 1º lead da org (idx=0) → +5s. Demais → idx * intervalo_minutos.
+    // IMPORTANTE: usa now() do DB via RPC pra evitar clock drift. Quando
+    // calculávamos com Date.now() em JS na server action, o resultado vinha
+    // ~3 min adiantado em relação ao now() do Postgres (Next.js 16 parece
+    // cachear o tempo da request).
+    const segundos =
+      idx === 0
+        ? OFFSET_PRIMEIRO_SEGUNDOS
+        : idx * intervalo * 60;
 
-    // Já tem 1+ desta org agendado/enviado — esse vai na fila
-    const offsetIdx = (agendadosPorOrg.get(orgId) ?? 0) + 1;
-    agendadosPorOrg.set(orgId, offsetIdx);
-    const proximo = new Date(agora + offsetIdx * intervalo * 60 * 1000);
-    const { error: upErr } = await admin
-      .from("leads")
-      .update({ proximo_contato_em: proximo.toISOString() })
-      .eq("id", lead.id);
+    const { error: upErr } = await admin.rpc("agendar_disparo_prospeccao", {
+      p_lead_id: lead.id,
+      p_seconds: segundos,
+    });
     if (upErr) {
       relatorio.falhas.push({
         leadId: lead.id,

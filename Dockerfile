@@ -17,6 +17,15 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# NEXT_PUBLIC_* sao inlinadas no bundle do cliente no momento do build —
+# precisam estar disponiveis aqui ou o JS fica com process.env undefined.
+# Passa via `docker build --build-arg NEXT_PUBLIC_SUPABASE_URL=... ...`
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+
 RUN npm run build
 
 # ============================================

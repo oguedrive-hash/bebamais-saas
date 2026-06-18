@@ -138,10 +138,8 @@ export function TabelaComSelecao({ leads }: { leads: Lead[] }) {
             ) : null}
             {relatorio && (
               <span className="text-xs text-emerald-700">
-                ✓ {relatorio.enviados} disparado
-                {relatorio.enviados !== 1 ? "s" : ""} agora
-                {relatorio.agendados > 0 &&
-                  ` · ${relatorio.agendados} entrou${relatorio.agendados !== 1 ? "" : ""} na fila`}
+                ✓ {relatorio.agendados} agendado
+                {relatorio.agendados !== 1 ? "s" : ""} (1º sai em segundos)
                 {relatorio.falhas.length > 0 &&
                   ` · ${relatorio.falhas.length} falha${relatorio.falhas.length !== 1 ? "s" : ""}`}
               </span>

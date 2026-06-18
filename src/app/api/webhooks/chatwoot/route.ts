@@ -6,6 +6,17 @@ import {
   getFacilitaOrgFallback,
 } from "@/lib/caio/tenant";
 import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
+import { classificarAceite } from "@/lib/caio/classificador-aceite";
+import { classificarHandoff } from "@/lib/caio/classificador-handoff";
+import { dispararHandoff } from "@/lib/caio/handoff";
+import { detectarDesqualificacao } from "@/lib/caio/detector-desqualificacao";
+import { tentarAgendar } from "@/lib/caio/tentar-agendar";
+import { calcularSlotsLivres } from "@/lib/caio/slots-livres";
+import { notificarAdminFalha } from "@/lib/caio/notificar-admin";
+import {
+  gerarLinhaHorariosDoDia,
+  tentarResponderDisponibilidade,
+} from "@/lib/caio/resposta-disponibilidade";
 import { transcreverAudio } from "@/lib/caio/openai";
 import { gerarAudio } from "@/lib/caio/elevenlabs";
 import { classificarAdiamento } from "@/lib/caio/classificador-adiamento";
@@ -28,6 +39,7 @@ import {
 // unique constraint em `chatwoot_message_id`.
 
 export async function POST(request: NextRequest) {
+  if (process.env.EVOLUTION_RECEBE === "1") return new Response(JSON.stringify({ ok: true, skip: "evolution" }), { status: 200, headers: { "content-type": "application/json" } });
   let webhook: ChatwootWebhook;
   try {
     webhook = (await request.json()) as ChatwootWebhook;
@@ -114,6 +126,21 @@ async function processWebhook(webhook: ChatwootWebhook) {
         ultima_msg_lead_em: new Date().toISOString(),
       })
       .in("id", ids);
+    // Lead em status terminal (perdido/fechou) que respondeu: re-engajou
+    // espontaneamente — volta pro fluxo inbound em conversa. Origem vira
+    // inbound de novo (mesmo se tinha sido marcado prospeccao no passado),
+    // ja que agora o cliente esta procurando a gente.
+    // Roda ANTES das outras branches pra capturar quem tava em perdido/fechou
+    // — depois das outras o status já mudou e essa branch não acharia mais.
+    await supabase
+      .from("leads")
+      .update({
+        proximo_contato_em: null,
+        status: "em_conversa",
+        origem: "inbound",
+      })
+      .in("id", ids)
+      .in("status", ["perdido", "fechou"]);
     // Lead de prospeccao respondeu: para a cadencia de prospeccao e
     // muda status pra "em_conversa" (cai no fluxo inbound normal). A origem
     // continua "prospeccao" pra historico / filtros.
@@ -126,19 +153,24 @@ async function processWebhook(webhook: ChatwootWebhook) {
       .in("id", ids)
       .eq("origem", "prospeccao")
       .in("status", ["aguardando_primeiro_contato", "em_prospeccao"]);
-    // Lead em status terminal (perdido/fechou) que respondeu: re-engajou
-    // espontaneamente — volta pro fluxo inbound em conversa. Origem vira
-    // inbound de novo (mesmo se tinha sido marcado prospeccao no passado),
-    // ja que agora o cliente esta procurando a gente.
+    // Lead em "novo_lead" que respondeu: vira em_conversa (mantém origem).
+    await supabase
+      .from("leads")
+      .update({ status: "em_conversa" })
+      .in("id", ids)
+      .eq("status", "novo_lead");
+
+    // Lead com Caio desligado mandou msg nova: marca pra notificar humano.
+    // Esse flag aparece no sino do header como secao "Aguardando sua resposta".
+    // Limpa quando humano responde pelo painel ou liga o Caio de volta.
     await supabase
       .from("leads")
       .update({
-        proximo_contato_em: null,
-        status: "em_conversa",
-        origem: "inbound",
+        precisa_resposta_humana: true,
+        precisa_resposta_em: new Date().toISOString(),
       })
       .in("id", ids)
-      .in("status", ["perdido", "fechou"]);
+      .eq("caio_ativo", false);
   }
 
   // Pra cada lead com incoming nova: agenda resposta com debounce. Se chegar
@@ -150,22 +182,55 @@ async function processWebhook(webhook: ChatwootWebhook) {
 }
 
 /**
+ * Calcula um tempo de "digitacao" realista pra simular humano antes de
+ * mandar a resposta. ~8 chars/segundo + jitter +/- 30%. Min 5s, max 22s.
+ * Pra cada lead/resposta o tempo varia — evita padrao de bot quando varios
+ * contatos escrevem ao mesmo tempo (gatilho de restricao do WhatsApp).
+ */
+function calcularTempoDigitacao(texto: string): number {
+  const len = (texto || "").length;
+  const base = Math.min(22000, Math.max(5000, len * 125));
+  const jitter = 1 + (Math.random() - 0.5) * 0.6;
+  return Math.floor(base * jitter);
+}
+
+/**
+ * Wrapper pra enviarMensagem com delay de digitacao. Use em respostas
+ * AUTOMATICAS do Caio. Nao usa em notificacoes admin / workers.
+ */
+async function enviarComoCaio(opts: {
+  conversationId: number;
+  content: string;
+}): Promise<ReturnType<typeof enviarMensagem>> {
+  const ms = calcularTempoDigitacao(opts.content);
+  console.log("[caio:typing]", ms, "ms para", opts.content.length, "chars");
+  await new Promise((r) => setTimeout(r, ms));
+  return enviarMensagem(opts);
+}
+
+/**
  * Agenda resposta do Caio com debounce: se chegar outra msg do mesmo lead
  * antes do timer estourar, esse ciclo desiste e o novo assume. Caio so
  * responde quando o lead parou de mandar mensagens por DEBOUNCE segundos.
  */
-async function agendarRespostaCaioComDebounce(
+export async function agendarRespostaCaioComDebounce(
   supabase: ReturnType<typeof createAdminClient>,
   organizationId: string,
   leadId: string,
 ) {
-  // Le tempo de debounce da org (default 6s se nao configurado)
+  // Le tempo BASE de debounce da org (default 10s se nao configurado).
+  // Adiciona variacao aleatoria por LEAD pra evitar padrao de bot quando
+  // multiplos contatos escrevem ao mesmo tempo — cada lead vira com timing
+  // diferente. WhatsApp detecta respostas sincronizadas como automacao.
   const { data: org } = await supabase
     .from("organizations")
     .select("caio_debounce_segundos")
     .eq("id", organizationId)
     .single();
-  const debounceMs = (org?.caio_debounce_segundos ?? 6) * 1000;
+  const baseMs = (org?.caio_debounce_segundos ?? 10) * 1000;
+  // Jitter de +0% a +80% do base — ex: base=10s → 10s a 18s aleatorio
+  const jitter = Math.floor(Math.random() * baseMs * 0.8);
+  const debounceMs = baseMs + jitter;
 
   // Marca o "previsto para" — esse timestamp e o ID desse ciclo de debounce.
   // Se outra msg chegar e reescrever, esse ciclo perdeu e vai desistir.
@@ -199,10 +264,25 @@ async function agendarRespostaCaioComDebounce(
 
   // Sou o vencedor — processa e limpa o flag
   await responderLeadAuto(supabase, organizationId, leadId);
-  await supabase
+  // SÓ limpa se o flag ainda é meu. Se uma msg seguinte chegou enquanto
+  // eu rodava o responderLeadAuto e atualizou caio_responder_em pra outro
+  // valor, NÃO posso zerar — senão a próxima rodada vai pensar que perdeu
+  // a corrida e desistir (race condition observada quando duas msgs chegam
+  // em sequência e o Caio leva mais que 6s pra responder a primeira).
+  const { data: leadFinal } = await supabase
     .from("leads")
-    .update({ caio_responder_em: null })
-    .eq("id", leadId);
+    .select("caio_responder_em")
+    .eq("id", leadId)
+    .single();
+  if (
+    leadFinal?.caio_responder_em &&
+    new Date(leadFinal.caio_responder_em).getTime() === meuPrevistoMs
+  ) {
+    await supabase
+      .from("leads")
+      .update({ caio_responder_em: null })
+      .eq("id", leadId);
+  }
 }
 
 async function sincronizarCaioAtivo(
@@ -305,7 +385,7 @@ async function responderLeadAuto(
   const { data: lead } = await supabase
     .from("leads")
     .select(
-      "nome, caio_ativo, chatwoot_conversation_id, aguardando_resposta_adiamento",
+      "nome, telefone, caio_ativo, chatwoot_conversation_id, aguardando_resposta_adiamento",
     )
     .eq("id", leadId)
     .single();
@@ -334,24 +414,80 @@ async function responderLeadAuto(
     .eq("id", leadId);
 
   try {
-    // Tenta detectar pedido de adiamento ANTES de responder normal
-    const tratouAdiamento = await tentarTratarAdiamento(
+    // ATALHO determinístico: se a pergunta é sobre disponibilidade/dias/
+    // horários atendidos, responde direto da config (sem LLM). Evita
+    // alucinação do tipo "não atendemos terça" quando a config diz que sim.
+    const respDisp = await tentarResponderDisponibilidade({
+      organizationId,
+      conteudoLead: ultimaIncoming?.conteudo ?? null,
+      nomeLead: lead.nome ?? null,
+    });
+    if (respDisp) {
+      console.log("[caio:disp] resposta determinística pra", leadId);
+      await enviarComoCaio({
+        conversationId: lead.chatwoot_conversation_id,
+        content: respDisp,
+      });
+      await agendarPrimeiroFollowup(supabase, organizationId, leadId);
+      return;
+    }
+
+    // HANDOFF: lead pede reagendar/cancelar reunião, está irritado, ou pede
+    // humano → Caio sai, marca lead com flag, notifica admin no WhatsApp,
+    // responde com canned text. Roda ANTES de aceite/adiamento porque
+    // "reagendar" não é aceite e seria mal-classificado se passasse adiante.
+    const handoffResult = await tentarTratarHandoff(
       supabase,
       organizationId,
       leadId,
       lead.nome ?? null,
+      (lead as { telefone?: string }).telefone ?? "",
       lead.chatwoot_conversation_id,
-      lead.aguardando_resposta_adiamento ?? false,
       ultimaIncoming?.conteudo ?? null,
     );
-    if (tratouAdiamento) return; // Adiamento ja respondeu o lead, nao precisa mais nada
+    if (handoffResult) return;
 
+    // ORDEM IMPORTA: aceite ANTES de adiamento. Quando o lead já está no
+    // contexto de marcar consultoria, "segunda de tarde" é aceite com horário,
+    // não pedido pra falar depois. Se rodar adiamento primeiro, ele captura
+    // a data e responde "te chamo no dia X" — comportamento errado.
+    const aceite = await tentarTratarAceite(
+      supabase,
+      organizationId,
+      leadId,
+      ultimaIncoming?.conteudo ?? null,
+    );
+
+    if (!aceite) {
+      const tratouAdiamento = await tentarTratarAdiamento(
+        supabase,
+        organizationId,
+        leadId,
+        lead.nome ?? null,
+        lead.chatwoot_conversation_id,
+        lead.aguardando_resposta_adiamento ?? false,
+        ultimaIncoming?.conteudo ?? null,
+      );
+      if (tratouAdiamento) return;
+    }
+
+    if (aceite?.tipo === "resposta_direta") {
+      // Resposta determinística — envia direto, sem passar pelo LLM
+      console.log("[caio:aceite] resposta determinística pra", leadId);
+      await enviarComoCaio({
+        conversationId: lead.chatwoot_conversation_id,
+        content: aceite.texto,
+      });
+      await agendarPrimeiroFollowup(supabase, organizationId, leadId);
+      return;
+    }
     await gerarERespondeCaio(
       supabase,
       organizationId,
       leadId,
       lead.chatwoot_conversation_id,
       responderComAudio,
+      aceite?.tipo === "extras" ? aceite.extrasContexto : undefined,
     );
     // Caio respondeu — agenda o primeiro follow-up baseado na config da org
     await agendarPrimeiroFollowup(supabase, organizationId, leadId);
@@ -408,7 +544,7 @@ async function tentarTratarAdiamento(
       .update({ aguardando_resposta_adiamento: true })
       .eq("id", leadId);
     const texto = `Tranquilo, ${primeiroNome}! Quando posso te chamar?`;
-    await enviarMensagem({ conversationId, content: texto });
+    await enviarComoCaio({ conversationId, content: texto });
     console.log("[caio:adiamento]", leadId, "perguntou quando");
     return true;
   }
@@ -436,7 +572,7 @@ async function tentarTratarAdiamento(
       timeZone: "America/Sao_Paulo",
     });
     const texto = `Perfeito, ${primeiroNome}! Anotei aqui — te chamo no dia ${dataStr}. Até lá!`;
-    await enviarMensagem({ conversationId, content: texto });
+    await enviarComoCaio({ conversationId, content: texto });
     console.log("[caio:adiamento]", leadId, "agendado pra", momento.toISOString());
     return true;
   }
@@ -450,6 +586,309 @@ async function tentarTratarAdiamento(
       .eq("id", leadId);
   }
   return false;
+}
+
+/**
+ * Detecta se a última msg do lead aceita marcar consultoria. Retorna extras
+ * pro contexto do Caio quando classifica como aceite (com ou sem horário) —
+ * o caller passa esses extras pra `gerarERespondeCaio` que gera resposta
+ * natural com base nas instruções.
+ *
+ * - aceita_com_horario: tenta criar agendamento. Se conseguir, extras instruem
+ *   o Caio a confirmar. Se falhar (fora de slot, conflito), extras instruem
+ *   o Caio a propor alternativas.
+ * - aceita_sem_horario: busca slots livres e instrui o Caio a propor.
+ * - nao_aceita / responde_normal: retorna null (fluxo normal).
+ */
+/**
+ * Detecta se o lead pede reagendar/cancelar reuniao, esta irritado ou pede
+ * humano. Se sim: dispara handoff (Caio off + notifica admin + responde
+ * canned text) e retorna true.
+ */
+async function tentarTratarHandoff(
+  supabase: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  leadId: string,
+  nome: string | null,
+  telefone: string,
+  conversationId: number,
+  ultimaMsg: string | null,
+): Promise<boolean> {
+  if (!ultimaMsg?.trim()) return false;
+
+  // Contexto: ultimas 6 msgs (Lead/Caio)
+  const { data: msgs } = await supabase
+    .from("mensagens")
+    .select("direcao, conteudo")
+    .eq("lead_id", leadId)
+    .eq("shadow", false)
+    .order("created_at", { ascending: false })
+    .limit(6);
+  const contexto = (msgs ?? [])
+    .reverse()
+    .map((m) => `${m.direcao === "entrada" ? "Lead" : "Caio"}: ${m.conteudo}`)
+    .join("\n");
+
+  const classif = await classificarHandoff({
+    ultimaMensagem: ultimaMsg,
+    contextoAnterior: contexto,
+  });
+
+  if (classif.intencao === "nenhum") return false;
+
+  // muda_reuniao so faz sentido se o lead JA TEM reuniao marcada. Sem isso,
+  // "marcar uma reuniao" ou "as 10:30" sao falsos positivos comuns.
+  if (classif.intencao === "muda_reuniao") {
+    const { data: agendamentoExistente } = await supabase
+      .from("agendamentos")
+      .select("id")
+      .eq("lead_id", leadId)
+      .eq("status", "agendado")
+      .gte("data_inicio", new Date().toISOString())
+      .limit(1)
+      .maybeSingle();
+    if (!agendamentoExistente) {
+      console.log(
+        "[caio:handoff]",
+        leadId,
+        "muda_reuniao ignorado — lead nao tem agendamento futuro",
+      );
+      return false;
+    }
+  }
+
+  console.log("[caio:handoff]", leadId, "disparou:", classif.intencao);
+
+  const { texto } = await dispararHandoff({
+    organizationId,
+    leadId,
+    leadNome: nome,
+    leadTelefone: telefone,
+    motivo: classif.intencao,
+    ultimaMsg,
+  });
+
+  await enviarComoCaio({
+    conversationId,
+    content: texto,
+  });
+
+  return true;
+}
+
+async function tentarTratarAceite(
+  supabase: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  leadId: string,
+  ultimaMsg: string | null,
+): Promise<
+  | { tipo: "extras"; extrasContexto: string[] }
+  | { tipo: "resposta_direta"; texto: string }
+  | null
+> {
+  if (!ultimaMsg?.trim()) return null;
+
+  // Se o lead JA tem agendamento futuro, nao roda o classificador de aceite.
+  // Caso contrario "Pode sim" (confirmando lembrete) vira tentativa de criar
+  // novo agendamento. Reagendamento eh capturado pelo classificador de
+  // adiamento, nao por aqui.
+  const { data: agendamentoExistente } = await supabase
+    .from("agendamentos")
+    .select("id, data_inicio")
+    .eq("lead_id", leadId)
+    .eq("status", "agendado")
+    .gte("data_inicio", new Date().toISOString())
+    .order("data_inicio", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (agendamentoExistente) {
+    console.log(
+      "[caio:aceite]",
+      leadId,
+      "skipping classificador — lead ja tem agendamento futuro",
+      agendamentoExistente.id,
+    );
+    return null;
+  }
+
+  // Contexto: últimas 6 msgs em ordem cronológica
+  const { data: msgs } = await supabase
+    .from("mensagens")
+    .select("direcao, conteudo")
+    .eq("lead_id", leadId)
+    .eq("shadow", false)
+    .order("created_at", { ascending: false })
+    .limit(6);
+  const contexto = (msgs ?? [])
+    .reverse()
+    .map((m) => `${m.direcao === "entrada" ? "Lead" : "Caio"}: ${m.conteudo}`)
+    .join("\n");
+
+  const classif = await classificarAceite({
+    ultimaMensagem: ultimaMsg,
+    contextoAnterior: contexto,
+  });
+
+  if (classif.intencao === "aceita_com_horario") {
+    const momento = new Date(classif.momento_iso);
+    const result = await tentarAgendar({
+      organizationId,
+      leadId,
+      momento,
+    });
+    if ("ok" in result) {
+      // Mudar status do lead pra "reuniao_agendada" e desligar followup
+      await supabase
+        .from("leads")
+        .update({
+          status: "reuniao_agendada",
+          followup_ativo: false,
+          proximo_followup_em: null,
+          proximo_contato_em: null,
+          aguardando_resposta_adiamento: false,
+        })
+        .eq("id", leadId);
+      const dataStr = new Date(result.agendamento.data_inicio).toLocaleString(
+        "pt-BR",
+        {
+          weekday: "long",
+          day: "2-digit",
+          month: "long",
+          hour: "2-digit",
+          minute: "2-digit",
+          timeZone: "America/Sao_Paulo",
+        },
+      );
+      console.log("[caio:aceite]", leadId, "agendou pra", result.agendamento.data_inicio);
+      // Mantém via LLM porque é uma confirmação simples — não tem risco de
+      // alucinação inventando horário.
+      return {
+        tipo: "extras",
+        extrasContexto: [
+          `[AGENDAMENTO CRIADO] O lead acabou de aceitar marcar consultoria e o agendamento JÁ FOI CRIADO pra: ${dataStr} (fuso de Brasília). Confirme com ele de forma natural e curta. Cite data e hora exatas. Avise que ele vai receber um lembrete antes. NÃO repita os horários alternativos.`,
+        ],
+      };
+    }
+    // Falhou criar agendamento — vai pedir outro dia (sem listar horários)
+    const alternativas = result.alternativas ?? [];
+    console.log(
+      "[caio:aceite]",
+      leadId,
+      "nao encaixou:",
+      result.motivo,
+      "alternativas[",
+      alternativas.length,
+      "]:",
+      alternativas.map((s) => s.label).join(" | "),
+    );
+    // Pré-checa se EXISTE o mesmo horário em outro dia atendido. Se sim,
+    // damos isso de dica pro Caio (sem listar horários ainda — só pra ele
+    // saber que pode sugerir mesmo horário).
+    const horaPedida = new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZone: "America/Sao_Paulo",
+    }).format(momento);
+    const buscaHora = await calcularSlotsLivres({
+      organizationId,
+      qtdMaxima: 5,
+      filtrarPorHora: horaPedida,
+    });
+    const slotsMesmaHora =
+      "slots" in buscaHora ? buscaHora.slots : [];
+    // Resposta determinística — sem LLM. Garante que o Caio realmente pede
+    // outro dia em vez de listar horários inventados (LLM tendia a desobedecer).
+    const { data: leadInfo } = await supabase
+      .from("leads")
+      .select("nome")
+      .eq("id", leadId)
+      .single();
+    const primeiroNome = leadInfo?.nome?.split(" ")[0] ?? null;
+    const sauda = primeiroNome ? `${primeiroNome}, ` : "";
+    const temMesmaHora = slotsMesmaHora.length > 0;
+
+    // Pega o dia da semana pedido (em SP) pra usar nas respostas
+    const wdPedido = new Intl.DateTimeFormat("en-US", {
+      weekday: "short",
+      timeZone: "America/Sao_Paulo",
+    }).format(momento);
+    const mapWd: Record<string, number> = {
+      Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7,
+    };
+    const diaPedidoNum = mapWd[wdPedido] ?? 0;
+    const nomesDias = ["", "segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"];
+    const nomeDiaPedido = nomesDias[diaPedidoNum] ?? "esse dia";
+
+    let texto: string;
+    if (result.motivo === "dia_nao_atendido") {
+      texto = `${sauda}${nomeDiaPedido} a gente não atende. Qual outro dia da semana funciona melhor pra você?`;
+    } else if (result.motivo === "fora_horizonte") {
+      texto = `${sauda}essa data está muito distante. Pode escolher outro dia da semana mais próximo?`;
+    } else if (result.motivo === "antes_antecedencia") {
+      texto = `${sauda}preciso de pelo menos algumas horas de antecedência. Qual outro dia funciona pra você?`;
+    } else if (temMesmaHora) {
+      // fora_slot/conflito + mesmo horário existe em outro dia
+      texto = `${sauda}esse horário não está disponível na ${nomeDiaPedido}, mas tenho o mesmo horário (${horaPedida}) em outro dia. Qual dia da semana fica melhor pra você?`;
+    } else {
+      // Sem mesmo horário em outro dia — lista os horários disponíveis NO
+      // dia que o lead pediu (ele já manifestou preferência por esse dia)
+      const linha =
+        diaPedidoNum > 0
+          ? await gerarLinhaHorariosDoDia({
+              organizationId,
+              diaSemana: diaPedidoNum,
+            })
+          : null;
+      if (linha) {
+        texto = `${sauda}o horário ${horaPedida} não está disponível na ${nomeDiaPedido}. ${linha}`;
+      } else {
+        texto = `${sauda}esse horário não está disponível. Qual outro dia da semana funciona melhor pra você?`;
+      }
+    }
+    return { tipo: "resposta_direta", texto };
+  }
+
+  if (classif.intencao === "aceita_sem_horario") {
+    // Fluxo: primeiro pergunta qual dia (sem listar horários ainda).
+    // Quando o lead disser o dia, o atalho de disponibilidade detecta e
+    // responde com os horários daquele dia específico.
+    const { data: orgInfo } = await supabase
+      .from("organizations")
+      .select("agenda_config")
+      .eq("id", organizationId)
+      .single();
+    const nomesDias = ["", "segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"];
+    const cfg = orgInfo?.agenda_config as
+      | { dias_semana?: number[] }
+      | null;
+    const dias = (cfg?.dias_semana ?? [1, 2, 3, 4, 5])
+      .map((d) => nomesDias[d])
+      .filter(Boolean);
+    const diasDesc =
+      dias.length === 5 && dias.every((d, i) => d === nomesDias[i + 1])
+        ? "de segunda a sexta"
+        : dias.length === 1
+          ? dias[0]
+          : dias.length === 2
+            ? dias.join(" e ")
+            : dias.slice(0, -1).join(", ") + " e " + dias[dias.length - 1];
+    console.log("[caio:aceite]", leadId, "aceitou sem horario — perguntando dia (determinístico)");
+    const { data: leadInfo2 } = await supabase
+      .from("leads")
+      .select("nome")
+      .eq("id", leadId)
+      .single();
+    const primeiroNome2 = leadInfo2?.nome?.split(" ")[0] ?? null;
+    const sauda2 = primeiroNome2 ? `${primeiroNome2}, ` : "";
+    return {
+      tipo: "resposta_direta",
+      texto: `${sauda2}perfeito! Pra agendar a consultoria, qual dia da semana funciona melhor pra você? Atendemos ${diasDesc}.`,
+    };
+  }
+
+  // nao_aceita ou responde_normal → fluxo normal
+  return null;
 }
 
 /**
@@ -522,14 +961,59 @@ async function gerarERespondeCaio(
   leadId: string,
   conversationId: number,
   responderComAudio: boolean,
+  extrasContexto?: string[],
 ) {
-  // Gera resposta
-  const result = await gerarRespostaCaio({ leadId });
+  // Gera resposta (já tem retry interno no chatCompletion)
+  const result = await gerarRespostaCaio({ leadId, extrasContexto });
   if ("error" in result) {
     console.error("[caio:auto]", "erro ao gerar:", result.error);
+    // Notifica admin via WhatsApp — Caio realmente desistiu deste lead.
+    // Busca dados do lead pra mensagem do alerta.
+    const { data: leadFalha } = await supabase
+      .from("leads")
+      .select("nome, telefone")
+      .eq("id", leadId)
+      .single();
+    const { data: msgLead } = await supabase
+      .from("mensagens")
+      .select("conteudo")
+      .eq("lead_id", leadId)
+      .eq("direcao", "entrada")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
+    await notificarAdminFalha({
+      organizationId,
+      leadNome: leadFalha?.nome ?? null,
+      leadTelefone: leadFalha?.telefone ?? "(desconhecido)",
+      conteudoLead: msgLead?.conteudo ?? null,
+      erro: result.error,
+    });
     return;
   }
   const texto = result.resposta;
+
+  // Detecta se a resposta eh uma desqualificacao BANT. Se sim, marca o lead
+  // (pra metricas) e desliga Caio. nao_encaixa = lead nao serve; trazer_decisor
+  // eh hint do prompt mas nao desqualifica definitivo (so vira "perdido" se
+  // lead recusar trazer o decisor depois).
+  const desq = detectarDesqualificacao(texto);
+  if (desq?.motivo === "nao_encaixa") {
+    await supabase
+      .from("leads")
+      .update({
+        desqualificado: true,
+        desqualificacao_motivo: desq.motivo,
+        desqualificado_em: new Date().toISOString(),
+        status: "perdido",
+        caio_ativo: false,
+        followup_ativo: false,
+        proximo_followup_em: null,
+        proximo_contato_em: null,
+      })
+      .eq("id", leadId);
+    console.log("[caio:desq]", leadId, "desqualificado BANT");
+  }
 
   if (responderComAudio) {
     // Busca voice config da org pra esse lead
@@ -552,7 +1036,7 @@ async function gerarERespondeCaio(
         tts.error,
       );
       // Fallback: envia texto se TTS falhou
-      const sent = await enviarMensagem({
+      const sent = await enviarComoCaio({
         conversationId,
         content: texto,
       });
@@ -576,7 +1060,7 @@ async function gerarERespondeCaio(
       );
       // Fallback: se Chatwoot recusou áudio (timeout, formato, etc),
       // envia texto pra pelo menos o lead receber alguma resposta.
-      const fallback = await enviarMensagem({
+      const fallback = await enviarComoCaio({
         conversationId,
         content: texto,
       });
@@ -589,7 +1073,7 @@ async function gerarERespondeCaio(
     }
     console.log("[caio:auto]", "respondeu áudio pra lead", leadId);
   } else {
-    const sent = await enviarMensagem({
+    const sent = await enviarComoCaio({
       conversationId,
       content: texto,
     });
@@ -637,14 +1121,14 @@ async function processarMensagem(
       .maybeSingle();
 
     if (existing) {
-      const newStatus =
-        existing.status === "perdido" || existing.status === "novo_lead"
-          ? "em_conversa"
-          : existing.status;
+      // NÃO mexer em status aqui — as branches mais abaixo (no caller)
+      // decidem o status final baseado no status anterior + origem.
+      // Mudar status aqui zerava a info que as branches usam (ex: lead em
+      // "perdido" virava "em_conversa" antes da branch que seta origem=inbound
+      // rodar, então a origem nunca virava inbound).
       await supabase
         .from("leads")
         .update({
-          status: newStatus,
           nome: msg.sender?.name,
           chatwoot_conversation_id: msg.conversation_id,
         })

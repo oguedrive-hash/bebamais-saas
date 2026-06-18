@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Work_Sans, Manrope } from "next/font/google";
 import "./globals.css";
 
@@ -17,6 +17,10 @@ const manrope = Manrope({
 export const metadata: Metadata = {
   title: "Facilita Plus — Painel",
   description: "IA aplicada para facilitar processos da sua empresa.",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#E8501C",
 };
 
 export default function RootLayout({

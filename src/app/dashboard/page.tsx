@@ -12,6 +12,8 @@ type Lead = {
   telefone: string;
   status: string;
   caio_ativo: boolean | null;
+  desqualificado?: boolean | null;
+  desqualificacao_motivo?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -35,7 +37,9 @@ export default async function DashboardPage() {
   const [{ data: leads }, { data: msgsRecentes }] = await Promise.all([
     supabase
       .from("leads")
-      .select("id, nome, telefone, status, caio_ativo, created_at, updated_at")
+      .select(
+        "id, nome, telefone, status, caio_ativo, desqualificado, desqualificacao_motivo, created_at, updated_at",
+      )
       .eq("origem", "inbound"),
     // Mensagens últimos 7d pra hora de pico + tempo de resposta
     supabase
@@ -59,6 +63,22 @@ export default async function DashboardPage() {
   const concluidos = fechou + perdido;
   const taxaConversao = concluidos > 0 ? (fechou / concluidos) * 100 : 0;
   const caioOff = leads?.filter((l) => !l.caio_ativo).length ?? 0;
+
+  // === Funil BANT (qualificacao) ===
+  const agendados = reuniao + fechou; // chegaram a marcar reuniao
+  const desqualificados = leads?.filter((l) => l.desqualificado).length ?? 0;
+  const aindaConversando = porStatus.em_conversa ?? 0;
+  const totalProcessados = agendados + desqualificados;
+  const taxaAgendamento =
+    totalProcessados > 0 ? (agendados / totalProcessados) * 100 : 0;
+  // Motivos de desqualificacao
+  const motivos: Record<string, number> = {};
+  leads?.forEach((l) => {
+    if (l.desqualificado && l.desqualificacao_motivo) {
+      motivos[l.desqualificacao_motivo] =
+        (motivos[l.desqualificacao_motivo] ?? 0) + 1;
+    }
+  });
 
   // Comparação semana atual vs semana anterior
   const leadsSemanaAtual = countNaJanela(leads, inicio7d, agora);
@@ -300,6 +320,99 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
+      {/* Linha 4.5: Qualificacao BANT */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        <Card titulo="Qualificação BANT">
+          {totalProcessados === 0 ? (
+            <p className="text-sm text-cinza-medio text-center py-10">
+              Sem conversas processadas ainda.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-heading font-bold text-emerald-600">
+                  {taxaAgendamento.toFixed(0)}%
+                </span>
+                <span className="text-xs text-cinza-medio">
+                  taxa de agendamento
+                </span>
+              </div>
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-emerald-700 font-heading font-semibold">
+                    ✓ Agendaram
+                  </span>
+                  <span className="text-preto font-mono">{agendados}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-amber-700 font-heading font-semibold">
+                    ✗ Desqualificados
+                  </span>
+                  <span className="text-preto font-mono">{desqualificados}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-cinza-medio font-heading">
+                    Ainda em conversa
+                  </span>
+                  <span className="text-preto font-mono">{aindaConversando}</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        <Card titulo="Motivos de desqualificação">
+          {desqualificados === 0 ? (
+            <p className="text-sm text-cinza-medio text-center py-10">
+              Nenhum desqualificado ainda.
+            </p>
+          ) : (
+            <ul className="space-y-2 text-xs">
+              {Object.entries(motivos)
+                .sort((a, b) => b[1] - a[1])
+                .map(([m, c]) => (
+                  <li
+                    key={m}
+                    className="flex items-center justify-between border-b border-cinza-claro/60 pb-2 last:border-b-0"
+                  >
+                    <span className="text-preto font-heading font-semibold">
+                      {labelMotivoDesq(m)}
+                    </span>
+                    <span className="text-cinza-medio font-mono">{c}</span>
+                  </li>
+                ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card titulo="Pipeline ativo">
+          <ul className="space-y-2 text-xs">
+            <li className="flex justify-between">
+              <span className="text-blue-700 font-heading font-semibold">
+                Em conversa
+              </span>
+              <span className="text-preto font-mono">{emConversa}</span>
+            </li>
+            <li className="flex justify-between">
+              <span className="text-amber-700 font-heading font-semibold">
+                Reunião agendada
+              </span>
+              <span className="text-preto font-mono">{reuniao}</span>
+            </li>
+            <li className="flex justify-between">
+              <span className="text-emerald-700 font-heading font-semibold">
+                Fechou
+              </span>
+              <span className="text-preto font-mono">{fechou}</span>
+            </li>
+            <li className="flex justify-between">
+              <span className="text-cinza-medio font-heading">Perdido</span>
+              <span className="text-preto font-mono">{perdido}</span>
+            </li>
+          </ul>
+        </Card>
+      </div>
+
       {/* Linha 5: atividade recente */}
       <Card titulo="Atividade recente">
         {leadsRecentes.length === 0 ? (
@@ -465,6 +578,12 @@ function Card({
       {children}
     </div>
   );
+}
+
+function labelMotivoDesq(motivo: string): string {
+  if (motivo === "nao_encaixa") return "Operação pequena / sem fit";
+  if (motivo === "trazer_decisor") return "Sem autoridade (pedido decisor)";
+  return motivo;
 }
 
 function formatRelative(dateStr: string | null): string {

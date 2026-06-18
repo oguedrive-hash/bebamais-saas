@@ -1,26 +1,35 @@
 /**
- * Logo da Facilita Plus — versão texto + acento "plus"
- * Baseado no manual da marca (assinatura horizontal principal).
+ * Logo da Facilita Plus — versao oficial (PNG do manual da marca).
  *
- * Quando o sócio mandar o SVG do ícone "F", substituímos por uma versão com ícone.
+ * `variant="dark"` (default) — pra fundos claros (creme/branco). Plus laranja + texto preto.
+ * `variant="light"` — pra fundos escuros. Tudo branco.
+ *
+ * Largura calculada do aspect ratio original (1488x384 ≈ 3.875:1) pra evitar
+ * layout shift. Default h-8 (~32px) replica a visualidade do antigo `text-2xl`.
  */
 export function Logo({
   className = "",
-  showPlus = true,
+  variant = "dark",
 }: {
   className?: string;
+  /** @deprecated mantido por compat com chamadas antigas */
   showPlus?: boolean;
+  variant?: "dark" | "light";
 }) {
+  const src =
+    variant === "light"
+      ? "/logo-facilita-plus-white.png"
+      : "/logo-facilita-plus.png";
+
   return (
-    <span
-      className={`inline-flex items-baseline font-heading font-bold text-2xl tracking-tight text-preto ${className}`}
-    >
-      facilita
-      {showPlus && (
-        <span className="ml-1 px-1.5 py-0.5 bg-laranja text-white text-[0.55em] font-semibold rounded leading-none relative -top-2">
-          plus
-        </span>
-      )}
-    </span>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt="Facilita Plus"
+      width={124}
+      height={32}
+      className={`h-8 w-auto select-none ${className}`}
+      draggable={false}
+    />
   );
 }

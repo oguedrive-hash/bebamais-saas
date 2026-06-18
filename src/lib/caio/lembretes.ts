@@ -14,6 +14,10 @@ import {
   enviarComMidia,
   type TipoMidia,
 } from "@/lib/caio/enviar-com-midia";
+import {
+  criarConversaProspeccao,
+  enviarMensagem,
+} from "@/lib/caio/chatwoot-api";
 
 type RegraLembrete = {
   nivel: number;
@@ -38,15 +42,25 @@ type AgendamentoProcess = {
   organization_id: string;
   lead_id: string;
   data_inicio: string;
+  created_at: string;
   meet_link: string | null;
   lembretes_enviados: number[] | null;
+  lembretes_admin_enviados: number[] | null;
   // Vem do join com lead
   lead: {
     id: string;
     nome: string | null;
+    telefone: string;
     chatwoot_conversation_id: number | null;
   } | null;
 };
+
+// Lembretes do ADMIN (Lucas/especialista) - hardcoded fixos pra todo agendamento.
+// nivel 1 = 24h antes; nivel 2 = 1h antes. Salvos em lembretes_admin_enviados[].
+const LEMBRETES_ADMIN = [
+  { nivel: 1, horasAntes: 24, titulo: "Reuniao amanha" },
+  { nivel: 2, horasAntes: 1, titulo: "Reuniao em 1 hora" },
+];
 
 function calcularInstanteDisparo(
   dataInicio: Date,
@@ -100,7 +114,7 @@ export async function processarLembretesPendentes(): Promise<{
   const { data: agendamentos, error } = await supabase
     .from("agendamentos")
     .select(
-      "id, organization_id, lead_id, data_inicio, meet_link, lembretes_enviados, lead:leads(id, nome, chatwoot_conversation_id)",
+      "id, organization_id, lead_id, data_inicio, created_at, meet_link, lembretes_enviados, lembretes_admin_enviados, lead:leads(id, nome, telefone, chatwoot_conversation_id)",
     )
     .eq("status", "agendado")
     .gte("data_inicio", inicioJanela.toISOString())
@@ -129,7 +143,13 @@ export async function processarLembretesPendentes(): Promise<{
     if (!config?.regras) continue;
 
     const dataInicio = new Date(ag.data_inicio);
+    const createdAt = new Date(ag.created_at);
     const enviadosNiveis = new Set(ag.lembretes_enviados ?? []);
+    // Margem de seguranca: se o agendamento foi criado MUITO em cima da
+    // hora (ex: lead pediu 30min antes), nao queremos disparar lembretes
+    // "antes" que ja eram passado quando o agendamento nasceu — caso contrario
+    // o lead recebe "lembrete: sua reuniao e amanha" segundos depois de marcar.
+    const margemMs = 5 * 60 * 1000; // 5 minutos
 
     for (const regra of config.regras) {
       if (!regra.ativo) continue;
@@ -137,6 +157,27 @@ export async function processarLembretesPendentes(): Promise<{
 
       const instante = calcularInstanteDisparo(dataInicio, regra);
       if (instante > agora) continue; // Ainda nao chegou a hora
+
+      // Lembrete "antes" cujo instante ja era passado quando o agendamento
+      // foi criado: nao faz sentido disparar (seria imediato apos criar).
+      // Marca como enviado pra nao reprocessar e segue.
+      if (
+        regra.quando === "antes" &&
+        instante.getTime() < createdAt.getTime() - margemMs
+      ) {
+        const novosEnviados = [...(ag.lembretes_enviados ?? []), regra.nivel];
+        await supabase
+          .from("agendamentos")
+          .update({ lembretes_enviados: novosEnviados })
+          .eq("id", ag.id);
+        enviadosNiveis.add(regra.nivel);
+        console.log(
+          "[lembrete:cron]",
+          ag.id,
+          `nivel ${regra.nivel} pulado (instante anterior ao created_at)`,
+        );
+        continue;
+      }
 
       // Hora! Dispara o lembrete
       let texto: string;
@@ -198,6 +239,9 @@ export async function processarLembretesPendentes(): Promise<{
         meta: { nivel: regra.nivel, agendamento_id: ag.id },
       });
     }
+
+    // Lembretes ADMIN (Lucas) — hardcoded 24h e 1h antes.
+    await processarLembretesAdmin(supabase, ag, agora);
   }
 
   return {
@@ -205,4 +249,101 @@ export async function processarLembretesPendentes(): Promise<{
     enviados: enviadosCount,
     erros: errosCount,
   };
+}
+
+async function processarLembretesAdmin(
+  supabase: ReturnType<typeof createAdminClient>,
+  ag: AgendamentoProcess,
+  agora: Date,
+): Promise<void> {
+  const adminNumero = process.env.ADMIN_WHATSAPP_NUMBER?.trim();
+  if (!adminNumero) return;
+  if (!ag.lead) return;
+
+  const enviados = new Set(ag.lembretes_admin_enviados ?? []);
+  const dataInicio = new Date(ag.data_inicio);
+
+  for (const regra of LEMBRETES_ADMIN) {
+    if (enviados.has(regra.nivel)) continue;
+    const instante = new Date(
+      dataInicio.getTime() - regra.horasAntes * 3600 * 1000,
+    );
+    if (instante > agora) continue;
+    // Se o agendamento foi criado depois da hora do lembrete, pula
+    // (caso lead marcou pra daqui 30min, nao faz sentido mandar lembrete
+    // de 1h antes que ja era passado).
+    if (instante.getTime() < new Date(ag.created_at).getTime() - 5 * 60 * 1000) {
+      const atualiza = [...(ag.lembretes_admin_enviados ?? []), regra.nivel];
+      await supabase
+        .from("agendamentos")
+        .update({ lembretes_admin_enviados: atualiza })
+        .eq("id", ag.id);
+      enviados.add(regra.nivel);
+      continue;
+    }
+
+    try {
+      const conv = await criarConversaProspeccao({
+        organizationId: ag.organization_id,
+        telefone: adminNumero,
+        nome: "Alerta Caio",
+      });
+      if ("error" in conv) {
+        console.warn(
+          "[lembrete:admin]",
+          ag.id,
+          `nivel ${regra.nivel}`,
+          conv.error,
+        );
+        continue;
+      }
+      const dataStr = dataInicio.toLocaleString("pt-BR", {
+        weekday: "long",
+        day: "2-digit",
+        month: "long",
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "America/Sao_Paulo",
+      });
+      const leadLabel = ag.lead.nome
+        ? `${ag.lead.nome} (${ag.lead.telefone})`
+        : ag.lead.telefone;
+      const texto = `⏰ *${regra.titulo}*
+
+Lead: ${leadLabel}
+Quando: ${dataStr}
+
+Conversa: https://facilitaplus.com.br/dashboard/contatos/${ag.lead.id}`;
+
+      const sent = await enviarMensagem({
+        conversationId: conv.conversationId,
+        content: texto,
+      });
+      if ("error" in sent) {
+        console.warn(
+          "[lembrete:admin]",
+          ag.id,
+          `nivel ${regra.nivel}`,
+          sent.error,
+        );
+        continue;
+      }
+      const atualiza = [...(ag.lembretes_admin_enviados ?? []), regra.nivel];
+      await supabase
+        .from("agendamentos")
+        .update({ lembretes_admin_enviados: atualiza })
+        .eq("id", ag.id);
+      enviados.add(regra.nivel);
+      console.log(
+        "[lembrete:admin]",
+        ag.id,
+        `nivel ${regra.nivel} enviado (${regra.titulo})`,
+      );
+    } catch (err) {
+      console.warn(
+        "[lembrete:admin] erro:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
 }

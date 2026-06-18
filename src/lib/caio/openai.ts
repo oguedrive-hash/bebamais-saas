@@ -79,7 +79,12 @@ export async function transcreverAudio(opts: {
 }
 
 /**
- * Chama o endpoint /v1/chat/completions da OpenAI.
+ * Chama o endpoint /v1/chat/completions da OpenAI com retry automático.
+ *
+ * Erros transitórios (network, timeout, 5xx, 429) são retried com backoff
+ * exponencial: 1s, 2s, 4s. Erros permanentes (4xx exceto 429) falham
+ * imediatamente — não adianta tentar de novo.
+ *
  * Retorna conteúdo da primeira choice ou { error }.
  */
 export async function chatCompletion(opts: ChatOptions): Promise<ChatResult> {
@@ -87,45 +92,68 @@ export async function chatCompletion(opts: ChatOptions): Promise<ChatResult> {
   if (!key) return { error: "OPENAI_API_KEY não definida" };
 
   const model = opts.model ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+  const MAX_TENTATIVAS = 3;
+  const BACKOFF_MS = [1000, 2000, 4000];
 
-  try {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: opts.messages,
-        temperature: opts.temperature ?? 0.7,
-        ...(opts.max_tokens ? { max_tokens: opts.max_tokens } : {}),
-      }),
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      return {
-        error: `OpenAI ${res.status}: ${text.slice(0, 300)}`,
-      };
+  let ultimoErro = "";
+  for (let tentativa = 0; tentativa < MAX_TENTATIVAS; tentativa++) {
+    if (tentativa > 0) {
+      console.log(
+        `[openai] retry ${tentativa}/${MAX_TENTATIVAS - 1} em ${BACKOFF_MS[tentativa - 1]}ms (último erro: ${ultimoErro.slice(0, 100)})`,
+      );
+      await new Promise((r) => setTimeout(r, BACKOFF_MS[tentativa - 1]));
     }
 
-    const data = (await res.json()) as {
-      choices?: { message?: { content?: string } }[];
-      usage?: { prompt_tokens: number; completion_tokens: number };
-    };
-    const content = data.choices?.[0]?.message?.content;
-    if (!content) return { error: "Resposta OpenAI sem content" };
+    try {
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: opts.messages,
+          temperature: opts.temperature ?? 0.7,
+          ...(opts.max_tokens ? { max_tokens: opts.max_tokens } : {}),
+        }),
+      });
 
-    return {
-      content,
-      usage: data.usage
-        ? { input: data.usage.prompt_tokens, output: data.usage.completion_tokens }
-        : undefined,
-    };
-  } catch (err) {
-    return {
-      error: err instanceof Error ? err.message : "fetch failed",
-    };
+      if (!res.ok) {
+        const text = await res.text();
+        ultimoErro = `OpenAI ${res.status}: ${text.slice(0, 300)}`;
+        // 429 (rate limit) e 5xx (servidor) são transitórios — retry.
+        // 4xx (exceto 429) são permanentes — desiste imediatamente.
+        if (res.status !== 429 && res.status < 500) {
+          return { error: ultimoErro };
+        }
+        continue;
+      }
+
+      const data = (await res.json()) as {
+        choices?: { message?: { content?: string } }[];
+        usage?: { prompt_tokens: number; completion_tokens: number };
+      };
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) {
+        ultimoErro = "Resposta OpenAI sem content";
+        continue;
+      }
+
+      return {
+        content,
+        usage: data.usage
+          ? {
+              input: data.usage.prompt_tokens,
+              output: data.usage.completion_tokens,
+            }
+          : undefined,
+      };
+    } catch (err) {
+      // Network/timeout/etc — sempre transitório, retry
+      ultimoErro = err instanceof Error ? err.message : "fetch failed";
+    }
   }
+
+  return { error: `${ultimoErro} (após ${MAX_TENTATIVAS} tentativas)` };
 }

@@ -31,6 +31,7 @@ type FilterParams = {
   order?: SortOrder;
   page?: string;
   view?: View;
+  precisa_humano?: string;
 };
 
 const PER_PAGE = 25;
@@ -68,6 +69,7 @@ export default async function LeadsPage({
   const sortOrder = params.order ?? "desc";
   const page = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
   const offset = (page - 1) * PER_PAGE;
+  const precisaHumanoFilter = params.precisa_humano === "1";
   // View: usa o ?view= da URL se passou, senao cookie de preferencia, senao lista
   const cookieStore = await cookies();
   const viewPreferida = cookieStore.get("lead_view_preferida")?.value;
@@ -83,7 +85,7 @@ export default async function LeadsPage({
   let query = supabase
     .from("leads")
     .select(
-      "id, nome, telefone, status, source, caio_ativo, created_at, updated_at",
+      "id, nome, telefone, status, source, caio_ativo, precisa_humano, precisa_humano_motivo, created_at, updated_at",
       { count: "exact" },
     )
     .eq("origem", "inbound");
@@ -102,6 +104,7 @@ export default async function LeadsPage({
   }
   if (caioFilter === "on") query = query.eq("caio_ativo", true);
   if (caioFilter === "off") query = query.eq("caio_ativo", false);
+  if (precisaHumanoFilter) query = query.eq("precisa_humano", true);
   if (searchQuery.trim()) {
     const q = searchQuery.trim().replace(/[%_]/g, "");
     query = query.or(`nome.ilike.%${q}%,telefone.ilike.%${q}%`);
@@ -505,6 +508,11 @@ export default async function LeadsPage({
                           statusAtual={lead.status as StatusLead}
                         />
                         <CaioBadge ativo={lead.caio_ativo ?? true} />
+                        {lead.precisa_humano && (
+                          <PrecisaHumanoBadge
+                            motivo={lead.precisa_humano_motivo as string | null}
+                          />
+                        )}
                       </div>
                     </Td>
                     <Td>
@@ -730,6 +738,25 @@ function CaioBadge({ ativo }: { ativo: boolean }) {
         className={`w-1.5 h-1.5 rounded-full ${ativo ? "bg-green-500" : "bg-red-500"}`}
       />
       {ativo ? "Caio respondendo" : "Caio desligado"}
+    </span>
+  );
+}
+
+function PrecisaHumanoBadge({ motivo }: { motivo: string | null }) {
+  const label =
+    motivo === "muda_reuniao"
+      ? "Quer mudar reunião"
+      : motivo === "irritado"
+        ? "Lead irritado"
+        : motivo === "pede_humano"
+          ? "Pediu humano"
+          : "Precisa humano";
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-heading font-semibold border bg-amber-50 text-amber-800 border-amber-300"
+      title="Caio passou pra humano — abra a conversa e responda"
+    >
+      ⚠ {label}
     </span>
   );
 }

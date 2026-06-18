@@ -213,6 +213,14 @@ export async function processarFollowupLead(
   // Se config mudou depois que proximo_followup_em foi setado, esse recalculo
   // garante que o tempo correto seja respeitado.
   // (so se aplica quando ja teve followup anterior, i.e. numero_followup >= 1)
+  //
+  // Tolerância: ultimo_followup_em e proximo_followup_em são setados por
+  // chamadas `new Date()` separadas (uns ms entre elas), então instanteCorreto
+  // sempre vai estar uns ms acima de proximo_followup_em. Sem tolerância, o
+  // cron pega o lead quando proximo_followup_em vence, mas instanteCorreto
+  // ainda está alguns ms no futuro, então reagenda e perde 1 ciclo do cron.
+  // 5s de margem cobre essa drift sem afrouxar o respeito à config.
+  const TOLERANCIA_MS = 5000;
   if ((lead.numero_followup ?? 0) >= 1 && lead.ultimo_followup_em) {
     const instanteCorreto = new Date(lead.ultimo_followup_em);
     instanteCorreto.setDate(instanteCorreto.getDate() + (regra.esperar_dias ?? 0));
@@ -222,7 +230,7 @@ export async function processarFollowupLead(
     instanteCorreto.setMinutes(
       instanteCorreto.getMinutes() + (regra.esperar_minutos ?? 0),
     );
-    if (instanteCorreto.getTime() > Date.now()) {
+    if (instanteCorreto.getTime() > Date.now() + TOLERANCIA_MS) {
       // Ainda nao chegou a hora segundo a config atual — reagenda e nao dispara
       await supabase
         .from("leads")

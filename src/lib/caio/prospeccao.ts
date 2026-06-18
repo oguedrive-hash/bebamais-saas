@@ -244,6 +244,10 @@ export async function processarProspeccoesPendentes(): Promise<{
     .lte("proximo_contato_em", new Date().toISOString())
     .limit(50);
 
+  console.log(
+    `[prospec:worker] processarProspeccoesPendentes found=${leads?.length ?? 0} at ${new Date().toISOString()}`,
+  );
+
   if (error || !leads) {
     console.error("[prospeccao:cron]", "erro buscando leads:", error?.message);
     return { total: 0, ok: 0, erros: 0 };
@@ -252,6 +256,9 @@ export async function processarProspeccoesPendentes(): Promise<{
   let okCount = 0;
   let erroCount = 0;
   for (const lead of leads) {
+    console.log(
+      `[prospec:worker] picked lead=${lead.id} status=${lead.status} numero=${lead.numero_prospeccao}`,
+    );
     try {
       const result = await processarProspeccaoLead(lead as LeadProspeccao);
       if ("error" in result) {

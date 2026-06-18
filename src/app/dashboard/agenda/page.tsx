@@ -5,6 +5,9 @@ import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { CalendarioAgenda } from "@/components/calendario-agenda";
 import { StatusAgendamentoSelector } from "@/components/status-agendamento-selector";
+import { BotaoNovoAgendamento } from "@/components/botao-novo-agendamento";
+import { BotaoDeletarAgendamento } from "@/components/botao-deletar-agendamento";
+import { getAgendaConfigDaOrg } from "@/app/dashboard/agenda/actions";
 
 type View = "lista" | "calendario";
 
@@ -42,6 +45,11 @@ export default async function AgendaPage({
   const agora = new Date();
   const trintaDiasAtras = new Date(agora);
   trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
+
+  // Config da agenda da org — usado pelo botão "Novo agendamento" pra mostrar
+  // as durações pré-setadas (ex: 30, 60, 90 min). User configura em
+  // /dashboard/agenda/config.
+  const { config: agendaConfig } = await getAgendaConfigDaOrg();
 
   if (view === "calendario") {
     // Calendário: pega tudo do mês atual + adjacentes (janela ampla pra navegar)
@@ -81,7 +89,17 @@ export default async function AgendaPage({
             titulo="Agenda"
             descricao="Consultorias agendadas pelo Caio"
           />
-          <ViewToggle viewAtual={view} />
+          <div className="flex items-center gap-3">
+            <ViewToggle viewAtual={view} />
+            <Link
+              href="/dashboard/agenda/config"
+              className="px-3 py-2 rounded-lg border border-cinza-claro bg-white text-cinza-medio hover:text-preto hover:border-preto font-heading font-semibold text-sm transition"
+              title="Configurar slots e dias de trabalho"
+            >
+              ⚙️
+            </Link>
+            <BotaoNovoAgendamento duracoesConfig={agendaConfig.duracoes} />
+          </div>
         </div>
         <CalendarioAgenda agendamentos={lista} />
       </div>
@@ -219,10 +237,17 @@ function AgendamentoCard({
             {lead?.telefone}
           </p>
         </div>
-        <StatusAgendamentoSelector
-          agendamentoId={agendamento.id}
-          statusAtual={agendamento.status}
-        />
+        <div className="flex items-center gap-2">
+          <StatusAgendamentoSelector
+            agendamentoId={agendamento.id}
+            statusAtual={agendamento.status}
+          />
+          <BotaoDeletarAgendamento
+            agendamentoId={agendamento.id}
+            leadNome={lead?.nome ?? null}
+            dataInicio={agendamento.data_inicio}
+          />
+        </div>
       </div>
 
       <div className="flex items-center gap-2 mb-2">
