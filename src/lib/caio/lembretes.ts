@@ -297,7 +297,7 @@ async function processarLembretesAdmin(
 Lead: ${leadLabel}
 Quando: ${dataStr}
 
-Conversa: https://facilitaplus.com.br/dashboard/contatos/${ag.lead.id}`;
+Conversa: https://app.facilitaplus.com.br/dashboard/contatos/${ag.lead.id}`;
 
       // Chatwoot desativado: envia direto pro admin via Evolution, pela esteira
       const sent = await enviarSerializado("org:" + ag.organization_id, () =>

@@ -54,7 +54,7 @@ export async function notificarAdminAgendamento(opts: {
     const dataStr = data.toLocaleString("pt-BR", { weekday: "long", day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
     const leadLabel = opts.leadNome ? `${opts.leadNome} (${opts.leadTelefone})` : opts.leadTelefone;
     const resumoBloco = opts.resumoIA?.trim() ? `\n\n*Contexto rapido:*\n${opts.resumoIA.trim()}` : "";
-    const texto = `🟢 *Caio agendou uma sessao*\n\nLead: ${leadLabel}\nQuando: ${dataStr}${resumoBloco}\n\nConversa: https://facilitaplus.com.br/dashboard/contatos/${opts.leadId}`;
+    const texto = `🟢 *Caio agendou uma sessao*\n\nLead: ${leadLabel}\nQuando: ${dataStr}${resumoBloco}\n\nConversa: https://app.facilitaplus.com.br/dashboard/contatos/${opts.leadId}`;
     const sent = await enviarSerializado("org:" + opts.organizationId, () =>
       evoSendText({ instance: INSTANCE, telefone: adminNumero, texto }),
     );
