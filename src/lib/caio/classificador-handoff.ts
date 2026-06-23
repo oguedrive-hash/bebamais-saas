@@ -33,6 +33,7 @@ Frustracao leve, desabafo, partilha de problema: classifica "nenhum".
 ATENCAO — NAO eh "pede_humano" se:
 - Lead apenas PERGUNTA se voce eh humano/bot/IA ("voce eh humano?", "eh bot?", "eh IA?", "vc eh real?"). Isso eh curiosidade, classifica "nenhum".
 - Lead diz "ah humano demais kkk" ou comenta sobre humanidade sem pedir transferencia.
+- Lead te CUMPRIMENTA ou te CHAMA pelo seu nome — voce atende com o nome "{{PERSONA}}". Ex: "oi {{PERSONA}}", "{{PERSONA}}?", "e ai {{PERSONA}}", "bom dia {{PERSONA}}". Isso eh falar COM VOCE, classifica "nenhum". So eh "pede_humano" quando pede OUTRA pessoa/humano DIFERENTE de voce.
 
 4. "nenhum" — qualquer outra coisa. Conversa normal, pergunta sobre produto, agradece, pergunta se voce eh humano/bot, etc.
 
@@ -51,10 +52,12 @@ Retorne APENAS JSON valido, sem markdown:
 export async function classificarHandoff(opts: {
   ultimaMensagem: string;
   contextoAnterior: string;
+  persona?: string;
 }): Promise<ResultadoHandoff> {
+  const sys = SYSTEM_PROMPT.replaceAll("{{PERSONA}}", (opts.persona || "Caio").trim());
   const result = await chatCompletion({
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: sys },
       {
         role: "user",
         content: `Contexto anterior:\n${opts.contextoAnterior}\n\nMensagem atual do lead:\n${opts.ultimaMensagem}`,

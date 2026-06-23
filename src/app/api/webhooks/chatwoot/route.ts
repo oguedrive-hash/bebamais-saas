@@ -8,6 +8,7 @@ import {
 import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
 import { classificarAceite } from "@/lib/caio/classificador-aceite";
 import { classificarHandoff } from "@/lib/caio/classificador-handoff";
+import { personaDoLead } from "@/lib/caio/numeros";
 import { dispararHandoff } from "@/lib/caio/handoff";
 import { detectarDesqualificacao } from "@/lib/caio/detector-desqualificacao";
 import { tentarAgendar } from "@/lib/caio/tentar-agendar";
@@ -644,9 +645,20 @@ async function tentarTratarHandoff(
     .map((m) => `${m.direcao === "entrada" ? "Lead" : "Caio"}: ${m.conteudo}`)
     .join("\n");
 
+  // Resolve a persona que atende o lead (Caio/Yasmin/...) pra o classificador não
+  // confundir o nome da própria IA com pedido de humano ("oi Yasmin" não é handoff).
+  const { data: leadRow } = await supabase
+    .from("leads")
+    .select("evolution_instance")
+    .eq("id", leadId)
+    .maybeSingle();
+  const personaH = await personaDoLead(
+    (leadRow as { evolution_instance?: string | null } | null)?.evolution_instance ?? null,
+  );
   const classif = await classificarHandoff({
     ultimaMensagem: ultimaMsg,
     contextoAnterior: contexto,
+    persona: personaH?.persona_nome ?? "Caio",
   });
 
   if (classif.intencao === "nenhum") return false;

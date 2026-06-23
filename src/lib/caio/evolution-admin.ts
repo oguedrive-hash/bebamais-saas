@@ -46,7 +46,28 @@ async function req(
   }
 }
 
-/** Cria a instância na Evolution (idempotente: se já existe, segue em frente). */
+const WEBHOOK_URL = "https://app.facilitaplus.com.br/api/webhooks/evolution";
+
+/** Configura o webhook da instância (MESSAGES_UPSERT → painel). SEM isto o número
+ * novo NÃO recebe inbound (o painel nem fica sabendo que falaram com ele). */
+export async function evoConfigurarWebhook(
+  instance: string,
+): Promise<{ ok: true } | { error: string }> {
+  const r = await req("POST", `/webhook/set/${instance}`, {
+    webhook: {
+      enabled: true,
+      url: WEBHOOK_URL,
+      events: ["MESSAGES_UPSERT"],
+      webhookByEvents: false,
+      webhookBase64: false,
+    },
+  });
+  if ("error" in r) return r;
+  return { ok: true };
+}
+
+/** Cria a instância na Evolution (idempotente: se já existe, segue em frente).
+ * Já configura o webhook — senão o número novo não recebe inbound. */
 export async function evoCriarInstancia(
   instanceName: string,
 ): Promise<{ ok: true } | { error: string }> {
@@ -57,9 +78,13 @@ export async function evoCriarInstancia(
   });
   if ("error" in r) {
     // "already in use"/"already exists" não é erro pra nós — a instância existe.
-    if (/already|exists|in use/i.test(r.error)) return { ok: true };
+    if (/already|exists|in use/i.test(r.error)) {
+      await evoConfigurarWebhook(instanceName); // garante o webhook mesmo se já existia
+      return { ok: true };
+    }
     return r;
   }
+  await evoConfigurarWebhook(instanceName); // sem isto o número não recebe inbound
   return { ok: true };
 }
 
