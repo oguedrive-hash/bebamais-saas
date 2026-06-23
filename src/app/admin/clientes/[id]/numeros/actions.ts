@@ -129,10 +129,17 @@ export async function atualizarNumero(
 ): Promise<{ ok: true } | { error: string }> {
   const err = await exigirAdmin();
   if (err) return { error: err };
+  // Estado acompanha o papel: atendimento/prospecção ficam ATIVOS; backup vira
+  // standby. (Só deriva quando o papel mudou e o estado não foi passado à mão.)
+  // É o que permite ter N atendimentos — cada um atende quem mandar msg pra ele.
+  const update: Record<string, unknown> = { ...patch, updated_at: new Date().toISOString() };
+  if (patch.papel && patch.estado === undefined) {
+    update.estado = patch.papel === "backup" ? "standby" : "ativo";
+  }
   const admin = createAdminClient();
   const { error } = await admin
     .from("org_numeros")
-    .update({ ...patch, updated_at: new Date().toISOString() })
+    .update(update)
     .eq("id", id)
     .eq("organization_id", orgId);
   if (error) return { error: error.message };
