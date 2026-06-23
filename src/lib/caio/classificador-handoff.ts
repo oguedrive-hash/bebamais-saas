@@ -33,7 +33,7 @@ Frustracao leve, desabafo, partilha de problema: classifica "nenhum".
 ATENCAO — NAO eh "pede_humano" se:
 - Lead apenas PERGUNTA se voce eh humano/bot/IA ("voce eh humano?", "eh bot?", "eh IA?", "vc eh real?"). Isso eh curiosidade, classifica "nenhum".
 - Lead diz "ah humano demais kkk" ou comenta sobre humanidade sem pedir transferencia.
-- Lead te CUMPRIMENTA ou te CHAMA pelo seu nome — voce atende com o nome "{{PERSONA}}". Ex: "oi {{PERSONA}}", "{{PERSONA}}?", "e ai {{PERSONA}}", "bom dia {{PERSONA}}". Isso eh falar COM VOCE, classifica "nenhum". So eh "pede_humano" quando pede OUTRA pessoa/humano DIFERENTE de voce.
+- Lead CUMPRIMENTA, CHAMA ou MENCIONA um destes nomes: {{PERSONAS}}. TODOS esses nomes sao VOCE — atendentes virtuais do MESMO sistema (a mesma IA), NAO pessoas diferentes. Ex: "oi Yasmin", "tava falando com o Caio", "o Caio me passou pra voce", "pega com o Caio o que conversamos". Cumprimentar/mencionar qualquer um deles NAO eh "pede_humano" (classifica "nenhum"). So eh "pede_humano" quando o lead pede uma PESSOA REAL / atendente HUMANO, fora desses nomes.
 
 4. "nenhum" — qualquer outra coisa. Conversa normal, pergunta sobre produto, agradece, pergunta se voce eh humano/bot, etc.
 
@@ -52,9 +52,12 @@ Retorne APENAS JSON valido, sem markdown:
 export async function classificarHandoff(opts: {
   ultimaMensagem: string;
   contextoAnterior: string;
-  persona?: string;
+  personas?: string[];
 }): Promise<ResultadoHandoff> {
-  const sys = SYSTEM_PROMPT.replaceAll("{{PERSONA}}", (opts.persona || "Caio").trim());
+  const nomes = (opts.personas && opts.personas.length ? opts.personas : ["Caio"])
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const sys = SYSTEM_PROMPT.replaceAll("{{PERSONAS}}", nomes.join(", "));
   const result = await chatCompletion({
     messages: [
       { role: "system", content: sys },
