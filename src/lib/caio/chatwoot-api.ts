@@ -523,10 +523,12 @@ export async function criarConversaProspeccao(opts: {
 // Resolve a chave de fila a partir da conversa (cacheado): mensagens da mesma
 // org saem uma por vez e espacadas; orgs diferentes nao se bloqueiam. Sem org
 // (ex.: notificacao de admin) -> serializa pela propria conversa.
-const _cacheDados = new Map<number, { chave: string; telefone: string | null; instance: string | null; leadId: string | null }>();
 async function dadosEnvio(conversationId: number) {
-  const c = _cacheDados.get(conversationId);
-  if (c) return c;
+  // SEM cache de propósito: o roteamento (instance / telefone / @lid) muda a cada
+  // mensagem no multi-número (lead alterna de número) e quando o @lid é capturado.
+  // A query é leve (1 select) e a esteira já espaça os envios. Cachear fazia a
+  // resposta sair pelo número ERRADO — ex: lead falou com o Caio, depois com a
+  // Yasmin, e a resposta da Yasmin saía pelo Caio (cache preso na 1ª instância).
   const r: { chave: string; telefone: string | null; instance: string | null; leadId: string | null } = { chave: `conv:${conversationId}`, telefone: null, instance: null, leadId: null };
   try {
     const admin = createAdminClient();
@@ -544,7 +546,6 @@ async function dadosEnvio(conversationId: number) {
   } catch {
     // fallback seguro
   }
-  _cacheDados.set(conversationId, r);
   return r;
 }
 async function chaveFila(conversationId: number): Promise<string> {
