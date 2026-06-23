@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   adicionarNumero,
+  atualizarNumero,
   excluirNumero,
   gerarQrNumero,
   type PapelNumero,
@@ -63,6 +64,41 @@ export function NumerosManager({
   const [persona, setPersona] = useState("");
   const [voiceId, setVoiceId] = useState("");
   const [prioridade, setPrioridade] = useState(0);
+
+  // form do modal de EDIÇÃO (número existente)
+  const [editando, setEditando] = useState<NumeroView | null>(null);
+  const [edPapel, setEdPapel] = useState<PapelNumero>("backup");
+  const [edPersona, setEdPersona] = useState("");
+  const [edVoice, setEdVoice] = useState("");
+  const [edPrio, setEdPrio] = useState(0);
+
+  function abrirEdicao(n: NumeroView) {
+    setErro(null);
+    setEditando(n);
+    setEdPapel(n.papel);
+    setEdPersona(n.persona_nome ?? "");
+    setEdVoice(n.persona_voice_id ?? "");
+    setEdPrio(n.prioridade);
+  }
+
+  function salvarEdicao() {
+    if (!editando) return;
+    setErro(null);
+    startTransition(async () => {
+      const r = await atualizarNumero(organizationId, editando.id, {
+        papel: edPapel,
+        persona_nome: edPersona.trim(),
+        persona_voice_id: edVoice.trim() || null,
+        prioridade: edPrio,
+      });
+      if ("error" in r) {
+        setErro(r.error);
+        return;
+      }
+      setEditando(null);
+      router.refresh();
+    });
+  }
 
   function salvar() {
     setErro(null);
@@ -168,6 +204,14 @@ export function NumerosManager({
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
+                  onClick={() => abrirEdicao(n)}
+                  disabled={pending}
+                  className="px-3 py-2 rounded-lg border border-cinza-claro hover:border-laranja text-sm font-heading font-medium text-preto transition disabled:opacity-50"
+                >
+                  Editar
+                </button>
+                <button
+                  type="button"
                   onClick={() => conectar(n.instance_name)}
                   disabled={pending}
                   className="px-3 py-2 rounded-lg border border-cinza-claro hover:border-laranja text-sm font-heading font-medium text-preto transition disabled:opacity-50"
@@ -259,6 +303,78 @@ export function NumerosManager({
                 className="px-4 py-2 rounded-lg bg-laranja hover:bg-laranja-escuro disabled:bg-laranja-claro text-white font-heading font-semibold transition"
               >
                 {pending ? "Criando…" : "Criar e conectar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: editar número */}
+      {editando && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl border border-cinza-claro p-6 w-full max-w-md space-y-4">
+            <h3 className="text-lg font-heading font-bold text-preto">
+              Editar {editando.persona_nome ?? "número"}
+            </h3>
+            <p className="text-xs text-cinza-medio">
+              {editando.numero ? `+${editando.numero}` : "sem número"} · instância{" "}
+              <span className="font-mono">{editando.instance_name}</span>
+            </p>
+            <div>
+              <label className="block text-xs font-heading font-semibold text-cinza-medio mb-1">Papel</label>
+              <select
+                value={edPapel}
+                onChange={(e) => setEdPapel(e.target.value as PapelNumero)}
+                className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:border-laranja transition"
+              >
+                <option value="atendimento">Atendimento</option>
+                <option value="prospeccao">Prospecção</option>
+                <option value="backup">Backup</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-heading font-semibold text-cinza-medio mb-1">Persona (nome)</label>
+              <input
+                value={edPersona}
+                onChange={(e) => setEdPersona(e.target.value)}
+                placeholder="Caio, Yasmin…"
+                className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-heading font-semibold text-cinza-medio mb-1">Voice ID (ElevenLabs)</label>
+              <input
+                value={edVoice}
+                onChange={(e) => setEdVoice(e.target.value)}
+                placeholder="cola o ID da voz"
+                className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-heading font-semibold text-cinza-medio mb-1">Prioridade (menor entra primeiro)</label>
+              <input
+                type="number"
+                value={edPrio}
+                onChange={(e) => setEdPrio(Number(e.target.value) || 0)}
+                className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:border-laranja transition"
+              />
+            </div>
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setEditando(null)}
+                disabled={pending}
+                className="px-4 py-2 rounded-lg border border-cinza-claro text-sm font-heading font-medium text-cinza-medio transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={salvarEdicao}
+                disabled={pending}
+                className="px-4 py-2 rounded-lg bg-laranja hover:bg-laranja-escuro disabled:bg-laranja-claro text-white font-heading font-semibold transition"
+              >
+                {pending ? "Salvando…" : "Salvar"}
               </button>
             </div>
           </div>
