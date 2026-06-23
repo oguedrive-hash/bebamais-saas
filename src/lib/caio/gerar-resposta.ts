@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { chatCompletion, type ChatMessage } from "./openai";
 import { getAgendaConfig } from "./agenda-config";
+import { personaDoLead } from "./numeros";
 
 const NOMES_DIAS = [
   "",
@@ -43,6 +44,12 @@ export async function gerarRespostaCaio(opts: {
    * parágrafo separado.
    */
   extrasContexto?: string[];
+  /**
+   * Substitui o prompt-base (comportamento) por um prompt focado pra esta
+   * geração — ex: follow-up usa um prompt próprio em vez do de qualificação.
+   * A base de conhecimento (se houver) continua sendo anexada.
+   */
+  promptBaseOverride?: string;
 }): Promise<{ resposta: string } | { error: string }> {
   const limit = opts.limit ?? 30;
   const supabase = createAdminClient();
@@ -50,7 +57,7 @@ export async function gerarRespostaCaio(opts: {
   const [{ data: lead }, { data: mensagens }] = await Promise.all([
     supabase
       .from("leads")
-      .select("nome, organization_id, origem, origem_inicial, dados_extras")
+      .select("nome, organization_id, origem, origem_inicial, dados_extras, evolution_instance")
       .eq("id", opts.leadId)
       .single(),
     supabase
@@ -100,12 +107,15 @@ export async function gerarRespostaCaio(opts: {
         "Organization sem prompt configurado — configure em Admin → Caio",
     };
   }
+  // Follow-up (e outros callers) podem trocar o comportamento por um prompt
+  // focado via promptBaseOverride; a base de conhecimento segue anexada.
+  const comportamentoBase = opts.promptBaseOverride?.trim() || comportamento;
   const baseConhecimento = org?.base_conhecimento?.trim();
   // Junta comportamento + base (com separador legivel). Base entra como
   // bloco rotulado pra ficar claro pro modelo onde estao os fatos.
   const promptBase = baseConhecimento
-    ? `${comportamento}\n\n[Base de Conhecimento da empresa — use SOMENTE essas informações como fonte de verdade, não invente outras]\n${baseConhecimento}`
-    : comportamento;
+    ? `${comportamentoBase}\n\n[Base de Conhecimento da empresa — use SOMENTE essas informações como fonte de verdade, não invente outras]\n${baseConhecimento}`
+    : comportamentoBase;
 
   const historico: ChatMessage[] = mensagens.map((m) => {
     let content: string;
@@ -134,9 +144,23 @@ export async function gerarRespostaCaio(opts: {
     );
   }
 
-  // Disponibilidade da agenda — sempre incluída pra que o Caio responda
-  // perguntas tipo "atendem sábado?" sem precisar escalar pra humano.
-  if (org?.agenda_config) {
+  // Persona por número (Fase 3 do pool): se o número que serve o lead tem uma
+  // persona diferente do Caio (ex: Yasmin no backup), troca a identidade. Com o
+  // número padrão ("Caio"), NÃO injeta nada — comportamento idêntico ao de hoje.
+  const persona = await personaDoLead(
+    (lead as { evolution_instance?: string | null })?.evolution_instance ?? null,
+  );
+  if (persona?.persona_nome && persona.persona_nome.trim().toLowerCase() !== "caio") {
+    extras.push(
+      `IMPORTANTE: neste atendimento o seu nome é ${persona.persona_nome.trim()} (NÃO Caio). Sempre que se referir a si mesmo, use ${persona.persona_nome.trim()}.`,
+    );
+  }
+
+  // Disponibilidade da agenda — incluída no fluxo normal pra que o Caio responda
+  // perguntas tipo "atendem sábado?" sem escalar. NÃO entra em follow-up
+  // (promptBaseOverride): o follow-up é re-engajamento, e listar horários empurrava
+  // o modelo pro agendamento — atropelava o break-up do último nível com lead engajado.
+  if (!opts.promptBaseOverride && org?.agenda_config) {
     const agenda = getAgendaConfig(org.agenda_config);
     const diasDesc = descreverDias(agenda.dias_semana);
 
@@ -227,10 +251,18 @@ Regras:
   // confirmação de agendamento criado). Concatena APÓS os extras automáticos
   // (origem, dados_extras) pra ter preferência na hora do Caio formular.
   const extrasFinal = [...extras, ...(opts.extrasContexto ?? [])];
+  // Persona por número (Fase 3): o prompt vem saturado de "Caio". Se o número que
+  // serve o lead tem outra persona (ex: Yasmin no backup), troca "Caio" pela persona
+  // NO PROMPT BASE (não nos extras) — uma linha de override não vence o prompt todo.
+  const nomePersona = persona?.persona_nome?.trim();
+  const promptBasePersona =
+    nomePersona && nomePersona.toLowerCase() !== "caio"
+      ? promptBase.split("Caio").join(nomePersona)
+      : promptBase;
   const systemContent =
     extrasFinal.length > 0
-      ? `${promptBase}\n\n[Contexto:\n${extrasFinal.join("\n\n")}]`
-      : promptBase;
+      ? `${promptBasePersona}\n\n[Contexto:\n${extrasFinal.join("\n\n")}]`
+      : promptBasePersona;
 
   // Usa o modelo configurado em OPENAI_MODEL (default gpt-4o-mini). A
   // alucinação de horários (ex: 13:00 → 14:00) é corrigida pelo pós-

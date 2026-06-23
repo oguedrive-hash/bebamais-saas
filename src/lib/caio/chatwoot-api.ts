@@ -9,6 +9,7 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { instanciaDoLead } from "./numeros";
 import { enviarSerializado } from "./fila-envio";
 import { evoSendText, evoSendAudio, evoSendMedia, evoSendPresence } from "./evolution-api";
 import { salvarAudioBase64 } from "./storage-audio";
@@ -529,14 +530,14 @@ async function dadosEnvio(conversationId: number) {
   const r: { chave: string; telefone: string | null; instance: string | null; leadId: string | null } = { chave: `conv:${conversationId}`, telefone: null, instance: null, leadId: null };
   try {
     const admin = createAdminClient();
-    const { data } = await admin.from("leads").select("id, organization_id, telefone").eq("chatwoot_conversation_id", conversationId).limit(1);
-    const lead = data?.[0] as { id?: string; organization_id?: string; telefone?: string } | undefined;
+    const { data } = await admin.from("leads").select("id, organization_id, telefone, evolution_instance").eq("chatwoot_conversation_id", conversationId).limit(1);
+    const lead = data?.[0] as { id?: string; organization_id?: string; telefone?: string; evolution_instance?: string | null } | undefined;
     if (lead?.organization_id) {
       r.chave = `org:${lead.organization_id}`;
       r.telefone = lead.telefone ?? null;
       r.leadId = lead.id ?? null;
-      const { data: orgs } = await admin.from("organizations").select("evolution_instance_name").eq("id", lead.organization_id).limit(1);
-      r.instance = (orgs?.[0] as { evolution_instance_name?: string } | undefined)?.evolution_instance_name ?? null;
+      // Fase 1 pool de números: roteia pelo número SERVINDO o lead (fallback: atendimento da org -> legado).
+      r.instance = await instanciaDoLead(lead.organization_id, lead.evolution_instance ?? null);
     }
   } catch {
     // fallback seguro

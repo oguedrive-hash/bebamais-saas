@@ -266,48 +266,63 @@ export async function gerarLinhaHorariosDoDia(opts: {
     : AGENDA_CONFIG_DEFAULT;
 
   const agora = new Date();
-  const proximaOcorrencia = encontrarProximaOcorrencia(agora, opts.diaSemana);
-  if (!proximaOcorrencia) return null;
-
-  const { data: ocupados } = await admin
-    .from("agendamentos")
-    .select("data_inicio, data_fim")
-    .eq("organization_id", opts.organizationId)
-    .eq("status", "agendado")
-    .gte("data_inicio", proximaOcorrencia.inicioDia.toISOString())
-    .lt("data_inicio", proximaOcorrencia.fimDia.toISOString());
-
   const limiteAntecedencia = new Date(
     agora.getTime() + agenda.antecedencia_minima_horas * 3600 * 1000,
   );
 
-  const horariosLivres: string[] = [];
-  for (const slot of agenda.slots) {
-    const slotInicio = montarHorarioEmDataSP(
-      proximaOcorrencia.ano,
-      proximaOcorrencia.mes,
-      proximaOcorrencia.dia,
-      slot.inicio,
-    );
-    const slotFim = montarHorarioEmDataSP(
-      proximaOcorrencia.ano,
-      proximaOcorrencia.mes,
-      proximaOcorrencia.dia,
-      slot.fim,
-    );
-    if (slotInicio.getTime() < limiteAntecedencia.getTime()) continue;
-    const conflita = (ocupados ?? []).some((o) => {
-      const oIni = new Date(o.data_inicio).getTime();
-      const oFim = new Date(o.data_fim).getTime();
-      return slotInicio.getTime() < oFim && slotFim.getTime() > oIni;
-    });
-    if (conflita) continue;
-    if (opts.turno && !horarioEhDoTurno(slot.inicio, opts.turno)) continue;
-    horariosLivres.push(slot.inicio);
+  // Horários livres de UMA ocorrência concreta (dia específico). Lê os slots
+  // reais da agenda + agendamentos ocupados — determinístico, sem alucinar.
+  const slotsDaOcorrencia = async (oc: {
+    ano: number;
+    mes: number;
+    dia: number;
+    inicioDia: Date;
+    fimDia: Date;
+    label: string;
+  }): Promise<string[]> => {
+    const { data: ocupados } = await admin
+      .from("agendamentos")
+      .select("data_inicio, data_fim")
+      .eq("organization_id", opts.organizationId)
+      .eq("status", "agendado")
+      .gte("data_inicio", oc.inicioDia.toISOString())
+      .lt("data_inicio", oc.fimDia.toISOString());
+    const livres: string[] = [];
+    for (const slot of agenda.slots) {
+      const slotInicio = montarHorarioEmDataSP(oc.ano, oc.mes, oc.dia, slot.inicio);
+      const slotFim = montarHorarioEmDataSP(oc.ano, oc.mes, oc.dia, slot.fim);
+      if (slotInicio.getTime() < limiteAntecedencia.getTime()) continue;
+      const conflita = (ocupados ?? []).some((o) => {
+        const oIni = new Date(o.data_inicio).getTime();
+        const oFim = new Date(o.data_fim).getTime();
+        return slotInicio.getTime() < oFim && slotFim.getTime() > oIni;
+      });
+      if (conflita) continue;
+      if (opts.turno && !horarioEhDoTurno(slot.inicio, opts.turno)) continue;
+      livres.push(slot.inicio);
+    }
+    return livres;
+  };
+
+  // 1ª ocorrência (pode ser HOJE). Se hoje já esgotou (todos os slots caíram
+  // dentro da antecedência), rola pra próxima semana daquele dia em vez de só
+  // pedir "qual outro dia" — assim o Caio sempre oferece horário concreto.
+  let oc = encontrarProximaOcorrencia(agora, opts.diaSemana);
+  if (!oc) return null;
+  let horariosLivres = await slotsDaOcorrencia(oc);
+  if (horariosLivres.length === 0) {
+    const seguinte = encontrarProximaOcorrencia(oc.fimDia, opts.diaSemana);
+    if (seguinte) {
+      const livres2 = await slotsDaOcorrencia(seguinte);
+      if (livres2.length > 0) {
+        oc = seguinte;
+        horariosLivres = livres2;
+      }
+    }
   }
 
   if (horariosLivres.length === 0) return null;
-  return `Na ${proximaOcorrencia.label} tenho disponível às ${horariosLivres.join(", ")}. Qual horário prefere?`;
+  return `Na ${oc.label} tenho disponível às ${horariosLivres.join(", ")}. Qual horário prefere?`;
 }
 
 export async function tentarResponderDisponibilidade(opts: {

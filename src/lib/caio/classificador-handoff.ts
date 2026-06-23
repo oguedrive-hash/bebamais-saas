@@ -38,7 +38,7 @@ ATENCAO — NAO eh "pede_humano" se:
 
 REGRAS:
 - Se duvidoso, classifica "nenhum".
-- "muda_reuniao" so se a reuniao ja existir no contexto (lead esta confirmando, perguntando se da pra mudar, etc).
+- "muda_reuniao": classifica quando o lead se refere de forma DEFINIDA a uma reuniao/consultoria DELE — pedindo pra remarcar, trocar horario ou cancelar (ex: "cancelar a reuniao que marquei", "minha consultoria", "preciso remarcar nossa reuniao"). Vale MESMO que a reuniao nao apareca no contexto recente, desde que o lead afirme ter uma. NAO classifica se for HIPOTETICO/futuro ("e se eu precisar cancelar depois?", "da pra remarcar caso precise?").
 - Frustracao leve ("ah ta", "hum...", "to ocupado") NAO eh "irritado".
 - "voce eh humano?" / "eh bot?" / "eh IA?" NUNCA eh "pede_humano" — eh curiosidade, classifica "nenhum".
 

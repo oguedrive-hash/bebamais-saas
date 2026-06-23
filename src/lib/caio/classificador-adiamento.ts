@@ -17,9 +17,9 @@ export type ResultadoClassificacao =
 
 const SYSTEM_PROMPT = `Você é um classificador. Recebe uma mensagem recente de um lead e o contexto da conversa anterior. Classifica a INTENÇÃO em UMA dessas opções:
 
-1. "pede_adiamento_sem_data" — lead diz que está sem tempo, atolado, ocupado, etc, e pede pra falar outro dia/momento SEM especificar quando. Ex: "me chama outro dia", "tô sem tempo agora", "depois", "to atolado".
+1. "pede_adiamento_sem_data" — lead pede pra falar outro momento mas SEM nenhuma referência temporal computável. Ex: "me chama outro dia", "tô sem tempo agora", "depois", "to atolado", "qualquer hora", "mais pra frente". Se houver QUALQUER prazo ou quantidade ("daqui X", "em X", "semana que vem", "amanhã"), NÃO é esta — é "informa_data".
 
-2. "informa_data" — lead RESPONDE quando pode ser contatado (ex: "amanhã às 14h", "segunda de manhã", "depois do almoço", "dia 5/6", "semana que vem"). Pode incluir frases curtas tipo "amanhã" ou "às 15h".
+2. "informa_data" — lead indica QUANDO pode ser contatado, seja respondendo a uma pergunta OU já pedindo o adiamento com um prazo computável. Inclui: datas/horários ("amanhã às 14h", "segunda de manhã", "dia 5/6", "depois do almoço") E deslocamentos relativos ("me chama daqui 3 semanas", "em 10 minutos", "daqui 2 dias", "mês que vem", "semana que vem"). Frases curtas tipo "amanhã" ou "às 15h" também contam.
 
 3. "responde_normal" — qualquer outra coisa. Lead conversa, pergunta, responde algo da conversa, agradece, etc.
 
@@ -27,6 +27,7 @@ REGRAS:
 - Se duvidoso, classifica como "responde_normal"
 - Se for "informa_data", você DEVE retornar o campo "momento_iso" com a data/hora em formato ISO 8601 no fuso America/Sao_Paulo (UTC-3). Hoje é a data de referência fornecida no contexto.
 - Para datas relativas ("amanhã", "segunda"), calcula em relação ao "hoje" fornecido.
+- Deslocamentos relativos ("daqui X minutos/horas/dias/semanas/meses", "em X ...", "semana/mês que vem") → SOMA ao "hoje" e devolve "informa_data" com o momento_iso. Isso vale MESMO quando o lead está PEDINDO o adiamento (não só respondendo a uma pergunta). Ex: hoje 2026-06-22 + "daqui 3 semanas" → "2026-07-13T14:00:00-03:00"; "em 10 minutos" → soma 10 min ao horário atual.
 - Para horários sem AM/PM em mensagem comercial, assume horário comercial: manhã=09:00, tarde=14:00, noite=19:00.
 - Se faltar hora, assume 14:00.
 

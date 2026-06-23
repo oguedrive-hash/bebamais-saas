@@ -162,7 +162,9 @@ async function processarEvolution(
     await admin.from("mensagens").insert({ organization_id: ORG_ID, lead_id: leadId, direcao: "entrada", tipo, conteudo: texto, attachment_url: attachmentUrl });
     // Lead respondeu -> zera cadencias e reengaja (replica o que o webhook do Chatwoot fazia)
     const agora = new Date().toISOString();
-    await admin.from("leads").update({ numero_followup: 0, numero_reativacao: 0, numero_prospeccao: 0, proximo_followup_em: null, ultima_msg_lead_em: agora }).eq("id", leadId);
+    // Fase 1 pool: carimba o número que RECEBEU o inbound como o que serve o lead
+    // (assim a resposta sai pelo mesmo número). Com 1 número, é sempre "facilita".
+    await admin.from("leads").update({ numero_followup: 0, numero_reativacao: 0, numero_prospeccao: 0, proximo_followup_em: null, ultima_msg_lead_em: agora, evolution_instance: instance }).eq("id", leadId);
     await admin.from("leads").update({ proximo_contato_em: null, status: "em_conversa", origem: "inbound" }).eq("id", leadId).in("status", ["perdido", "fechou"]);
     await admin.from("leads").update({ proximo_contato_em: null, status: "em_conversa" }).eq("id", leadId).eq("origem", "prospeccao").in("status", ["aguardando_primeiro_contato", "em_prospeccao"]);
     await admin.from("leads").update({ status: "em_conversa" }).eq("id", leadId).eq("status", "novo_lead");

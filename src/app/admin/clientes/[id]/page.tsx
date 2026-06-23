@@ -86,6 +86,12 @@ export default async function ClienteDetalhePage({
                 Prospecção →
               </Link>
               <Link
+                href={`/admin/clientes/${cliente.id}/numeros`}
+                className="text-sm text-laranja hover:text-laranja-escuro font-heading font-semibold"
+              >
+                Números →
+              </Link>
+              <Link
                 href={`/admin/clientes/${cliente.id}/editar`}
                 className="text-sm text-laranja hover:text-laranja-escuro font-heading font-semibold"
               >

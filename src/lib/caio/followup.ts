@@ -32,6 +32,7 @@ type Regra = {
   mensagem: string;
   usa_ia: boolean;
   ativo: boolean;
+  instrucao_ia?: string | null;
   tipo_midia?: "texto" | "audio" | "imagem" | "video";
   attachment_url?: string | null;
   attachment_mime?: string | null;
@@ -45,6 +46,7 @@ type ReativacaoRegra = {
   mensagem: string;
   usa_ia: boolean;
   ativo: boolean;
+  instrucao_ia?: string | null;
   tipo_midia?: "texto" | "audio" | "imagem" | "video";
   attachment_url?: string | null;
   attachment_mime?: string | null;
@@ -125,6 +127,52 @@ function calcularProximoEm(
   d.setHours(d.getHours() + horas);
   d.setMinutes(d.getMinutes() + minutos);
   return d;
+}
+
+/**
+ * Prompt FOCADO de follow-up. Substitui o prompt gigante de qualificacao (via
+ * promptBaseOverride) pra IA escrever um re-engajamento em vez de continuar
+ * qualificando. Regras gerais vivem aqui; a intencao por nivel entra via
+ * extrasContexto (montarExtrasFollowup).
+ */
+export const PROMPT_FOLLOWUP = `Voce e o Caio, pre-vendedor (SDR) da Facilita Plus — empresa de IA aplicada que desenvolve sistema sob medida, integra ferramentas, automatiza processo e atendimento pra destravar a operacao das empresas.
+
+TAREFA: esta conversa no WhatsApp PAROU e voce esta fazendo um FOLLOW-UP pra re-engajar o lead. ISTO NAO E O PRIMEIRO CONTATO — o lead ja recebeu mensagem sua e nao respondeu.
+
+REGRAS:
+- NUNCA se reapresente. NAO diga "Aqui e o Caio, da Facilita", nao repita seu nome nem o nome da empresa — o lead ja sabe quem voce e.
+- Reconheca de leve que voce ja falou antes e nao teve retorno: "voltando aqui", "passando pra saber", "so retomando".
+- Leia o historico. Se o lead JA te contou algo (dor, ramo, contexto), retome e adapte a mensagem a isso. Se ele NUNCA respondeu (so ha mensagens SUAS no historico), NAO invente contexto nem diga "aquilo que voce me contou" — puxe a conversa de forma leve e curiosa pra ele responder.
+- NAO repita perguntas que voce ja fez; varie a abordagem.
+- Mensagem CURTA de WhatsApp: 1 a 2 frases. Natural, sem soar automatica ou robotica.
+- Portugues do Brasil. SEM emoji. Use o primeiro nome do lead apenas se souber. NAO invente numeros, cases, prazos nem URLs.
+- Responda APENAS com a mensagem que vai pro lead, nada mais.`;
+
+/**
+ * Linhas de [Contexto] com a intencao do nivel atual. As regras gerais ficam
+ * no PROMPT_FOLLOWUP. Usada pelo followup real E pelo /api/debug/simular-followup.
+ */
+export function montarExtrasFollowup(
+  proximoNivel: number,
+  totalNiveis: number,
+  instrucaoIa?: string | null,
+): string[] {
+  const ehUltima = proximoNivel >= totalNiveis;
+  const extras: string[] = [];
+  if (ehUltima) {
+    // O break-up tem que DOMINAR: precisa NEGAR explicitamente a tarefa de
+    // re-engajar do PROMPT_FOLLOWUP, senao com lead engajado o modelo volta a
+    // vender/perguntar (ex: "que bom que gostou! qual dia fica bom?"). Por isso
+    // vem PRIMEIRO e proibe agenda/pergunta de forma literal.
+    extras.push(
+      `ATENCAO — ESTA E A DESPEDIDA FINAL (break-up), NAO um follow-up. Esqueca o objetivo de re-engajar: esta mensagem NAO tenta trazer o lead de volta nem dar continuidade ao papo. PROIBIDO, mesmo que o lead tenha demonstrado interesse: fazer qualquer pergunta; oferecer dia/horario; falar de agenda, sessao, diagnostico ou reuniao; propor proximo passo. Escreva SO uma despedida curta e cordial: diga que nao vai mais insistir pra nao incomodar, deixe a porta aberta ("quando fizer sentido, e so me chamar") e deseje sucesso. A mensagem TERMINA em ponto final. NUNCA em "?".`,
+    );
+  }
+  extras.push(`Esta e a tentativa numero ${proximoNivel} de ${totalNiveis}.`);
+  if (instrucaoIa && instrucaoIa.trim()) {
+    extras.push(`Objetivo desta tentativa: ${instrucaoIa.trim()}`);
+  }
+  return extras;
 }
 
 export async function processarFollowupLead(
@@ -243,10 +291,21 @@ export async function processarFollowupLead(
   // Gera mensagem (IA ou template)
   let texto: string;
   if (regra.usa_ia) {
-    const result = await gerarRespostaCaio({ leadId: lead.id });
+    // Follow-up inteligente: a IA le o historico e adapta. Instrucao por nivel
+    // via extrasContexto. Cobre os 2 casos: lead que ja respondeu (adapta ao
+    // que ele disse) e lead que nunca respondeu (puxa a conversa SEM inventar).
+    const result = await gerarRespostaCaio({
+      leadId: lead.id,
+      promptBaseOverride: PROMPT_FOLLOWUP,
+      extrasContexto: montarExtrasFollowup(
+        proximoNivel,
+        regrasAtivas.length,
+        regra.instrucao_ia,
+      ),
+    });
     if ("error" in result) {
       console.error("[followup:ia]", lead.id, result.error);
-      // Fallback pro template do user
+      // Fallback pro template (mensagem generica de seguranca)
       texto = aplicarTemplate(regra.mensagem, lead);
     } else {
       texto = result.resposta;

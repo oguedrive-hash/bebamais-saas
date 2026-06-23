@@ -17,6 +17,36 @@ function soDigitos(tel: string): string {
   return (tel || "").replace(/\D/g, "");
 }
 
+/**
+ * Estado da conexão do WhatsApp na Evolution: "open" | "connecting" | "close" | ...
+ * Usado como guarda anti-hammer antes de enviar. Em erro/timeout retorna
+ * "unknown" — quem chama trata "unknown" como fail-open (não bloqueia o envio
+ * por um hiccup do check).
+ */
+export async function evoConnectionState(instance: string): Promise<string> {
+  let url: string, key: string;
+  try {
+    ({ url, key } = config());
+  } catch {
+    return "unknown";
+  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(`${url}/instance/connectionState/${instance}`, {
+      headers: { apikey: key },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) return "unknown";
+    const data = (await res.json()) as { instance?: { state?: string } };
+    return data?.instance?.state ?? "unknown";
+  } catch {
+    clearTimeout(timeoutId);
+    return "unknown";
+  }
+}
+
 async function postEvolution(
   instance: string,
   rota: string,
@@ -28,6 +58,22 @@ async function postEvolution(
     ({ url, key } = config());
   } catch (e) {
     return { error: e instanceof Error ? e.message : "config inválida" };
+  }
+
+  // Guarda anti-hammer: se o WhatsApp está COMPROVADAMENTE desconectado
+  // ("close" — ex.: o device_removed que derrubou o Caio em 10/06 e 19/06),
+  // NÃO envia: só fail-fast. Evita a tempestade de "Connection Closed" pós-logout
+  // e poupa o número de parecer bot tentando mandar offline. Só vale pra envio de
+  // mensagem (grupo "message"); presença (grupo "chat") é fire-and-forget. Em
+  // "unknown"/timeout do check, segue o envio (fail-open) pra não travar o Caio.
+  if (grupo === "message") {
+    const estado = await evoConnectionState(instance);
+    if (estado === "close") {
+      console.error(
+        `[evolution-api] envio BLOQUEADO: instância "${instance}" desconectada (state=close). Reconectar via QR.`,
+      );
+      return { error: "WhatsApp desconectado (state=close) — envio bloqueado" };
+    }
   }
 
   const controller = new AbortController();

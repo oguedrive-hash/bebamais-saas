@@ -16,6 +16,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logarEvento } from "@/lib/caio/eventos";
 import { enviarComMidia } from "@/lib/caio/enviar-com-midia";
+import { numeroPorPapel } from "@/lib/caio/numeros";
 
 type RegraProspeccao = {
   nivel: number;
@@ -147,6 +148,18 @@ export async function processarProspeccaoLead(
       .update({ status: "perdido", proximo_contato_em: null })
       .eq("id", lead.id);
     return { ok: true, acao: "esgotou" };
+  }
+
+  // Fase 1 pool de números: disparo frio sai pelo número do slot de PROSPECÇÃO
+  // (se cadastrado). Carimba o lead ANTES do envio — o roteamento central
+  // (dadosEnvio) lê o evolution_instance do lead. Sem número de prospecção
+  // cadastrado, segue no fallback (número de atendimento/legado).
+  const numProsp = await numeroPorPapel(lead.organization_id, "prospeccao");
+  if (numProsp?.instance_name) {
+    await supabase
+      .from("leads")
+      .update({ evolution_instance: numProsp.instance_name })
+      .eq("id", lead.id);
   }
 
   // Garante que tem conversa no Chatwoot

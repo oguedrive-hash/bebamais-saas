@@ -16,6 +16,7 @@ import {
 } from "@/lib/caio/enviar-com-midia";
 import { evoSendText } from "@/lib/caio/evolution-api";
 import { enviarSerializado } from "@/lib/caio/fila-envio";
+import { numeroPorPapel } from "@/lib/caio/numeros";
 
 type RegraLembrete = {
   nivel: number;
@@ -299,9 +300,12 @@ Quando: ${dataStr}
 
 Conversa: https://app.facilitaplus.com.br/dashboard/contatos/${ag.lead.id}`;
 
-      // Chatwoot desativado: envia direto pro admin via Evolution, pela esteira
+      // Chatwoot desativado: envia direto pro admin via Evolution, pela esteira.
+      // Sai pelo número de atendimento do pool (fallback "facilita").
+      const instanceAdmin =
+        (await numeroPorPapel(ag.organization_id, "atendimento"))?.instance_name ?? "facilita";
       const sent = await enviarSerializado("org:" + ag.organization_id, () =>
-        evoSendText({ instance: "facilita", telefone: adminNumero, texto }),
+        evoSendText({ instance: instanceAdmin, telefone: adminNumero, texto }),
       );
       if ("error" in sent) {
         console.warn(
