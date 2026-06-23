@@ -8,6 +8,7 @@ import {
 import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
 import { classificarAceite } from "@/lib/caio/classificador-aceite";
 import { classificarHandoff } from "@/lib/caio/classificador-handoff";
+import { personaDoLead } from "@/lib/caio/numeros";
 import { dispararHandoff } from "@/lib/caio/handoff";
 import { detectarDesqualificacao } from "@/lib/caio/detector-desqualificacao";
 import { tentarAgendar } from "@/lib/caio/tentar-agendar";
@@ -1041,17 +1042,26 @@ async function gerarERespondeCaio(
   }
 
   if (responderComAudio) {
-    // Busca voice config da org pra esse lead
+    // Voz: prefere a do NÚMERO que serve o lead (persona_voice_id — ex: Juliana
+    // com voz própria); fallback pra voz global da org (Caio).
+    const { data: leadVoz } = await supabase
+      .from("leads")
+      .select("evolution_instance")
+      .eq("id", leadId)
+      .maybeSingle();
+    const personaV = await personaDoLead(
+      (leadVoz as { evolution_instance?: string | null } | null)?.evolution_instance ?? null,
+    );
     const { data: org } = await supabase
       .from("organizations")
       .select("voice_id, voice_settings")
       .eq("id", organizationId)
       .single();
 
-    // TTS via ElevenLabs + envia áudio no Chatwoot
+    // TTS via ElevenLabs + envia áudio
     const tts = await gerarAudio({
       texto,
-      voiceId: org?.voice_id ?? undefined,
+      voiceId: personaV?.persona_voice_id || org?.voice_id || undefined,
       voiceSettings: org?.voice_settings ?? null,
     });
     if ("error" in tts) {

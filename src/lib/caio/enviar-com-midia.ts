@@ -14,6 +14,7 @@ import {
   enviarMensagemComAudio,
 } from "@/lib/caio/chatwoot-api";
 import { gerarAudio } from "@/lib/caio/elevenlabs";
+import { personaDoLead } from "@/lib/caio/numeros";
 
 export type TipoMidia = "texto" | "audio" | "imagem" | "video";
 
@@ -30,6 +31,15 @@ export async function enviarComMidia(opts: {
 
   if (tipoMidia === "audio") {
     const supabase = createAdminClient();
+    // Voz do NÚMERO que serve o lead (persona_voice_id); fallback voz da org.
+    const { data: leadV } = await supabase
+      .from("leads")
+      .select("evolution_instance")
+      .eq("chatwoot_conversation_id", conversationId)
+      .limit(1);
+    const personaV = await personaDoLead(
+      (leadV?.[0] as { evolution_instance?: string | null } | undefined)?.evolution_instance ?? null,
+    );
     const { data: orgVoz } = await supabase
       .from("organizations")
       .select("voice_id, voice_settings")
@@ -37,7 +47,7 @@ export async function enviarComMidia(opts: {
       .single();
     const tts = await gerarAudio({
       texto,
-      voiceId: orgVoz?.voice_id ?? undefined,
+      voiceId: personaV?.persona_voice_id || orgVoz?.voice_id || undefined,
       voiceSettings: orgVoz?.voice_settings ?? null,
     });
     if ("error" in tts) {

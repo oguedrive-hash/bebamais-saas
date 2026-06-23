@@ -22,6 +22,7 @@ import {
 } from "@/lib/caio/chatwoot-api";
 import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
 import { gerarAudio } from "@/lib/caio/elevenlabs";
+import { personaDoLead } from "@/lib/caio/numeros";
 import { logarEvento } from "@/lib/caio/eventos";
 
 type Regra = {
@@ -319,6 +320,15 @@ export async function processarFollowupLead(
   let sent: { id?: number } | { error: string };
 
   if (tipoMidia === "audio") {
+    // Voz do NÚMERO que serve o lead (persona_voice_id); fallback voz da org.
+    const { data: leadV } = await supabase
+      .from("leads")
+      .select("evolution_instance")
+      .eq("id", lead.id)
+      .maybeSingle();
+    const personaV = await personaDoLead(
+      (leadV as { evolution_instance?: string | null } | null)?.evolution_instance ?? null,
+    );
     // TTS via ElevenLabs + envio como audio
     const { data: orgVoz } = await supabase
       .from("organizations")
@@ -327,7 +337,7 @@ export async function processarFollowupLead(
       .single();
     const tts = await gerarAudio({
       texto,
-      voiceId: orgVoz?.voice_id ?? undefined,
+      voiceId: personaV?.persona_voice_id || orgVoz?.voice_id || undefined,
       voiceSettings: orgVoz?.voice_settings ?? null,
     });
     if ("error" in tts) {
