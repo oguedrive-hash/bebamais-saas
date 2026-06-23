@@ -530,11 +530,13 @@ async function dadosEnvio(conversationId: number) {
   const r: { chave: string; telefone: string | null; instance: string | null; leadId: string | null } = { chave: `conv:${conversationId}`, telefone: null, instance: null, leadId: null };
   try {
     const admin = createAdminClient();
-    const { data } = await admin.from("leads").select("id, organization_id, telefone, evolution_instance").eq("chatwoot_conversation_id", conversationId).limit(1);
-    const lead = data?.[0] as { id?: string; organization_id?: string; telefone?: string; evolution_instance?: string | null } | undefined;
+    const { data } = await admin.from("leads").select("id, organization_id, telefone, evolution_instance, whatsapp_jid").eq("chatwoot_conversation_id", conversationId).limit(1);
+    const lead = data?.[0] as { id?: string; organization_id?: string; telefone?: string; evolution_instance?: string | null; whatsapp_jid?: string | null } | undefined;
     if (lead?.organization_id) {
       r.chave = `org:${lead.organization_id}`;
-      r.telefone = lead.telefone ?? null;
+      // Prefere o JID @lid capturado no inbound (entrega a contatos migrados pro LID);
+      // fallback pro telefone (contatos antigos / leads sem inbound ainda).
+      r.telefone = lead.whatsapp_jid || lead.telefone || null;
       r.leadId = lead.id ?? null;
       // Fase 1 pool de números: roteia pelo número SERVINDO o lead (fallback: atendimento da org -> legado).
       r.instance = await instanciaDoLead(lead.organization_id, lead.evolution_instance ?? null);

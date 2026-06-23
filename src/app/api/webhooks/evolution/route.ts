@@ -10,7 +10,7 @@ import { salvarAudioBase64 } from "@/lib/caio/storage-audio";
 
 const ORG_ID = "455b9a80-6bb9-461b-b62d-188f0a28c110"; // Facilita
 
-type EvoKey = { remoteJid?: string; fromMe?: boolean; id?: string };
+type EvoKey = { remoteJid?: string; remoteJidAlt?: string; addressingMode?: string; fromMe?: boolean; id?: string };
 type EvoData = {
   key?: EvoKey;
   pushName?: string;
@@ -71,13 +71,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false }, { status: 400 });
   }
   const d = body.data;
-  const remoteJid = d?.key?.remoteJid ?? "";
+  const rjid = d?.key?.remoteJid ?? "";
+  const rjidAlt = d?.key?.remoteJidAlt ?? "";
   const fromMe = d?.key?.fromMe ?? false;
-  const telefone = remoteJid.replace(/@.*/, "").replace(/[^0-9]/g, "");
+  // O inbound traz o LID (@lid) e o número (@s.whatsapp.net). Identifica o lead pelo
+  // NÚMERO real; guarda o @lid pra RESPONDER por ele (entrega a quem migrou pro LID —
+  // enviar pro número puro fica PENDING e não chega).
+  const numeroJid = [rjid, rjidAlt].find((j) => j.endsWith("@s.whatsapp.net")) ?? rjid;
+  const lidJid = [rjid, rjidAlt].find((j) => j.endsWith("@lid")) ?? "";
+  const telefone = numeroJid.replace(/@.*/, "").replace(/[^0-9]/g, "");
   const instance = body.instance ?? "facilita";
 
   if (process.env.EVOLUTION_RECEBE !== "1" || fromMe || !telefone) {
-    console.log("[evo:webhook]", process.env.EVOLUTION_RECEBE === "1" ? "skip" : "obs", JSON.stringify({ remoteJid, fromMe, tipo: d?.messageType }));
+    console.log("[evo:webhook]", process.env.EVOLUTION_RECEBE === "1" ? "skip" : "obs", JSON.stringify({ rjid, rjidAlt, lidJid, fromMe, tipo: d?.messageType }));
     return NextResponse.json({ ok: true });
   }
 
@@ -91,7 +97,7 @@ export async function POST(request: NextRequest) {
   // (transcrição Whisper + debounce 10-18s + digitação 60s+ + envio); segurar a
   // resposta fazia a Evolution achar que falhou e re-entregar — causa do loop.
   after(() =>
-    processarEvolution(d, telefone, instance).catch((e) =>
+    processarEvolution(d, telefone, instance, lidJid).catch((e) =>
       console.error("[evo:webhook] erro bg:", e),
     ),
   );
@@ -116,6 +122,7 @@ async function processarEvolution(
   d: EvoData | undefined,
   telefone: string,
   instance: string,
+  lidJid: string,
 ): Promise<void> {
   let texto: string | null = d?.message?.conversation ?? d?.message?.extendedTextMessage?.text ?? null;
   let tipo = "texto";
@@ -150,7 +157,7 @@ async function processarEvolution(
     if (!leadId) {
       const { data: novo } = await admin
         .from("leads")
-        .insert({ organization_id: ORG_ID, telefone: "+" + telefone, telefone_digitos: telefone, nome: d?.pushName ?? null, status: "novo_lead", origem: "inbound", source: "whatsapp", caio_ativo: true, chatwoot_conversation_id: Math.floor(Math.random() * 2000000000) })
+        .insert({ organization_id: ORG_ID, telefone: "+" + telefone, telefone_digitos: telefone, nome: d?.pushName ?? null, status: "novo_lead", origem: "inbound", source: "whatsapp", caio_ativo: true, whatsapp_jid: lidJid || null, chatwoot_conversation_id: Math.floor(Math.random() * 2000000000) })
         .select("id")
         .single();
       leadId = novo?.id as string | undefined;
@@ -164,7 +171,9 @@ async function processarEvolution(
     const agora = new Date().toISOString();
     // Fase 1 pool: carimba o número que RECEBEU o inbound como o que serve o lead
     // (assim a resposta sai pelo mesmo número). Com 1 número, é sempre "facilita".
-    await admin.from("leads").update({ numero_followup: 0, numero_reativacao: 0, numero_prospeccao: 0, proximo_followup_em: null, ultima_msg_lead_em: agora, evolution_instance: instance }).eq("id", leadId);
+    const updReengaja: Record<string, unknown> = { numero_followup: 0, numero_reativacao: 0, numero_prospeccao: 0, proximo_followup_em: null, ultima_msg_lead_em: agora, evolution_instance: instance };
+    if (lidJid) updReengaja.whatsapp_jid = lidJid; // captura/atualiza o @lid em leads que já existiam
+    await admin.from("leads").update(updReengaja).eq("id", leadId);
     await admin.from("leads").update({ proximo_contato_em: null, status: "em_conversa", origem: "inbound" }).eq("id", leadId).in("status", ["perdido", "fechou"]);
     await admin.from("leads").update({ proximo_contato_em: null, status: "em_conversa" }).eq("id", leadId).eq("origem", "prospeccao").in("status", ["aguardando_primeiro_contato", "em_prospeccao"]);
     await admin.from("leads").update({ status: "em_conversa" }).eq("id", leadId).eq("status", "novo_lead");

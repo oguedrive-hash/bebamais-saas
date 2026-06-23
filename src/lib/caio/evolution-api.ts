@@ -17,6 +17,15 @@ function soDigitos(tel: string): string {
   return (tel || "").replace(/\D/g, "");
 }
 
+// Destino do envio: se já vier um JID (@lid / @s.whatsapp.net), usa como está.
+// Crucial pra ENTREGAR: o WhatsApp migra contatos pro "LID" (addressingMode=lid) e
+// quem está migrado NÃO recebe no @s.whatsapp.net (fica PENDING) — tem que mandar
+// pro @lid. Número solto continua virando só dígitos (a Evolution monta o JID).
+function resolverDestino(dest: string): string {
+  const d = (dest || "").trim();
+  return d.includes("@") ? d : soDigitos(d);
+}
+
 /**
  * Estado da conexão do WhatsApp na Evolution: "open" | "connecting" | "close" | ...
  * Usado como guarda anti-hammer antes de enviar. Em erro/timeout retorna
@@ -107,7 +116,7 @@ export async function evoSendText(opts: {
   texto: string;
 }): Promise<{ id: string } | { error: string }> {
   return postEvolution(opts.instance, "sendText", {
-    number: soDigitos(opts.telefone),
+    number: resolverDestino(opts.telefone),
     text: opts.texto,
   });
 }
@@ -126,7 +135,7 @@ export async function evoSendPresence(opts: {
   return postEvolution(
     opts.instance,
     "sendPresence",
-    { number: soDigitos(opts.telefone), presence: opts.presence, delay: opts.delayMs ?? 0 },
+    { number: resolverDestino(opts.telefone), presence: opts.presence, delay: opts.delayMs ?? 0 },
     "chat",
   );
 }
@@ -137,7 +146,7 @@ export async function evoSendAudio(opts: {
   audioBase64: string;
 }): Promise<{ id: string } | { error: string }> {
   return postEvolution(opts.instance, "sendWhatsAppAudio", {
-    number: soDigitos(opts.telefone),
+    number: resolverDestino(opts.telefone),
     audio: opts.audioBase64,
   });
 }
@@ -152,7 +161,7 @@ export async function evoSendMedia(opts: {
   fileName?: string;
 }): Promise<{ id: string } | { error: string }> {
   return postEvolution(opts.instance, "sendMedia", {
-    number: soDigitos(opts.telefone),
+    number: resolverDestino(opts.telefone),
     mediatype: opts.mediatype,
     mimetype: opts.mimetype,
     media: opts.media,
