@@ -605,6 +605,37 @@ export async function salvarNotas(formData: FormData): Promise<
 }
 
 /**
+ * Finaliza/dispensa a notificação de handoff de um lead (limpa precisa_humano_*).
+ * Usado pelo botão "Finalizar" no sino quando o humano já cuidou do lead — senão a
+ * notificação fica presa pra sempre (nada limpava esses campos antes).
+ */
+export async function resolverHandoff(formData: FormData): Promise<
+  { ok: true } | { error: string }
+> {
+  const leadId = formData.get("leadId");
+  if (typeof leadId !== "string" || !leadId) {
+    return { error: "leadId ausente" };
+  }
+  // Valida acesso pela RLS (o usuário precisa enxergar o lead da org dele).
+  const supabase = await createClient();
+  const { data: lead, error } = await supabase
+    .from("leads")
+    .select("id")
+    .eq("id", leadId)
+    .single();
+  if (error || !lead) return { error: "Lead não encontrado" };
+
+  const admin = createAdminClient();
+  await admin
+    .from("leads")
+    .update({ precisa_humano_motivo: null, precisa_humano_em: null })
+    .eq("id", leadId);
+  revalidatePath("/dashboard");
+  revalidatePath(`/dashboard/contatos/${leadId}`);
+  return { ok: true };
+}
+
+/**
  * Liga ou desliga follow-up automatico de um lead especifico.
  * Quando desliga, o worker ignora esse lead mesmo se proximo_followup_em vencer.
  * Quando liga, se nao houver proximo agendado e a org tiver regras, agenda a 1a.

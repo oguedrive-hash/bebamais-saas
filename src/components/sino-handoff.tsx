@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
+import { BotaoFinalizarHandoff } from "@/components/botao-finalizar-handoff";
 
 export type LeadHandoff = {
   id: string;
@@ -145,29 +146,32 @@ export function SinoHandoff({
                     </p>
                   </div>
                   {leads.map((lead) => (
-                    <Link
+                    <div
                       key={`handoff-${lead.id}`}
-                      href={`/dashboard/contatos/${lead.id}`}
-                      onClick={() => setAberto(false)}
-                      className="block px-4 py-3 border-b border-cinza-claro/60 last:border-b-0 hover:bg-offwhite transition"
+                      className="flex items-start gap-2 px-4 py-3 border-b border-cinza-claro/60 last:border-b-0 hover:bg-offwhite transition"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <p className="font-heading font-semibold text-preto text-sm truncate">
-                            {lead.nome ?? "Sem nome"}
-                          </p>
-                          <p className="text-xs text-cinza-medio font-mono mt-0.5">
-                            {lead.telefone}
-                          </p>
-                          <p className="text-[11px] text-amber-700 font-heading font-semibold mt-1">
-                            {labelMotivo(lead.precisa_humano_motivo)}
-                          </p>
-                        </div>
-                        <span className="text-[10px] text-cinza-medio whitespace-nowrap mt-0.5">
+                      <Link
+                        href={`/dashboard/contatos/${lead.id}`}
+                        onClick={() => setAberto(false)}
+                        className="flex-1 min-w-0 block"
+                      >
+                        <p className="font-heading font-semibold text-preto text-sm truncate">
+                          {lead.nome ?? "Sem nome"}
+                        </p>
+                        <p className="text-xs text-cinza-medio font-mono mt-0.5">
+                          {lead.telefone}
+                        </p>
+                        <p className="text-[11px] text-amber-700 font-heading font-semibold mt-1">
+                          {labelMotivo(lead.precisa_humano_motivo)}
+                        </p>
+                      </Link>
+                      <div className="flex flex-col items-end gap-1.5 shrink-0">
+                        <span className="text-[10px] text-cinza-medio whitespace-nowrap">
                           {tempoRelativo(lead.precisa_humano_em)}
                         </span>
+                        <BotaoFinalizarHandoff leadId={lead.id} />
                       </div>
-                    </Link>
+                    </div>
                   ))}
                 </div>
               )}

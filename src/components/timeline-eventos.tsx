@@ -1,3 +1,7 @@
+"use client";
+
+import { useState } from "react";
+
 type Evento = {
   id: string;
   tipo: string;
@@ -30,7 +34,11 @@ const COR_POR_TIPO: Record<string, string> = {
   prospeccao_enviada: "text-blue-700",
 };
 
+const LIMITE_INICIAL = 5;
+
 export function TimelineEventos({ eventos }: { eventos: Evento[] }) {
+  const [expandido, setExpandido] = useState(false);
+
   if (eventos.length === 0) {
     return (
       <p className="text-xs text-cinza-medio text-center py-6">
@@ -39,9 +47,12 @@ export function TimelineEventos({ eventos }: { eventos: Evento[] }) {
     );
   }
 
+  const visiveis = expandido ? eventos : eventos.slice(0, LIMITE_INICIAL);
+
   return (
+    <>
     <ul className="space-y-3">
-      {eventos.map((e) => {
+      {visiveis.map((e) => {
         const icone = ICONE_POR_TIPO[e.tipo] ?? "•";
         const cor = COR_POR_TIPO[e.tipo] ?? "text-preto";
         return (
@@ -62,6 +73,16 @@ export function TimelineEventos({ eventos }: { eventos: Evento[] }) {
         );
       })}
     </ul>
+    {eventos.length > LIMITE_INICIAL && (
+      <button
+        type="button"
+        onClick={() => setExpandido((v) => !v)}
+        className="mt-3 w-full text-center text-xs text-laranja hover:text-laranja-escuro font-heading font-semibold py-1.5 transition"
+      >
+        {expandido ? "Ver menos ↑" : `Ver todos (${eventos.length}) ↓`}
+      </button>
+    )}
+    </>
   );
 }
 
