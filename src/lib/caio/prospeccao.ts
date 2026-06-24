@@ -17,6 +17,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logarEvento } from "@/lib/caio/eventos";
 import { enviarComMidia } from "@/lib/caio/enviar-com-midia";
 import { numeroPorPapel } from "@/lib/caio/numeros";
+import { podeEnviarProativo, podeProspectarHoje } from "@/lib/caio/guardrails";
 
 type RegraProspeccao = {
   nivel: number;
@@ -169,6 +170,17 @@ export async function processarProspeccaoLead(
   }
   const conversationId = conv.ok;
 
+  // GUARDRAIL anti-ban: teto de envios proativos/hora E de contatos novos/dia
+  // por número. Prospecção é cold = maior risco de ban. Se estourou, reagenda +30min.
+  const instProsp = numProsp?.instance_name ?? null;
+  if (!podeEnviarProativo(instProsp) || !podeProspectarHoje(instProsp)) {
+    await supabase
+      .from("leads")
+      .update({ proximo_contato_em: new Date(Date.now() + 30 * 60_000).toISOString() })
+      .eq("id", lead.id);
+    return { ok: true, acao: "reagendou" };
+  }
+
   // Monta texto aplicando placeholders
   const texto = aplicarTemplate(regra.mensagem, lead);
 
@@ -283,6 +295,7 @@ export async function processarProspeccoesPendentes(): Promise<{
     )
     .eq("origem", "prospeccao")
     .eq("caio_ativo", true)
+    .eq("opt_out", false) // guardrail: não prospecta quem pediu pra parar
     .not("proximo_contato_em", "is", null)
     .lte("proximo_contato_em", new Date().toISOString())
     .limit(50);

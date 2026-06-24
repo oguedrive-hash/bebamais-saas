@@ -9,6 +9,7 @@ import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
 import { classificarAceite } from "@/lib/caio/classificador-aceite";
 import { classificarHandoff } from "@/lib/caio/classificador-handoff";
 import { personaDoLead } from "@/lib/caio/numeros";
+import { ehOptOut } from "@/lib/caio/guardrails";
 import { dispararHandoff } from "@/lib/caio/handoff";
 import { detectarDesqualificacao } from "@/lib/caio/detector-desqualificacao";
 import { tentarAgendar } from "@/lib/caio/tentar-agendar";
@@ -216,10 +217,11 @@ function calcularTempoAudio(texto: string): number {
 async function enviarComoCaio(opts: {
   conversationId: number;
   content: string;
+  instanceOverride?: string | null;
 }): Promise<ReturnType<typeof enviarMensagem>> {
   const ms = calcularTempoDigitacao(opts.content);
   console.log("[caio:typing]", ms, "ms para", opts.content.length, "chars");
-  void sinalizarPresenca(opts.conversationId, "composing", ms); // "digitando..." no WhatsApp
+  void sinalizarPresenca(opts.conversationId, "composing", ms, opts.instanceOverride); // "digitando..." no WhatsApp
   await new Promise((r) => setTimeout(r, ms));
   return enviarMensagem(opts);
 }
@@ -401,7 +403,7 @@ async function responderLeadAuto(
   const { data: lead } = await supabase
     .from("leads")
     .select(
-      "nome, telefone, caio_ativo, chatwoot_conversation_id, aguardando_resposta_adiamento",
+      "nome, telefone, caio_ativo, chatwoot_conversation_id, aguardando_resposta_adiamento, evolution_instance",
     )
     .eq("id", leadId)
     .single();
@@ -411,6 +413,16 @@ async function responderLeadAuto(
     console.warn("[caio:auto]", "lead sem conversation_id:", leadId);
     return;
   }
+
+  // FIXA a instância que vai responder no MOMENTO em que esse ciclo começa.
+  // Se o lead mandar msg pra outro número (ex: Juliana) enquanto essa resposta
+  // (gerada como Caio) está em voo — transcrição + LLM + TTS + delay de digitação
+  // levam dezenas de segundos —, o evolution_instance do lead muda; sem fixar,
+  // o áudio do Caio sairia pela Juliana (race do roteamento dinâmico). Pinado,
+  // a resposta sai pelo número que a originou; a msg pra Juliana gera o ciclo dela.
+  const instancePin =
+    (lead as { evolution_instance?: string | null }).evolution_instance ?? null;
+  console.log(`[T:resposta] lead=${leadId} instancePin=${instancePin ?? "-"}`);
 
   // Olha o tipo da última mensagem incoming pra decidir formato da resposta
   const { data: ultimaIncoming } = await supabase
@@ -430,6 +442,31 @@ async function responderLeadAuto(
     .eq("id", leadId);
 
   try {
+    // GUARDRAIL anti-ban — OPT-OUT: lead pediu pra parar ("não quero mais",
+    // "para de me mandar"...). Marca opt_out, ZERA toda cadência proativa,
+    // agradece UMA vez e sai. Os workers (followup/reativação/prospecção)
+    // ignoram leads opt_out na origem.
+    if (ehOptOut(ultimaIncoming?.conteudo)) {
+      await supabase
+        .from("leads")
+        .update({
+          opt_out: true,
+          opt_out_em: new Date().toISOString(),
+          followup_ativo: false,
+          proximo_followup_em: null,
+          proximo_contato_em: null,
+        })
+        .eq("id", leadId);
+      await enviarComoCaio({
+        conversationId: lead.chatwoot_conversation_id,
+        content:
+          "Tranquilo! Não te mando mais nada. Se mudar de ideia ou precisar de algo, é só me chamar por aqui. Abraço!",
+        instanceOverride: instancePin,
+      });
+      console.log("[guardrail] opt-out marcado pra lead", leadId);
+      return;
+    }
+
     // ATALHO determinístico: se a pergunta é sobre disponibilidade/dias/
     // horários atendidos, responde direto da config (sem LLM). Evita
     // alucinação do tipo "não atendemos terça" quando a config diz que sim.
@@ -443,6 +480,7 @@ async function responderLeadAuto(
       await enviarComoCaio({
         conversationId: lead.chatwoot_conversation_id,
         content: respDisp,
+        instanceOverride: instancePin,
       });
       await agendarPrimeiroFollowup(supabase, organizationId, leadId);
       return;
@@ -460,6 +498,7 @@ async function responderLeadAuto(
       (lead as { telefone?: string }).telefone ?? "",
       lead.chatwoot_conversation_id,
       ultimaIncoming?.conteudo ?? null,
+      instancePin,
     );
     if (handoffResult) return;
 
@@ -483,6 +522,7 @@ async function responderLeadAuto(
         lead.chatwoot_conversation_id,
         lead.aguardando_resposta_adiamento ?? false,
         ultimaIncoming?.conteudo ?? null,
+        instancePin,
       );
       if (tratouAdiamento) return;
     }
@@ -493,6 +533,7 @@ async function responderLeadAuto(
       await enviarComoCaio({
         conversationId: lead.chatwoot_conversation_id,
         content: aceite.texto,
+        instanceOverride: instancePin,
       });
       await agendarPrimeiroFollowup(supabase, organizationId, leadId);
       return;
@@ -504,6 +545,7 @@ async function responderLeadAuto(
       lead.chatwoot_conversation_id,
       responderComAudio,
       aceite?.tipo === "extras" ? aceite.extrasContexto : undefined,
+      instancePin,
     );
     // Caio respondeu — agenda o primeiro follow-up baseado na config da org
     await agendarPrimeiroFollowup(supabase, organizationId, leadId);
@@ -529,6 +571,7 @@ async function tentarTratarAdiamento(
   conversationId: number,
   aguardandoResposta: boolean,
   ultimaMsg: string | null,
+  instancePin?: string | null,
 ): Promise<boolean> {
   if (!ultimaMsg?.trim()) return false;
 
@@ -560,7 +603,7 @@ async function tentarTratarAdiamento(
       .update({ aguardando_resposta_adiamento: true })
       .eq("id", leadId);
     const texto = `Tranquilo, ${primeiroNome}! Quando posso te chamar?`;
-    await enviarComoCaio({ conversationId, content: texto });
+    await enviarComoCaio({ conversationId, content: texto, instanceOverride: instancePin });
     console.log("[caio:adiamento]", leadId, "perguntou quando");
     return true;
   }
@@ -588,7 +631,7 @@ async function tentarTratarAdiamento(
       timeZone: "America/Sao_Paulo",
     });
     const texto = `Perfeito, ${primeiroNome}! Anotei aqui — te chamo no dia ${dataStr}. Até lá!`;
-    await enviarComoCaio({ conversationId, content: texto });
+    await enviarComoCaio({ conversationId, content: texto, instanceOverride: instancePin });
     console.log("[caio:adiamento]", leadId, "agendado pra", momento.toISOString());
     return true;
   }
@@ -629,6 +672,7 @@ async function tentarTratarHandoff(
   telefone: string,
   conversationId: number,
   ultimaMsg: string | null,
+  instancePin?: string | null,
 ): Promise<boolean> {
   if (!ultimaMsg?.trim()) return false;
 
@@ -697,6 +741,7 @@ async function tentarTratarHandoff(
   await enviarComoCaio({
     conversationId,
     content: texto,
+    instanceOverride: instancePin,
   });
 
   return true;
@@ -988,9 +1033,37 @@ async function gerarERespondeCaio(
   conversationId: number,
   responderComAudio: boolean,
   extrasContexto?: string[],
+  instancePin?: string | null,
 ) {
+  // Continuação vinda de OUTRO número: se o lead trocou de atendente (ex: vinha
+  // com a Juliana e agora escreveu pro Caio), instrui a persona a RECONHECER a
+  // troca e VALIDAR um ponto real da conversa anterior antes de seguir. A flag
+  // `instancia_anterior` é setada no webhook quando há troca de número.
+  const extrasFinal = extrasContexto ? [...extrasContexto] : [];
+  const { data: leadTroca } = await supabase
+    .from("leads")
+    .select("instancia_anterior")
+    .eq("id", leadId)
+    .maybeSingle();
+  const instAnterior =
+    (leadTroca as { instancia_anterior?: string | null } | null)?.instancia_anterior ?? null;
+  if (instAnterior && instAnterior !== instancePin) {
+    const [personaAnt, personaAtual] = await Promise.all([
+      personaDoLead(instAnterior),
+      personaDoLead(instancePin ?? null),
+    ]);
+    const nomeAnt = personaAnt?.persona_nome || "outro atendente do nosso time";
+    const nomeAtual = personaAtual?.persona_nome || "o atendente";
+    extrasFinal.push(
+      `CONTINUACAO DE OUTRO NUMERO: este lead vinha conversando com ${nomeAnt} em outro numero nosso e agora escreveu aqui (voce e ${nomeAtual} — mesmo time, mesma empresa). Na SUA PROXIMA resposta: (1) reconheca a troca de forma natural e acolhedora, ex: "O Lucas, legal, vamos continuar por aqui"; (2) VALIDE um ponto CONCRETO que ele JA tinha falado no historico, ex: "la com ${nomeAnt} voce disse que tem 5 funcionarios, e isso mesmo?" — use um dado que REALMENTE aparece no historico, NUNCA invente; (3) depois siga a conversa de onde parou. Tudo em 1-2 frases curtas, no maximo UMA pergunta.`,
+    );
+    // Consome a flag — a validacao acontece UMA vez por troca.
+    await supabase.from("leads").update({ instancia_anterior: null }).eq("id", leadId);
+    console.log("[caio:troca]", leadId, "continuacao de", nomeAnt, "->", nomeAtual);
+  }
+
   // Gera resposta (já tem retry interno no chatCompletion)
-  const result = await gerarRespostaCaio({ leadId, extrasContexto });
+  const result = await gerarRespostaCaio({ leadId, extrasContexto: extrasFinal });
   if ("error" in result) {
     console.error("[caio:auto]", "erro ao gerar:", result.error);
     // Notifica admin via WhatsApp — Caio realmente desistiu deste lead.
@@ -1043,15 +1116,19 @@ async function gerarERespondeCaio(
 
   if (responderComAudio) {
     // Voz: prefere a do NÚMERO que serve o lead (persona_voice_id — ex: Juliana
-    // com voz própria); fallback pra voz global da org (Caio).
-    const { data: leadVoz } = await supabase
-      .from("leads")
-      .select("evolution_instance")
-      .eq("id", leadId)
-      .maybeSingle();
-    const personaV = await personaDoLead(
-      (leadVoz as { evolution_instance?: string | null } | null)?.evolution_instance ?? null,
-    );
+    // com voz própria); fallback pra voz global da org (Caio). Usa a instância
+    // PINADA (a que originou a resposta) — não o evolution_instance atual do lead,
+    // que pode ter trocado de número no meio (senão sairia a voz errada).
+    let instVoz = instancePin ?? null;
+    if (!instVoz) {
+      const { data: leadVoz } = await supabase
+        .from("leads")
+        .select("evolution_instance")
+        .eq("id", leadId)
+        .maybeSingle();
+      instVoz = (leadVoz as { evolution_instance?: string | null } | null)?.evolution_instance ?? null;
+    }
+    const personaV = await personaDoLead(instVoz);
     const { data: org } = await supabase
       .from("organizations")
       .select("voice_id, voice_settings")
@@ -1074,6 +1151,7 @@ async function gerarERespondeCaio(
       const sent = await enviarComoCaio({
         conversationId,
         content: texto,
+        instanceOverride: instancePin,
       });
       if ("error" in sent) {
         console.error("[caio:auto]", "envio fallback falhou:", sent.error);
@@ -1085,7 +1163,7 @@ async function gerarERespondeCaio(
     // o que o Lucas notou. Mesma fórmula de digitação sobre o texto falado.
     const msAudio = calcularTempoAudio(texto);
     console.log("[caio:typing] audio", msAudio, "ms para", texto.length, "chars");
-    void sinalizarPresenca(conversationId, "recording", msAudio); // "gravando áudio..." no WhatsApp
+    void sinalizarPresenca(conversationId, "recording", msAudio, instancePin); // "gravando áudio..." no WhatsApp
     await new Promise((r) => setTimeout(r, msAudio));
     const sent = await enviarMensagemComAudio({
       conversationId,
@@ -1093,6 +1171,7 @@ async function gerarERespondeCaio(
       filename: "caio.mp3",
       mimeType: tts.mimeType,
       content: texto, // texto falado vira a "transcrição" exibida no painel
+      instanceOverride: instancePin,
     });
     if ("error" in sent) {
       console.error(
@@ -1105,6 +1184,7 @@ async function gerarERespondeCaio(
       const fallback = await enviarComoCaio({
         conversationId,
         content: texto,
+        instanceOverride: instancePin,
       });
       if ("error" in fallback) {
         console.error("[caio:auto]", "fallback texto falhou:", fallback.error);
@@ -1118,6 +1198,7 @@ async function gerarERespondeCaio(
     const sent = await enviarComoCaio({
       conversationId,
       content: texto,
+      instanceOverride: instancePin,
     });
     if ("error" in sent) {
       console.error("[caio:auto]", "envio texto falhou:", sent.error);

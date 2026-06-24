@@ -48,8 +48,9 @@ async function req(
 
 const WEBHOOK_URL = "https://app.facilitaplus.com.br/api/webhooks/evolution";
 
-/** Configura o webhook da instância (MESSAGES_UPSERT → painel). SEM isto o número
- * novo NÃO recebe inbound (o painel nem fica sabendo que falaram com ele). */
+/** Configura o webhook da instância (MESSAGES_UPSERT + CONNECTION_UPDATE → painel).
+ * MESSAGES_UPSERT: inbound do lead. CONNECTION_UPDATE: detecta queda do número
+ * (failover do pool). SEM isto o número novo NÃO recebe inbound nem dispara failover. */
 export async function evoConfigurarWebhook(
   instance: string,
 ): Promise<{ ok: true } | { error: string }> {
@@ -57,7 +58,7 @@ export async function evoConfigurarWebhook(
     webhook: {
       enabled: true,
       url: WEBHOOK_URL,
-      events: ["MESSAGES_UPSERT"],
+      events: ["MESSAGES_UPSERT", "CONNECTION_UPDATE"],
       webhookByEvents: false,
       webhookBase64: false,
     },

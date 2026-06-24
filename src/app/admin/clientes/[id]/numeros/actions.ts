@@ -24,6 +24,9 @@ export interface NumeroRow {
   estado: string;
   status_conexao: string | null;
   ativo: boolean;
+  ia_ativa: boolean;
+  numeros_teste: string | null;
+  envio_falhando: boolean;
 }
 
 /** Garante que o usuário é admin. Retorna null se ok, ou string de erro. */
@@ -52,7 +55,7 @@ export async function listarNumeros(
   const { data, error } = await admin
     .from("org_numeros")
     .select(
-      "id, instance_name, numero, papel, persona_nome, persona_voice_id, prioridade, estado, status_conexao, ativo",
+      "id, instance_name, numero, papel, persona_nome, persona_voice_id, prioridade, estado, status_conexao, ativo, ia_ativa, numeros_teste, envio_falhando",
     )
     .eq("organization_id", orgId)
     .order("papel", { ascending: true })
@@ -123,7 +126,7 @@ export async function atualizarNumero(
   patch: Partial<
     Pick<
       NumeroRow,
-      "papel" | "persona_nome" | "persona_voice_id" | "prioridade" | "estado" | "ativo"
+      "papel" | "persona_nome" | "persona_voice_id" | "prioridade" | "estado" | "ativo" | "ia_ativa" | "numeros_teste"
     >
   >,
 ): Promise<{ ok: true } | { error: string }> {

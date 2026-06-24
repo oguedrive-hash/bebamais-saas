@@ -104,3 +104,36 @@ export async function notificarAdminHandoff(opts: {
     console.warn("[notificar-admin:handoff] erro:", err instanceof Error ? err.message : String(err));
   }
 }
+
+/**
+ * Avisa o admin que um número está CONECTADO mas NÃO CONSEGUE ENVIAR (restrição
+ * temporária do WhatsApp). Sai por uma instância SAUDÁVEL (`instanceVia`) — a que
+ * assumiu —, senão o aviso também falharia. O objetivo é o usuário NÃO ficar
+ * desconectando/reconectando o número (o que piora o bloqueio).
+ */
+export async function notificarAdminNumeroSemEnvio(opts: {
+  instanceVia: string;
+  persona: string | null;
+  numero: string | null;
+  assumidoPor: string | null;
+}): Promise<void> {
+  const adminNumero = process.env.ADMIN_WHATSAPP_NUMBER?.trim();
+  if (!adminNumero) {
+    console.warn("[notificar-admin:sem-envio] ADMIN_WHATSAPP_NUMBER nao configurado");
+    return;
+  }
+  try {
+    const nome = opts.persona || "Um número";
+    const num = opts.numero ? ` (+${opts.numero})` : "";
+    const assumiu = opts.assumidoPor ? `\n\n✅ *${opts.assumidoPor}* assumiu os atendimentos automaticamente.` : "";
+    const texto = `⚠️ *Número conectado, mas SEM ENVIO*\n\n${nome}${num} está conectado no WhatsApp, porém NÃO está conseguindo enviar mensagens (provável restrição temporária do WhatsApp).${assumiu}\n\n❗ *NÃO desconecte/reconecte esse número* — reconectar piora e aumenta o tempo de bloqueio. Deixe descansar; costuma voltar sozinho em algumas horas.`;
+    const sent = await evoSendText({ instance: opts.instanceVia, telefone: adminNumero, texto });
+    if ("error" in sent) {
+      console.warn("[notificar-admin:sem-envio] falha:", sent.error);
+      return;
+    }
+    console.log("[notificar-admin:sem-envio] admin avisado sobre", opts.persona);
+  } catch (err) {
+    console.warn("[notificar-admin:sem-envio] erro:", err instanceof Error ? err.message : String(err));
+  }
+}

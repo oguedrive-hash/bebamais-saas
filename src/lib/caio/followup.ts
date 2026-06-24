@@ -24,6 +24,7 @@ import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
 import { gerarAudio } from "@/lib/caio/elevenlabs";
 import { personaDoLead } from "@/lib/caio/numeros";
 import { logarEvento } from "@/lib/caio/eventos";
+import { MAX_FOLLOWUP_SEM_RESPOSTA, podeEnviarProativo } from "@/lib/caio/guardrails";
 
 type Regra = {
   nivel: number;
@@ -196,6 +197,18 @@ export async function processarFollowupLead(
     return { ok: true, acao: "desistencia" };
   }
 
+  // GUARDRAIL anti-ban: teto de follow-ups SEM RESPOSTA por lead. Protege o
+  // contador de "msgs sem resposta em 48h" do WhatsApp (gatilho de ban em 2026).
+  // numero_followup zera quando o lead responde → é a contagem consecutiva.
+  if ((lead.numero_followup ?? 0) >= MAX_FOLLOWUP_SEM_RESPOSTA) {
+    await supabase
+      .from("leads")
+      .update({ followup_ativo: false, proximo_followup_em: null })
+      .eq("id", lead.id);
+    console.log(`[guardrail] followup: lead ${lead.id} bateu ${MAX_FOLLOWUP_SEM_RESPOSTA} sem resposta — para de perseguir`);
+    return { ok: true, acao: "desistencia" };
+  }
+
   // Le config da org. Lead de prospeccao que ja respondeu (e agora sumiu)
   // usa prospeccao_followup_config — tom diferente do followup inbound.
   const { data: org } = await supabase
@@ -313,6 +326,22 @@ export async function processarFollowupLead(
     }
   } else {
     texto = aplicarTemplate(regra.mensagem, lead);
+  }
+
+  // GUARDRAIL anti-ban: teto de envios PROATIVOS por hora por número. Se estourou,
+  // adia ~20min (não perde o lead, só espaça pra não dar pico de velocidade).
+  const { data: leadInst } = await supabase
+    .from("leads")
+    .select("evolution_instance")
+    .eq("id", lead.id)
+    .maybeSingle();
+  const instFup = (leadInst as { evolution_instance?: string | null } | null)?.evolution_instance ?? null;
+  if (!podeEnviarProativo(instFup)) {
+    await supabase
+      .from("leads")
+      .update({ proximo_followup_em: new Date(Date.now() + 20 * 60_000).toISOString() })
+      .eq("id", lead.id);
+    return { ok: true, acao: "desistencia" };
   }
 
   // Envia pelo Chatwoot — formato varia por tipo_midia
@@ -564,6 +593,7 @@ export async function processarFollowupsPendentes(): Promise<{
     )
     .eq("caio_ativo", true)
     .eq("followup_ativo", true)
+    .eq("opt_out", false) // guardrail: não persegue quem pediu pra parar
     .not("proximo_followup_em", "is", null)
     .lte("proximo_followup_em", new Date().toISOString())
     .limit(50); // safety cap por execucao

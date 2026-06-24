@@ -17,6 +17,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
 import { logarEvento } from "@/lib/caio/eventos";
+import { podeEnviarProativo } from "@/lib/caio/guardrails";
 import {
   enviarComMidia,
   type TipoMidia,
@@ -48,10 +49,11 @@ export async function processarRetomadasPendentes(): Promise<{
   const { data: leads, error } = await supabase
     .from("leads")
     .select(
-      "id, nome, organization_id, chatwoot_conversation_id, caio_ativo, origem, numero_prospeccao, ultima_msg_lead_em",
+      "id, nome, organization_id, chatwoot_conversation_id, caio_ativo, origem, numero_prospeccao, ultima_msg_lead_em, evolution_instance",
     )
     .eq("caio_ativo", true)
     .eq("status", "contatar_futuramente")
+    .eq("opt_out", false) // guardrail: não retoma quem pediu pra parar
     .not("proximo_contato_em", "is", null)
     .lte("proximo_contato_em", new Date().toISOString())
     .limit(50);
@@ -66,6 +68,16 @@ export async function processarRetomadasPendentes(): Promise<{
 
   for (const lead of leads) {
     if (!lead.chatwoot_conversation_id) continue;
+
+    // GUARDRAIL anti-ban: teto de envios proativos/hora por número. Se estourou,
+    // adia ~20min essa retomada (espaça, não perde).
+    if (!podeEnviarProativo((lead as { evolution_instance?: string | null }).evolution_instance)) {
+      await supabase
+        .from("leads")
+        .update({ proximo_contato_em: new Date(Date.now() + 20 * 60_000).toISOString() })
+        .eq("id", lead.id);
+      continue;
+    }
 
     // Le configs da org de uma vez (retomada + followups + prospeccao)
     const { data: org } = await supabase

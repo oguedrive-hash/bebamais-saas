@@ -20,6 +20,9 @@ type NumeroView = {
   prioridade: number;
   estado: string;
   ativo: boolean;
+  ia_ativa: boolean;
+  numeros_teste: string | null;
+  envio_falhando: boolean;
   conexao: string;
 };
 
@@ -71,6 +74,8 @@ export function NumerosManager({
   const [edPersona, setEdPersona] = useState("");
   const [edVoice, setEdVoice] = useState("");
   const [edPrio, setEdPrio] = useState(0);
+  const [edIaAtiva, setEdIaAtiva] = useState(true);
+  const [edNumerosTeste, setEdNumerosTeste] = useState("");
 
   function abrirEdicao(n: NumeroView) {
     setErro(null);
@@ -79,6 +84,8 @@ export function NumerosManager({
     setEdPersona(n.persona_nome ?? "");
     setEdVoice(n.persona_voice_id ?? "");
     setEdPrio(n.prioridade);
+    setEdIaAtiva(n.ia_ativa);
+    setEdNumerosTeste(n.numeros_teste ?? "");
   }
 
   function salvarEdicao() {
@@ -90,6 +97,8 @@ export function NumerosManager({
         persona_nome: edPersona.trim(),
         persona_voice_id: edVoice.trim() || null,
         prioridade: edPrio,
+        ia_ativa: edIaAtiva,
+        numeros_teste: edNumerosTeste.trim() || null,
       });
       if ("error" in r) {
         setErro(r.error);
@@ -192,6 +201,21 @@ export function NumerosManager({
                     {PAPEL_LABEL[n.papel]}
                   </span>
                   <StatusBadge conexao={n.conexao} />
+                  {n.envio_falhando && n.conexao === "open" && (
+                    <span className="text-xs font-heading font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-300" title="O número conecta mas o WhatsApp está bloqueando o envio. NÃO reconecte — deixe descansar. Outro número assume os atendimentos.">
+                      ⚠️ conectado, sem envio
+                    </span>
+                  )}
+                  {!n.ia_ativa && (
+                    <span className="text-xs font-heading font-semibold px-2 py-0.5 rounded-full bg-cinza-claro/50 text-cinza-medio border border-cinza-claro">
+                      🔕 IA off
+                    </span>
+                  )}
+                  {n.ia_ativa && n.numeros_teste?.trim() && (
+                    <span className="text-xs font-heading font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                      🧪 modo teste
+                    </span>
+                  )}
                   {n.papel === "backup" && (
                     <span className="text-xs text-cinza-medio">prio {n.prioridade}</span>
                   )}
@@ -200,6 +224,12 @@ export function NumerosManager({
                   {n.numero ? `+${n.numero}` : "sem número"} · estado {n.estado}
                   {n.persona_voice_id ? ` · voz ✓` : " · voz —"}
                 </p>
+                {n.envio_falhando && n.conexao === "open" && (
+                  <p className="text-xs text-red-700 mt-1 max-w-md">
+                    Conecta mas o WhatsApp está <strong>bloqueando o envio</strong> (restrição temporária). Outro número já assumiu os atendimentos.{" "}
+                    <strong>NÃO reconecte</strong> — reconectar piora; deixe descansar (volta sozinho em algumas horas).
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button
@@ -359,6 +389,35 @@ export function NumerosManager({
                 className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:border-laranja transition"
               />
             </div>
+
+            <div className="border-t border-cinza-claro pt-3 space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={edIaAtiva}
+                  onChange={(e) => setEdIaAtiva(e.target.checked)}
+                  className="w-4 h-4 accent-laranja"
+                />
+                <span className="text-sm font-heading font-semibold text-preto">IA responde automaticamente</span>
+              </label>
+              <p className="text-[11px] text-cinza-medio">
+                Desligado = número de <strong>uso manual</strong> (a IA não responde ninguém — ex: número de cobrança).
+              </p>
+              <div className="pt-1">
+                <label className="block text-xs font-heading font-semibold text-cinza-medio mb-1">Números de teste</label>
+                <input
+                  value={edNumerosTeste}
+                  onChange={(e) => setEdNumerosTeste(e.target.value)}
+                  placeholder="5519998744971, 5511999999999"
+                  disabled={!edIaAtiva}
+                  className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition disabled:bg-cinza-claro/30"
+                />
+                <p className="text-[11px] text-cinza-medio mt-1">
+                  <strong>Vazio = responde todos</strong> (normal). Preenchido = a IA <strong>só responde esses números</strong> (teus clientes ficam intocados). Separe por vírgula.
+                </p>
+              </div>
+            </div>
+
             <div className="flex items-center justify-end gap-3 pt-2">
               <button
                 type="button"

@@ -207,6 +207,62 @@ export async function toggleCaio(formData: FormData): Promise<
 }
 
 /**
+ * Troca MANUALMENTE qual número/persona do pool atende este lead (override).
+ * Carimba `lead.evolution_instance` no número escolhido e marca `instancia_anterior`
+ * — assim a PRÓXIMA resposta da nova persona reconhece a troca ("vamos continuar por
+ * aqui, lá com o Caio você disse..."). A IA on/off continua sendo o ToggleCaio.
+ */
+export async function trocarAtendente(formData: FormData): Promise<
+  { ok: true } | { error: string }
+> {
+  const leadId = formData.get("leadId");
+  const instance = formData.get("instance");
+  if (typeof leadId !== "string" || !leadId) return { error: "leadId ausente" };
+  if (typeof instance !== "string" || !instance) return { error: "instância ausente" };
+
+  const supabase = await createClient();
+  const { data: lead, error } = await supabase
+    .from("leads")
+    .select("id, organization_id, evolution_instance")
+    .eq("id", leadId)
+    .single();
+  if (error || !lead) return { error: "Lead não encontrado" };
+
+  const admin = createAdminClient();
+  // Valida que a instância pertence ao pool DESTA org (não deixa apontar p/ outra org).
+  const { data: num } = await admin
+    .from("org_numeros")
+    .select("instance_name, persona_nome")
+    .eq("organization_id", lead.organization_id)
+    .eq("instance_name", instance)
+    .maybeSingle();
+  if (!num) return { error: "Número não está no pool da organização" };
+
+  const antiga = (lead as { evolution_instance?: string | null }).evolution_instance ?? null;
+  if (antiga === instance) return { ok: true }; // já é esse atendente, nada a fazer
+
+  const updates: Record<string, unknown> = { evolution_instance: instance };
+  if (antiga) updates.instancia_anterior = antiga; // próxima resposta reconhece a troca
+  const { error: upErr } = await admin.from("leads").update(updates).eq("id", leadId);
+  if (upErr) return { error: upErr.message };
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  await logarEvento({
+    leadId,
+    organizationId: lead.organization_id,
+    tipo: "troca_atendente",
+    descricao: `Atendente trocado p/ ${(num as { persona_nome?: string | null }).persona_nome ?? instance}`,
+    autorId: user?.id ?? null,
+    autorNome: user?.email ?? null,
+  });
+
+  revalidatePath(`/dashboard/contatos/${leadId}`);
+  return { ok: true };
+}
+
+/**
  * Muda o status do lead manualmente pelo painel.
  *
  * Se o novo status for terminal (`fechou` ou `perdido`):

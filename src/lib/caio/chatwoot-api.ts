@@ -11,8 +11,9 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { instanciaDoLead } from "./numeros";
 import { enviarSerializado } from "./fila-envio";
-import { evoSendText, evoSendAudio, evoSendMedia, evoSendPresence } from "./evolution-api";
+import { evoSendText, evoSendAudio, evoSendMedia, evoSendPresence, resolverLidPorNumero, aguardarAceite, evoConnectionState } from "./evolution-api";
 import { salvarAudioBase64 } from "./storage-audio";
+import { notificarAdminNumeroSemEnvio } from "./notificar-admin";
 
 function config() {
   if (process.env.EVOLUTION_RECEBE === "1") throw new Error("Chatwoot desativado (migrado p/ Evolution)");
@@ -523,30 +524,178 @@ export async function criarConversaProspeccao(opts: {
 // Resolve a chave de fila a partir da conversa (cacheado): mensagens da mesma
 // org saem uma por vez e espacadas; orgs diferentes nao se bloqueiam. Sem org
 // (ex.: notificacao de admin) -> serializa pela propria conversa.
-async function dadosEnvio(conversationId: number) {
+async function dadosEnvio(conversationId: number, instanceOverride?: string | null) {
   // SEM cache de propósito: o roteamento (instance / telefone / @lid) muda a cada
   // mensagem no multi-número (lead alterna de número) e quando o @lid é capturado.
   // A query é leve (1 select) e a esteira já espaça os envios. Cachear fazia a
   // resposta sair pelo número ERRADO — ex: lead falou com o Caio, depois com a
   // Yasmin, e a resposta da Yasmin saía pelo Caio (cache preso na 1ª instância).
-  const r: { chave: string; telefone: string | null; instance: string | null; leadId: string | null } = { chave: `conv:${conversationId}`, telefone: null, instance: null, leadId: null };
+  //
+  // instanceOverride: FIXA a instância de envio (ignora o evolution_instance atual
+  // do lead). Usado pra respostas EM VOO: a resposta gerada como Caio deve sair pelo
+  // Caio mesmo que o lead já tenha mandado msg pra outro número (Juliana) no meio —
+  // senão o áudio do Caio vaza pela Juliana (race condition do roteamento dinâmico).
+  const r: { chave: string; telefone: string | null; numero: string | null; destinos: string[]; whatsappJid: string | null; instance: string | null; leadId: string | null; orgId: string | null } = { chave: `conv:${conversationId}`, telefone: null, numero: null, destinos: [], whatsappJid: null, instance: null, leadId: null, orgId: null };
   try {
     const admin = createAdminClient();
     const { data } = await admin.from("leads").select("id, organization_id, telefone, evolution_instance, whatsapp_jid").eq("chatwoot_conversation_id", conversationId).limit(1);
     const lead = data?.[0] as { id?: string; organization_id?: string; telefone?: string; evolution_instance?: string | null; whatsapp_jid?: string | null } | undefined;
     if (lead?.organization_id) {
       r.chave = `org:${lead.organization_id}`;
-      // Prefere o JID @lid capturado no inbound (entrega a contatos migrados pro LID);
-      // fallback pro telefone (contatos antigos / leads sem inbound ainda).
-      r.telefone = lead.whatsapp_jid || lead.telefone || null;
+      r.orgId = lead.organization_id;
       r.leadId = lead.id ?? null;
+      r.whatsappJid = lead.whatsapp_jid ?? null;
       // Fase 1 pool de números: roteia pelo número SERVINDO o lead (fallback: atendimento da org -> legado).
-      r.instance = await instanciaDoLead(lead.organization_id, lead.evolution_instance ?? null);
+      // Com instanceOverride, usa a instância FIXADA (resposta em voo não troca de número).
+      r.instance = instanceOverride
+        ? instanceOverride
+        : await instanciaDoLead(lead.organization_id, lead.evolution_instance ?? null);
+      const numero = (lead.telefone ?? "").replace(/\D/g, "");
+      r.numero = numero || null;
+      // CANDIDATOS de destino, em ordem de preferência. SEMPRE inclui @lid E número:
+      // qual a sessão aceita INVERTE quando a instância re-linka via QR (um vira ERROR,
+      // o outro passa a funcionar). O envio resiliente tenta cada um e fica com o que
+      // for ACEITO — e persiste em `whatsapp_jid` pra ir direto na próxima.
+      let lid = lead.whatsapp_jid && lead.whatsapp_jid.includes("@lid") ? lead.whatsapp_jid : null;
+      if (!lid && r.instance && numero) {
+        // resolve um @lid do histórico (o webhook não traz confiável)
+        lid = await resolverLidPorNumero(r.instance, numero);
+      }
+      const preferido = lead.whatsapp_jid || lid || numero || ""; // último que funcionou primeiro
+      r.destinos = [...new Set([preferido, lid, numero].filter(Boolean) as string[])];
+      r.telefone = r.destinos[0] ?? null; // compat (presença usa isso)
     }
   } catch {
     // fallback seguro
   }
   return r;
+}
+
+/**
+ * Tenta enviar por UMA instância, resiliente nos destinos (@lid e número) até um
+ * ser ACEITO (status != ERROR). Resolve a fragilidade do LID/Baileys: ao re-linkar,
+ * o formato que funcionava passa a dar ERROR e o outro vale. APRENDE: salva em
+ * `whatsapp_jid` o destino que funcionou — próximo envio vai direto.
+ */
+async function tentarInstancia(
+  instance: string,
+  destinos: string[],
+  leadId: string | null,
+  whatsappJid: string | null,
+  enviarUm: (instance: string, dest: string) => Promise<{ id: string } | { error: string }>,
+): Promise<{ ok: true; destinoOk: string } | { error: string }> {
+  let ultimoErro = "nenhum destino disponível";
+  console.log(`[T:envio] instance=${instance} destinos=[${destinos.join(", ")}]`);
+  for (const dest of destinos) {
+    const env = await enviarUm(instance, dest);
+    if ("error" in env) {
+      ultimoErro = env.error;
+      console.warn("[T:envio] HTTP falhou em", instance, dest, "-", env.error);
+      continue;
+    }
+    console.log(`[T:envio] enviado ${instance} -> ${dest} (id=${env.id.slice(0, 8)}), aguardando aceite...`);
+    if (await aguardarAceite(instance, env.id)) {
+      console.log(`[T:envio] ✓ ENTREGOU por ${instance} -> ${dest}`);
+      if (leadId && dest !== whatsappJid) {
+        try { await createAdminClient().from("leads").update({ whatsapp_jid: dest }).eq("id", leadId); } catch { /* best-effort */ }
+      }
+      return { ok: true, destinoOk: dest };
+    }
+    ultimoErro = `status ERROR no destino ${dest}`;
+    console.warn(`[T:envio] ✗ ${instance} -> ${dest} deu ERROR — próximo destino`);
+  }
+  return { error: ultimoErro };
+}
+
+/** Outras instâncias do pool (mesma org), ativas+ia_ativa, CONECTADAS, por prioridade. */
+async function instanciasAlternativas(orgId: string, exceto: string): Promise<string[]> {
+  try {
+    const admin = createAdminClient();
+    const { data } = await admin
+      .from("org_numeros")
+      .select("instance_name, prioridade")
+      .eq("organization_id", orgId)
+      .eq("ativo", true)
+      .eq("ia_ativa", true)
+      .neq("instance_name", exceto)
+      .in("papel", ["atendimento", "backup"])
+      .order("prioridade", { ascending: true });
+    const out: string[] = [];
+    for (const c of data ?? []) {
+      const inst = (c as { instance_name: string }).instance_name;
+      if ((await evoConnectionState(inst)) === "open") out.push(inst);
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/** Limpa a flag "sem envio" de um número que voltou a enviar (some o aviso no painel). */
+async function limparEnvioFalhando(instance: string): Promise<void> {
+  try {
+    await createAdminClient().from("org_numeros").update({ envio_falhando: false, envio_falhando_em: null }).eq("instance_name", instance).eq("envio_falhando", true);
+  } catch { /* best-effort */ }
+}
+
+/** Marca um número como "conectado mas SEM ENVIO" e, na transição (1ª vez), NOTIFICA o admin via uma instância saudável. */
+async function marcarEnvioFalhando(instance: string, viaInstance: string | null, assumidoPor: string | null): Promise<void> {
+  try {
+    const admin = createAdminClient();
+    const { data } = await admin.from("org_numeros").select("envio_falhando, persona_nome, numero").eq("instance_name", instance).maybeSingle();
+    const jaFalhando = (data as { envio_falhando?: boolean } | null)?.envio_falhando === true;
+    await admin.from("org_numeros").update({ envio_falhando: true, envio_falhando_em: new Date().toISOString() }).eq("instance_name", instance);
+    if (!jaFalhando && viaInstance) {
+      const personaAssumiu = assumidoPor
+        ? ((await admin.from("org_numeros").select("persona_nome").eq("instance_name", assumidoPor).maybeSingle()).data as { persona_nome?: string | null } | null)?.persona_nome ?? null
+        : null;
+      await notificarAdminNumeroSemEnvio({
+        instanceVia: viaInstance,
+        persona: (data as { persona_nome?: string | null } | null)?.persona_nome ?? null,
+        numero: (data as { numero?: string | null } | null)?.numero ?? null,
+        assumidoPor: personaAssumiu,
+      });
+    }
+  } catch (e) {
+    console.warn("[evo:failover-envio] marcar/notificar falhou:", e instanceof Error ? e.message : e);
+  }
+}
+
+/**
+ * Envia pelo número primário; se TODOS os destinos derem ERROR (número conectado
+ * mas SEM ENVIO — restrição do WhatsApp), faz FAILOVER pro próximo número saudável
+ * do pool: o número que funciona ASSUME o lead, marca o quebrado como "sem envio" e
+ * NOTIFICA o admin (uma vez). Resolve o caso "conectado mas não responde".
+ */
+async function enviarComFailover(
+  d: { instance: string | null; destinos: string[]; leadId: string | null; whatsappJid: string | null; orgId: string | null },
+  enviarUm: (instance: string, dest: string) => Promise<{ id: string } | { error: string }>,
+): Promise<{ ok: true; destinoOk: string; instanceOk: string } | { error: string }> {
+  if (!d.instance) return { error: "sem instância" };
+  // 1) tenta o primário
+  const prim = await tentarInstancia(d.instance, d.destinos, d.leadId, d.whatsappJid, enviarUm);
+  if ("ok" in prim) {
+    await limparEnvioFalhando(d.instance); // funcionou — se estava marcado, recuperou
+    return { ...prim, instanceOk: d.instance };
+  }
+  // 2) primário não conseguiu enviar → FAILOVER pro número saudável
+  if (!d.orgId || !d.leadId) return prim;
+  const alts = await instanciasAlternativas(d.orgId, d.instance);
+  console.warn(`[T:failover] ${d.instance} NÃO ENVIOU — alternativas saudáveis no pool: [${alts.join(", ") || "NENHUMA"}]`);
+  for (const alt of alts) {
+    const r = await tentarInstancia(alt, d.destinos, d.leadId, d.whatsappJid, enviarUm);
+    if ("ok" in r) {
+      await limparEnvioFalhando(alt);
+      await marcarEnvioFalhando(d.instance, alt, alt); // marca o primário + notifica via o saudável
+      // o número que funciona ASSUME o lead (próxima resposta reconhece a troca)
+      try { await createAdminClient().from("leads").update({ evolution_instance: alt, instancia_anterior: d.instance }).eq("id", d.leadId); } catch { /* best-effort */ }
+      console.log(`[T:failover] ${alt} ASSUMIU o lead ${d.leadId} (${d.instance} sem envio)`);
+      return { ...r, instanceOk: alt };
+    }
+  }
+  // 3) ninguém conseguiu — marca o primário falhando mesmo assim (sem notificar, não há canal)
+  await marcarEnvioFalhando(d.instance, null, null);
+  return prim;
 }
 async function chaveFila(conversationId: number): Promise<string> {
   return (await dadosEnvio(conversationId)).chave;
@@ -563,19 +712,22 @@ function canaryEvolution(telefone: string | null): boolean {
 export async function enviarMensagem(opts: {
   conversationId: number;
   content: string;
+  instanceOverride?: string | null;
 }): Promise<{ id: number; content: string } | { error: string }> {
-  const d = await dadosEnvio(opts.conversationId);
+  const d = await dadosEnvio(opts.conversationId, opts.instanceOverride);
   return enviarSerializado(d.chave, async () => {
-    if (d.instance && d.telefone && canaryEvolution(d.telefone)) {
-      const r = await evoSendText({ instance: d.instance, telefone: d.telefone, texto: opts.content });
-      if (!("error" in r)) {
-        if (process.env.EVOLUTION_RECEBE === "1" && d.leadId) {
-          try { const orgId = d.chave.startsWith("org:") ? d.chave.slice(4) : null; await createAdminClient().from("mensagens").insert({ organization_id: orgId, lead_id: d.leadId, direcao: "saida", tipo: "texto", conteudo: opts.content }); } catch (e) { console.error("[evo] persist outgoing falhou:", e); }
-        }
-        return { id: 0, content: opts.content };
+    if (d.instance && d.destinos.length && canaryEvolution(d.numero)) {
+      const res = await enviarComFailover(d, (instance, dest) =>
+        evoSendText({ instance, telefone: dest, texto: opts.content }),
+      );
+      if ("error" in res) {
+        console.error("[evo] envio texto falhou (primário + failover):", res.error);
+        return res; // propaga o erro real em vez do fallback morto do Chatwoot
       }
-      console.error("[evo] envio falhou:", (r as { error: string }).error);
-      return r; // Evolution é o canal ativo — propaga o erro real (ex: número inexistente) em vez de mascarar com o fallback morto do Chatwoot
+      if (process.env.EVOLUTION_RECEBE === "1" && d.leadId) {
+        try { const orgId = d.chave.startsWith("org:") ? d.chave.slice(4) : null; await createAdminClient().from("mensagens").insert({ organization_id: orgId, lead_id: d.leadId, direcao: "saida", tipo: "texto", conteudo: opts.content }); } catch (e) { console.error("[evo] persist outgoing falhou:", e); }
+      }
+      return { id: 0, content: opts.content };
     }
     return enviarMensagemRaw(opts);
   });
@@ -590,9 +742,10 @@ export async function sinalizarPresenca(
   conversationId: number,
   presence: "composing" | "recording",
   delayMs: number,
+  instanceOverride?: string | null,
 ): Promise<void> {
   try {
-    const d = await dadosEnvio(conversationId);
+    const d = await dadosEnvio(conversationId, instanceOverride);
     if (d.instance && d.telefone && canaryEvolution(d.telefone)) {
       await evoSendPresence({ instance: d.instance, telefone: d.telefone, presence, delayMs });
     }
@@ -607,20 +760,23 @@ export async function enviarMensagemComAudio(opts: {
   filename?: string;
   mimeType?: string;
   content?: string;
+  instanceOverride?: string | null;
 }): Promise<{ id: number } | { error: string }> {
-  const d = await dadosEnvio(opts.conversationId);
+  const d = await dadosEnvio(opts.conversationId, opts.instanceOverride);
   return enviarSerializado(d.chave, async () => {
-    if (d.instance && d.telefone && canaryEvolution(d.telefone)) {
+    if (d.instance && d.destinos.length && canaryEvolution(d.numero)) {
       const b64 = Buffer.from(opts.audio).toString("base64");
-      const r = await evoSendAudio({ instance: d.instance, telefone: d.telefone, audioBase64: b64 });
-      if (!("error" in r)) {
-        if (process.env.EVOLUTION_RECEBE === "1" && d.leadId) {
-          try { const orgId = d.chave.startsWith("org:") ? d.chave.slice(4) : null; const attachmentUrl = await salvarAudioBase64(b64, "mp3", opts.mimeType ?? "audio/mpeg"); await createAdminClient().from("mensagens").insert({ organization_id: orgId, lead_id: d.leadId, direcao: "saida", tipo: "audio", conteudo: opts.content ?? "", attachment_url: attachmentUrl }); } catch (e) { console.error("[evo] persist audio out:", e); }
-        }
-        return { id: 0 };
+      const res = await enviarComFailover(d, (instance, dest) =>
+        evoSendAudio({ instance, telefone: dest, audioBase64: b64 }),
+      );
+      if ("error" in res) {
+        console.error("[evo] envio audio falhou (primário + failover):", res.error);
+        return res;
       }
-      console.error("[evo] envio audio falhou:", (r as { error: string }).error);
-      return r; // propaga erro real da Evolution (canal ativo), sem fallback morto do Chatwoot
+      if (process.env.EVOLUTION_RECEBE === "1" && d.leadId) {
+        try { const orgId = d.chave.startsWith("org:") ? d.chave.slice(4) : null; const attachmentUrl = await salvarAudioBase64(b64, "mp3", opts.mimeType ?? "audio/mpeg"); await createAdminClient().from("mensagens").insert({ organization_id: orgId, lead_id: d.leadId, direcao: "saida", tipo: "audio", conteudo: opts.content ?? "", attachment_url: attachmentUrl }); } catch (e) { console.error("[evo] persist audio out:", e); }
+      }
+      return { id: 0 };
     }
     return enviarMensagemComAudioRaw(opts);
   });
@@ -634,17 +790,19 @@ export async function enviarMensagemComAnexoUrl(opts: {
 }): Promise<{ id: number } | { error: string }> {
   const d = await dadosEnvio(opts.conversationId);
   return enviarSerializado(d.chave, async () => {
-    if (d.instance && d.telefone && canaryEvolution(d.telefone)) {
+    if (d.instance && d.destinos.length && canaryEvolution(d.numero)) {
       const mediatype = opts.mimeType.startsWith("image") ? "image" : opts.mimeType.startsWith("video") ? "video" : "document";
-      const r = await evoSendMedia({ instance: d.instance, telefone: d.telefone, media: opts.url, mediatype, mimetype: opts.mimeType, caption: opts.caption });
-      if (!("error" in r)) {
-        if (process.env.EVOLUTION_RECEBE === "1" && d.leadId) {
-          try { const orgId = d.chave.startsWith("org:") ? d.chave.slice(4) : null; const tipo = mediatype === "image" ? "imagem" : mediatype === "video" ? "video" : "arquivo"; await createAdminClient().from("mensagens").insert({ organization_id: orgId, lead_id: d.leadId, direcao: "saida", tipo, conteudo: opts.caption ?? "" }); } catch (e) { console.error("[evo] persist media out:", e); }
-        }
-        return { id: 0 };
+      const res = await enviarComFailover(d, (instance, dest) =>
+        evoSendMedia({ instance, telefone: dest, media: opts.url, mediatype, mimetype: opts.mimeType, caption: opts.caption }),
+      );
+      if ("error" in res) {
+        console.error("[evo] envio media falhou (primário + failover):", res.error);
+        return res;
       }
-      console.error("[evo] envio media falhou:", (r as { error: string }).error);
-      return r; // propaga erro real da Evolution (canal ativo), sem fallback morto do Chatwoot
+      if (process.env.EVOLUTION_RECEBE === "1" && d.leadId) {
+        try { const orgId = d.chave.startsWith("org:") ? d.chave.slice(4) : null; const tipo = mediatype === "image" ? "imagem" : mediatype === "video" ? "video" : "arquivo"; await createAdminClient().from("mensagens").insert({ organization_id: orgId, lead_id: d.leadId, direcao: "saida", tipo, conteudo: opts.caption ?? "" }); } catch (e) { console.error("[evo] persist media out:", e); }
+      }
+      return { id: 0 };
     }
     return enviarMensagemComAnexoUrlRaw(opts);
   });

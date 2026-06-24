@@ -20,6 +20,7 @@ const ICONE_POR_TIPO: Record<string, string> = {
   lead_criado: "✨",
   reativacao_enviada: "🔄",
   prospeccao_enviada: "🎯",
+  troca_atendente: "🔁",
 };
 
 const COR_POR_TIPO: Record<string, string> = {
@@ -32,6 +33,7 @@ const COR_POR_TIPO: Record<string, string> = {
   lead_criado: "text-emerald-700",
   reativacao_enviada: "text-amber-700",
   prospeccao_enviada: "text-blue-700",
+  troca_atendente: "text-purple-700",
 };
 
 const LIMITE_INICIAL = 5;

@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { StatusSelector } from "@/components/status-selector";
+import { AtendenteSelector } from "@/components/atendente-selector";
 import { BotaoEnviarProspeccao } from "./botao-enviar-prospeccao";
 import { BotaoVoltarInbound } from "./botao-voltar-inbound";
 import { OrigemBadge } from "@/components/origem-badge";
@@ -81,6 +83,15 @@ export default async function LeadDetalhePage({
     notFound();
   }
 
+  // Números do pool da org (pra trocar manualmente quem atende o lead). Via admin
+  // client porque org_numeros não tem policy de leitura pro client do usuário.
+  const { data: poolNumeros } = await createAdminClient()
+    .from("org_numeros")
+    .select("instance_name, persona_nome")
+    .eq("organization_id", lead.organization_id)
+    .eq("ativo", true)
+    .order("prioridade", { ascending: true });
+
   // Estado do Caio: usa o que tá no banco (atualizado pelo webhook).
   // Como fallback (banco desatualizado / lead antigo), bate na Chatwoot
   // API. Se essa chamada falhar (rede, Chatwoot offline), mantém o
@@ -153,6 +164,13 @@ export default async function LeadDetalhePage({
             />
             {lead.chatwoot_conversation_id && (
               <ToggleCaio leadId={lead.id} caioAtivoInicial={caioAtivo} />
+            )}
+            {poolNumeros && poolNumeros.length > 1 && (
+              <AtendenteSelector
+                leadId={lead.id}
+                atual={lead.evolution_instance ?? null}
+                opcoes={poolNumeros}
+              />
             )}
             <BotaoEnviarProspeccao
               leadId={lead.id}

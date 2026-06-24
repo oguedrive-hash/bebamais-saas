@@ -110,6 +110,115 @@ async function postEvolution(
   }
 }
 
+/**
+ * Resolve o JID @lid de um número na Evolution. O WhatsApp migra contatos pro
+ * "LID" (addressingMode=lid) e quem está migrado SÓ recebe no @lid — no número
+ * puro (@s.whatsapp.net) o envio volta com status ERROR e o lead NÃO recebe.
+ * O webhook de inbound NÃO traz o @lid de forma confiável (às vezes vem só o
+ * número), então resolvemos pelo histórico: pega o último inbound do contato
+ * (filtrando key.remoteJidAlt = número, fromMe=false) e devolve o key.remoteJid
+ * (que é o @lid). Retorna null se não achar (contato não migrado → usa número).
+ */
+export async function resolverLidPorNumero(
+  instance: string,
+  telefone: string,
+): Promise<string | null> {
+  let url: string, key: string;
+  try {
+    ({ url, key } = config());
+  } catch {
+    return null;
+  }
+  const num = soDigitos(telefone);
+  if (!num) return null;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(`${url}/chat/findMessages/${instance}`, {
+      method: "POST",
+      headers: { apikey: key, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        where: { key: { remoteJidAlt: `${num}@s.whatsapp.net`, fromMe: false } },
+        limit: 1,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      messages?: { records?: Array<{ key?: { remoteJid?: string } }> };
+    };
+    const jid = data?.messages?.records?.[0]?.key?.remoteJid ?? "";
+    return jid.endsWith("@lid") ? jid : null;
+  } catch {
+    clearTimeout(timeoutId);
+    return null;
+  }
+}
+
+/**
+ * Status normalizado de um envio (consulta a Evolution pelo key.id):
+ * - "ERROR": a sessão NÃO conseguiu mandar pra esse destino (formato @lid/número
+ *   errado pra sessão atual, contato dessincronizado). Tentar outro destino.
+ * - "OK": SERVER_ACK ou além — o WhatsApp aceitou (entrega quando o destino voltar).
+ * - "PENDING": ainda na fila (status não assentou).
+ */
+async function statusMensagem(
+  instance: string,
+  msgId: string,
+): Promise<"ERROR" | "OK" | "PENDING" | null> {
+  let url: string, key: string;
+  try {
+    ({ url, key } = config());
+  } catch {
+    return null;
+  }
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(`${url}/chat/findMessages/${instance}`, {
+      method: "POST",
+      headers: { apikey: key, "Content-Type": "application/json" },
+      body: JSON.stringify({ where: { key: { id: msgId } }, limit: 1 }),
+      signal: controller.signal,
+    });
+    clearTimeout(t);
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      messages?: { records?: Array<{ MessageUpdate?: Array<{ status?: string }> }> };
+    };
+    const sts = (data?.messages?.records?.[0]?.MessageUpdate ?? []).map((u) => u.status);
+    if (sts.includes("ERROR")) return "ERROR";
+    if (sts.some((s) => s && ["SERVER_ACK", "DELIVERY_ACK", "READ", "PLAYED"].includes(s)))
+      return "OK";
+    return "PENDING";
+  } catch {
+    clearTimeout(t);
+    return null;
+  }
+}
+
+/**
+ * Espera um envio ser ACEITO ou falhar. Poll de ~6s: ERROR → false (quem chama
+ * tenta outro destino), SERVER_ACK+ → true. Se ficar só PENDING (destinatário
+ * offline, mas sessão ok) também conta como aceito — vai entregar quando voltar.
+ * É o que permite tentar @lid e número até achar o que a sessão da instância aceita
+ * (isso INVERTE quando a instância re-linka via QR).
+ */
+export async function aguardarAceite(instance: string, msgId: string): Promise<boolean> {
+  const sid = msgId.slice(0, 8);
+  let ultimo = "?";
+  for (let i = 0; i < 6; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const st = await statusMensagem(instance, msgId);
+    ultimo = st ?? "null";
+    if (st === "ERROR") { console.log(`[T:aceite] ${instance} id=${sid} => ERROR (${i + 1}s)`); return false; }
+    if (st === "OK") { console.log(`[T:aceite] ${instance} id=${sid} => OK/aceito (${i + 1}s)`); return true; }
+  }
+  console.log(`[T:aceite] ${instance} id=${sid} => PENDING(${ultimo}) 6s, tratado como aceito`);
+  return true; // PENDING sem ERROR em 6s → aceito
+}
+
 export async function evoSendText(opts: {
   instance: string;
   telefone: string;
