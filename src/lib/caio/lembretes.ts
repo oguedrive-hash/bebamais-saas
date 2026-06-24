@@ -298,12 +298,12 @@ async function processarLembretesAdmin(
 Lead: ${leadLabel}
 Quando: ${dataStr}
 
-Conversa: https://app.facilitaplus.com.br/dashboard/contatos/${ag.lead.id}`;
+Conversa: ${(process.env.APP_BASE_URL ?? "https://app.facilitaplus.com.br").replace(/\/+$/, "")}/dashboard/contatos/${ag.lead.id}`;
 
       // Chatwoot desativado: envia direto pro admin via Evolution, pela esteira.
       // Sai pelo número de atendimento do pool (fallback "facilita").
       const instanceAdmin =
-        (await numeroPorPapel(ag.organization_id, "atendimento"))?.instance_name ?? "facilita";
+        (await numeroPorPapel(ag.organization_id, "atendimento"))?.instance_name ?? process.env.DEFAULT_INSTANCE_NAME ?? "facilita";
       const sent = await enviarSerializado("org:" + ag.organization_id, () =>
         evoSendText({ instance: instanceAdmin, telefone: adminNumero, texto }),
       );

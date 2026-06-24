@@ -39,13 +39,6 @@ export default async function ClienteDetalhePage({
 
   return (
     <div>
-      <Link
-        href="/admin"
-        className="inline-flex items-center text-sm text-cinza-medio hover:text-laranja font-heading font-medium mb-4 transition"
-      >
-        ← Voltar pra Clientes
-      </Link>
-
       {/* Header */}
       <div className="bg-white rounded-2xl border border-cinza-claro p-8 mb-6">
         <div className="flex items-start justify-between gap-4">
@@ -223,7 +216,6 @@ export default async function ClienteDetalhePage({
         </h2>
         <AcoesCliente
           clienteId={cliente.id}
-          nomeCliente={cliente.name}
           ativoInicial={cliente.ativo}
         />
       </div>

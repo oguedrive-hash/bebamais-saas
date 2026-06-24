@@ -46,7 +46,7 @@ async function req(
   }
 }
 
-const WEBHOOK_URL = "https://app.facilitaplus.com.br/api/webhooks/evolution";
+const WEBHOOK_URL = `${(process.env.APP_BASE_URL ?? "https://app.facilitaplus.com.br").replace(/\/+$/, "")}/api/webhooks/evolution`;
 
 /** Configura o webhook da instância (MESSAGES_UPSERT + CONNECTION_UPDATE → painel).
  * MESSAGES_UPSERT: inbound do lead. CONNECTION_UPDATE: detecta queda do número

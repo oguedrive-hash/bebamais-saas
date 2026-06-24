@@ -8,7 +8,7 @@ import { numeroPorPapel } from "@/lib/caio/numeros";
 
 // Avisos ao admin saem pelo número de ATENDIMENTO do pool (fallback "facilita").
 async function instanciaAtendimento(orgId: string): Promise<string> {
-  return (await numeroPorPapel(orgId, "atendimento"))?.instance_name ?? "facilita";
+  return (await numeroPorPapel(orgId, "atendimento"))?.instance_name ?? process.env.DEFAULT_INSTANCE_NAME ?? "facilita";
 }
 
 export async function notificarAdminFalha(opts: {
@@ -59,7 +59,7 @@ export async function notificarAdminAgendamento(opts: {
     const dataStr = data.toLocaleString("pt-BR", { weekday: "long", day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
     const leadLabel = opts.leadNome ? `${opts.leadNome} (${opts.leadTelefone})` : opts.leadTelefone;
     const resumoBloco = opts.resumoIA?.trim() ? `\n\n*Contexto rapido:*\n${opts.resumoIA.trim()}` : "";
-    const texto = `🟢 *Caio agendou uma sessao*\n\nLead: ${leadLabel}\nQuando: ${dataStr}${resumoBloco}\n\nConversa: https://app.facilitaplus.com.br/dashboard/contatos/${opts.leadId}`;
+    const texto = `🟢 *Caio agendou uma sessao*\n\nLead: ${leadLabel}\nQuando: ${dataStr}${resumoBloco}\n\nConversa: ${(process.env.APP_BASE_URL ?? "https://app.facilitaplus.com.br").replace(/\/+$/, "")}/dashboard/contatos/${opts.leadId}`;
     const instance = await instanciaAtendimento(opts.organizationId);
     const sent = await enviarSerializado("org:" + opts.organizationId, () =>
       evoSendText({ instance, telefone: adminNumero, texto }),

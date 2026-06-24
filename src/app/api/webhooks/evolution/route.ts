@@ -11,7 +11,7 @@ import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
 import { enviarMensagem } from "@/lib/caio/chatwoot-api";
 import { evoConnectionState } from "@/lib/caio/evolution-api";
 
-const ORG_ID = "455b9a80-6bb9-461b-b62d-188f0a28c110"; // Facilita
+const ORG_ID = process.env.DEFAULT_ORG_ID ?? "455b9a80-6bb9-461b-b62d-188f0a28c110"; // Facilita (fallback)
 
 type EvoKey = { remoteJid?: string; remoteJidAlt?: string; addressingMode?: string; fromMe?: boolean; id?: string };
 type EvoData = {
@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
   const numeroJid = [rjid, rjidAlt].find((j) => j.endsWith("@s.whatsapp.net")) ?? rjid;
   const lidJid = [rjid, rjidAlt].find((j) => j.endsWith("@lid")) ?? "";
   const telefone = numeroJid.replace(/@.*/, "").replace(/[^0-9]/g, "");
-  const instance = body.instance ?? "facilita";
+  const instance = body.instance ?? process.env.DEFAULT_INSTANCE_NAME ?? "facilita";
 
   if (process.env.EVOLUTION_RECEBE !== "1" || fromMe || !telefone) {
     console.log("[evo:webhook]", process.env.EVOLUTION_RECEBE === "1" ? "skip" : "obs", JSON.stringify({ rjid, rjidAlt, lidJid, fromMe, tipo: d?.messageType }));

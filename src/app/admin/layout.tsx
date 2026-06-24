@@ -47,7 +47,7 @@ export default async function AdminLayout({
             </Link>
             <nav className="hidden md:flex items-center gap-7">
               <NavLink href="/admin" exact>
-                Clientes
+                Cliente
               </NavLink>
               <NavLink href="/admin/metricas">Métricas globais</NavLink>
               <Link

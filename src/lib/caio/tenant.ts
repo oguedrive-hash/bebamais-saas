@@ -40,7 +40,7 @@ export async function getFacilitaOrgFallback(): Promise<{
   const { data, error } = await supabase
     .from("organizations")
     .select("id, name")
-    .eq("name", "Facilita")
+    .eq("id", process.env.DEFAULT_ORG_ID ?? "455b9a80-6bb9-461b-b62d-188f0a28c110")
     .single();
 
   if (error || !data) return null;
