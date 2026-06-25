@@ -6,8 +6,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   addLabel,
   enviarMensagem,
-  setLabels,
-  getLabels,
   toggleConversationStatus,
 } from "@/lib/caio/chatwoot-api";
 import { transcreverAudio } from "@/lib/caio/openai";
@@ -67,27 +65,22 @@ export async function responderLead(formData: FormData): Promise<
     return { error: `Falha ao enviar pro Chatwoot: ${sent.error}` };
   }
 
+  const admin = createAdminClient();
+
   if (desligarCaio) {
-    const label = await addLabel({
+    // leads.caio_ativo é a fonte da verdade (Chatwoot desativado / migrado p/
+    // Evolution). Grava direto no banco, SEM depender do retorno do Chatwoot.
+    await admin
+      .from("leads")
+      .update({ caio_ativo: false })
+      .eq("id", leadId);
+    // Espelha a etiqueta no Chatwoot best-effort (no-op pós-migração).
+    await addLabel({
       conversationId: lead.chatwoot_conversation_id,
       label: AGENTE_OFF,
     });
-    if ("error" in label) {
-      console.warn(
-        "[painel:responder]",
-        "falha ao aplicar agente-off:",
-        label.error,
-      );
-    } else {
-      const admin = createAdminClient();
-      await admin
-        .from("leads")
-        .update({ caio_ativo: false })
-        .eq("id", leadId);
-    }
   }
 
-  const admin = createAdminClient();
   await admin.from("mensagens").insert({
     organization_id: lead.organization_id,
     lead_id: lead.id,
@@ -128,8 +121,9 @@ export async function responderLead(formData: FormData): Promise<
 }
 
 /**
- * Liga/desliga o Caio pra um lead específico (adiciona ou remove a
- * etiqueta `agente-off` na conversa do Chatwoot).
+ * Liga/desliga o Caio pra um lead específico. Fonte da verdade =
+ * leads.caio_ativo no Supabase (Chatwoot desativado / migrado p/ Evolution):
+ * lê o estado atual, inverte e grava no banco.
  */
 export async function toggleCaio(formData: FormData): Promise<
   { ok: true; ativo: boolean } | { error: string }
@@ -140,61 +134,40 @@ export async function toggleCaio(formData: FormData): Promise<
   }
 
   const supabase = await createClient();
+  const admin = createAdminClient();
   const { data: lead, error } = await supabase
     .from("leads")
-    .select("chatwoot_conversation_id")
+    .select("caio_ativo, organization_id")
     .eq("id", leadId)
     .single();
 
   if (error || !lead) return { error: "Lead não encontrado" };
-  if (!lead.chatwoot_conversation_id) {
-    return { error: "Lead sem conversa do Chatwoot vinculada" };
-  }
 
-  const labels = await getLabels({
-    conversationId: lead.chatwoot_conversation_id,
-  });
-  const temAgenteOff = labels.includes(AGENTE_OFF);
+  const novoEstado = !(lead.caio_ativo ?? true); // true = Caio respondendo
 
-  const novasLabels = temAgenteOff
-    ? labels.filter((l) => l !== AGENTE_OFF)
-    : [...labels, AGENTE_OFF];
-
-  const result = await setLabels({
-    conversationId: lead.chatwoot_conversation_id,
-    labels: novasLabels,
-  });
-  if ("error" in result) {
-    return { error: `Chatwoot recusou: ${result.error}` };
-  }
-
-  // Espelha no Supabase pra listagem ficar consistente sem precisar
-  // bater na API do Chatwoot toda vez. Se religou Caio (temAgenteOff=true
-  // significa que estava off e agora vira on), tambem limpa precisa_resposta_humana
-  // — Caio voltou, vai cuidar.
-  const admin = createAdminClient();
-  const updates: Record<string, unknown> = { caio_ativo: temAgenteOff };
-  if (temAgenteOff) {
+  // Espelha no banco (fonte da verdade). Se RELIGOU (novoEstado=true), limpa
+  // o flag de "aguardando humano" — o Caio voltou e vai cuidar.
+  const updates: Record<string, unknown> = { caio_ativo: novoEstado };
+  if (novoEstado) {
     updates.precisa_resposta_humana = false;
     updates.precisa_resposta_em = null;
   }
-  await admin.from("leads").update(updates).eq("id", leadId);
+  const { error: updErr } = await admin
+    .from("leads")
+    .update(updates)
+    .eq("id", leadId);
+  if (updErr) return { error: `Falha ao atualizar o Caio: ${updErr.message}` };
 
   // Loga evento
-  const { data: leadOrg } = await admin
-    .from("leads")
-    .select("organization_id")
-    .eq("id", leadId)
-    .single();
   const {
     data: { user: userToggle },
   } = await supabase.auth.getUser();
-  if (leadOrg?.organization_id) {
+  if (lead.organization_id) {
     await logarEvento({
       leadId,
-      organizationId: leadOrg.organization_id,
+      organizationId: lead.organization_id,
       tipo: "caio_toggle",
-      descricao: temAgenteOff ? "Caio reativado" : "Caio desligado (humano assumiu)",
+      descricao: novoEstado ? "Caio reativado" : "Caio desligado (humano assumiu)",
       autorId: userToggle?.id ?? null,
       autorNome: userToggle?.email ?? null,
     });
@@ -202,8 +175,8 @@ export async function toggleCaio(formData: FormData): Promise<
 
   revalidatePath(`/dashboard/contatos/${leadId}`);
   revalidatePath("/dashboard/leads");
-  // ativo = caio respondendo = NÃO tem agente-off (depois da troca)
-  return { ok: true, ativo: temAgenteOff };
+  revalidatePath("/dashboard/prospeccao");
+  return { ok: true, ativo: novoEstado };
 }
 
 /**

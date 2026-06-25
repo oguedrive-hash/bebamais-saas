@@ -17,7 +17,6 @@ import { TimelineEventos } from "@/components/timeline-eventos";
 import { NotasLead } from "@/components/notas-lead";
 import { ResumoIA } from "@/components/resumo-ia";
 import { BotaoDeletarLead } from "@/components/botao-deletar-lead";
-import { getLabels } from "@/lib/caio/chatwoot-api";
 import { STATUS_CONFIG, type StatusLead } from "@/lib/status-config";
 
 export default async function LeadDetalhePage({
@@ -92,25 +91,10 @@ export default async function LeadDetalhePage({
     .eq("ativo", true)
     .order("prioridade", { ascending: true });
 
-  // Estado do Caio: usa o que tá no banco (atualizado pelo webhook).
-  // Como fallback (banco desatualizado / lead antigo), bate na Chatwoot
-  // API. Se essa chamada falhar (rede, Chatwoot offline), mantém o
-  // valor do banco.
-  let caioAtivo = lead.caio_ativo ?? true;
-  if (lead.chatwoot_conversation_id) {
-    try {
-      const labels = await getLabels({
-        conversationId: lead.chatwoot_conversation_id,
-      });
-      caioAtivo = !labels.includes("agente-off");
-    } catch (err) {
-      console.warn(
-        "[lead:page]",
-        "falha ao ler labels do Chatwoot, usando banco:",
-        err,
-      );
-    }
-  }
+  // Estado do Caio: leads.caio_ativo no Supabase é a ÚNICA fonte da verdade
+  // (Chatwoot desativado / migrado p/ Evolution). O webhook reativo e o toggle
+  // do painel mantêm esse campo atualizado no banco — não relê do Chatwoot.
+  const caioAtivo = lead.caio_ativo ?? true;
 
   const statusConfig = STATUS_CONFIG[lead.status as StatusLead];
 
