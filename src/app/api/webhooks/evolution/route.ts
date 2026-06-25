@@ -10,7 +10,6 @@ import { salvarAudioBase64 } from "@/lib/caio/storage-audio";
 import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
 import { enviarMensagem } from "@/lib/caio/chatwoot-api";
 import { evoConnectionState } from "@/lib/caio/evolution-api";
-import { ehInboundAquecimento } from "@/lib/caio/aquecimento";
 
 const ORG_ID = process.env.DEFAULT_ORG_ID ?? "455b9a80-6bb9-461b-b62d-188f0a28c110"; // Facilita (fallback)
 
@@ -277,7 +276,7 @@ async function processarEvolution(
   lidJid: string,
 ): Promise<void> {
   console.log(`[T:inbound] tel=${telefone} inst=${instance} lid=${lidJid || "-"} tipo=${d?.messageType ?? "?"}`);
-  // Lookup do número no pool (uma vez) — usado pro filtro de AQUECIMENTO e pro test-mode.
+  // Lookup do número no pool (uma vez) — usado pro test-mode.
   let cfgNum:
     | { ia_ativa?: boolean; numeros_teste?: string | null; persona_nome?: string }
     | null = null;
@@ -296,21 +295,6 @@ async function processarEvolution(
       } | null) ?? null;
   } catch (e) {
     console.warn("[T:filtro] erro no lookup do número:", e);
-  }
-
-  // AQUECIMENTO: se o inbound é tráfego de maturação (remetente é número do aquecedor,
-  // ou receptor é número puro de warmup), NÃO dispara o Caio — viabiliza o esquema duplo
-  // (mesmo número atende lead E aquece). Sem isto, msg de âncora vira "lead" e dá loop.
-  if (
-    await ehInboundAquecimento({
-      organizationId: ORG_ID,
-      instanceReceptor: instance,
-      numeroRemetente: telefone,
-      receptorAtendeLead: !!cfgNum,
-    })
-  ) {
-    console.log(`[T:aquecimento] inbound de aquecimento (de ${telefone} pra ${instance}) — pula o Caio`);
-    return;
   }
 
   // Filtro por número do pool: respeita o toggle da IA (ia_ativa) e a whitelist de
