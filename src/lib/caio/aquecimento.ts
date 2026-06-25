@@ -255,24 +255,34 @@ export async function processarAquecimento(): Promise<{
     );
     if (feito >= esperado) continue;
 
-    // Parceiro: prefere âncora (mais segura); senão outro número aquecendo.
-    const cands = abertos.filter(
-      (p) => p.instance_name !== W.instance_name && p.numero,
+    // Re-checa o pause AGORA (não só no próximo tick): pausar mata na hora.
+    const { data: vivo } = await supabase
+      .from("aquecimento_numeros")
+      .select("estado, ativo")
+      .eq("id", W.id)
+      .maybeSingle();
+    const v = vivo as { estado?: string; ativo?: boolean } | null;
+    if (!v || v.estado !== "ativo" || v.ativo === false) {
+      console.log(`[aquecimento] ${W.apelido ?? W.instance_name} pausado no meio do tick — parando`);
+      break;
+    }
+
+    // Parceiro = SÓ ÂNCORA conectada. Regra: âncora só RESPONDE aquecendo; aquecendo
+    // não conversa com aquecendo, âncora não conversa com âncora, ninguém fala grupo.
+    const anc = abertos.filter(
+      (p) => p.papel === "ancora" && p.instance_name !== W.instance_name && p.numero,
     );
-    if (!cands.length) {
+    if (!anc.length) {
       console.log(
-        `[aquecimento] ${W.apelido ?? W.instance_name}: sem parceiro conectado — adicione uma âncora`,
+        `[aquecimento] ${W.apelido ?? W.instance_name}: sem âncora conectada — adicione uma âncora`,
       );
       continue;
     }
-    const anc = cands.filter((p) => p.papel === "ancora");
-    const pool = anc.length ? anc : cands;
-    const P = pool[rand(0, pool.length)];
+    const P = anc[rand(0, anc.length)];
 
-    // Alterna quem puxa o papo (reply-ratio dos dois lados).
-    const wInicia = Math.random() < 0.5;
-    const rem = wInicia ? W : P;
-    const dst = wInicia ? P : W;
+    // O número AQUECENDO sempre INICIA; a âncora SÓ RESPONDE (nunca puxa papo).
+    const rem = W;
+    const dst = P;
 
     const msg1 = await gerarMsg();
     const r1 = await enviarComDigitando(rem.instance_name, dst.numero!, msg1);

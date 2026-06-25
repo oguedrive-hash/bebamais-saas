@@ -117,7 +117,7 @@ export async function adicionarAquecimento(
     numero: patch.numero.replace(/\D/g, ""),
     apelido: patch.apelido?.trim() || null,
     papel: patch.papel,
-    estado: "ativo",
+    estado: "pausado", // entra PAUSADO — só aquece quando clicar Reativar (não dispara sozinho)
     aquecimento_inicio: new Date().toISOString(),
   });
   if (error) {
