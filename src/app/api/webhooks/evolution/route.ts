@@ -10,6 +10,7 @@ import { salvarAudioBase64 } from "@/lib/caio/storage-audio";
 import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
 import { enviarMensagem } from "@/lib/caio/chatwoot-api";
 import { evoConnectionState } from "@/lib/caio/evolution-api";
+import { ehInboundAquecimento } from "@/lib/caio/aquecimento";
 
 const ORG_ID = process.env.DEFAULT_ORG_ID ?? "455b9a80-6bb9-461b-b62d-188f0a28c110"; // Facilita (fallback)
 
@@ -272,42 +273,67 @@ async function processarEvolution(
   lidJid: string,
 ): Promise<void> {
   console.log(`[T:inbound] tel=${telefone} inst=${instance} lid=${lidJid || "-"} tipo=${d?.messageType ?? "?"}`);
-  // Filtro por número do pool: respeita o toggle da IA (ia_ativa) e a whitelist de
-  // teste (numeros_teste). Protege números de uso MANUAL (ex: cobrança de cliente) —
-  // a IA não responde se estiver desligada, e em modo teste só responde os números
-  // autorizados (o resto, como clientes reais, fica intocado).
+  // Lookup do número no pool (uma vez) — usado pro filtro de AQUECIMENTO e pro test-mode.
+  let cfgNum:
+    | { ia_ativa?: boolean; numeros_teste?: string | null; persona_nome?: string }
+    | null = null;
   try {
     const admin0 = createAdminClient();
-    const { data: cfgNum } = await admin0
+    const { data } = await admin0
       .from("org_numeros")
       .select("ia_ativa, numeros_teste, persona_nome")
       .eq("instance_name", instance)
       .maybeSingle();
-    if (cfgNum) {
-      if ((cfgNum as { ia_ativa?: boolean }).ia_ativa === false) {
-        console.log(`[T:filtro] BLOQUEADO: IA desligada em ${instance} — não responde`);
+    cfgNum =
+      (data as {
+        ia_ativa?: boolean;
+        numeros_teste?: string | null;
+        persona_nome?: string;
+      } | null) ?? null;
+  } catch (e) {
+    console.warn("[T:filtro] erro no lookup do número:", e);
+  }
+
+  // AQUECIMENTO: se o inbound é tráfego de maturação (remetente é número do aquecedor,
+  // ou receptor é número puro de warmup), NÃO dispara o Caio — viabiliza o esquema duplo
+  // (mesmo número atende lead E aquece). Sem isto, msg de âncora vira "lead" e dá loop.
+  if (
+    await ehInboundAquecimento({
+      organizationId: ORG_ID,
+      instanceReceptor: instance,
+      numeroRemetente: telefone,
+      receptorAtendeLead: !!cfgNum,
+    })
+  ) {
+    console.log(`[T:aquecimento] inbound de aquecimento (de ${telefone} pra ${instance}) — pula o Caio`);
+    return;
+  }
+
+  // Filtro por número do pool: respeita o toggle da IA (ia_ativa) e a whitelist de
+  // teste (numeros_teste). Protege números de uso MANUAL (ex: cobrança de cliente) —
+  // a IA não responde se estiver desligada, e em modo teste só responde os autorizados.
+  if (cfgNum) {
+    if (cfgNum.ia_ativa === false) {
+      console.log(`[T:filtro] BLOQUEADO: IA desligada em ${instance} — não responde`);
+      return;
+    }
+    const wl = (cfgNum.numeros_teste ?? "")
+      .split(/[\s,;]+/)
+      .map((s) => s.replace(/\D/g, ""))
+      .filter(Boolean);
+    if (wl.length > 0) {
+      const tel = telefone.replace(/\D/g, "");
+      const ok = wl.some((w) => tel.endsWith(w) || w.endsWith(tel));
+      if (!ok) {
+        console.log(`[T:filtro] BLOQUEADO: ${telefone} fora da whitelist [${wl.join(",")}] de ${instance} (${cfgNum.persona_nome ?? "?"}) — não responde`);
         return;
       }
-      const wl = (((cfgNum as { numeros_teste?: string | null }).numeros_teste) ?? "")
-        .split(/[\s,;]+/)
-        .map((s) => s.replace(/\D/g, ""))
-        .filter(Boolean);
-      if (wl.length > 0) {
-        const tel = telefone.replace(/\D/g, "");
-        const ok = wl.some((w) => tel.endsWith(w) || w.endsWith(tel));
-        if (!ok) {
-          console.log(`[T:filtro] BLOQUEADO: ${telefone} fora da whitelist [${wl.join(",")}] de ${instance} (${(cfgNum as { persona_nome?: string }).persona_nome ?? "?"}) — não responde`);
-          return;
-        }
-        console.log(`[T:filtro] OK: ${telefone} na whitelist de teste de ${instance}`);
-      } else {
-        console.log(`[T:filtro] OK: ${instance} sem whitelist (responde todos)`);
-      }
+      console.log(`[T:filtro] OK: ${telefone} na whitelist de teste de ${instance}`);
     } else {
-      console.log(`[T:filtro] instância ${instance} fora do pool org_numeros — segue sem filtro`);
+      console.log(`[T:filtro] OK: ${instance} sem whitelist (responde todos)`);
     }
-  } catch (e) {
-    console.warn("[T:filtro] erro no filtro de número:", e);
+  } else {
+    console.log(`[T:filtro] instância ${instance} fora do pool org_numeros — segue sem filtro`);
   }
 
   let texto: string | null = d?.message?.conversation ?? d?.message?.extendedTextMessage?.text ?? null;
