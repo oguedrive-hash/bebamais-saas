@@ -49,6 +49,7 @@ export default async function AdminLayout({
               <NavLink href="/admin" exact>
                 Cliente
               </NavLink>
+              <NavLink href="/admin/aquecimento">🔥 Aquecedor</NavLink>
               <NavLink href="/admin/metricas">Métricas globais</NavLink>
               <Link
                 href="/dashboard"
