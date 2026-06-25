@@ -129,8 +129,12 @@ export async function POST(request: NextRequest) {
   const telefone = numeroJid.replace(/@.*/, "").replace(/[^0-9]/g, "");
   const instance = body.instance ?? process.env.DEFAULT_INSTANCE_NAME ?? "facilita";
 
-  if (process.env.EVOLUTION_RECEBE !== "1" || fromMe || !telefone) {
-    console.log("[evo:webhook]", process.env.EVOLUTION_RECEBE === "1" ? "skip" : "obs", JSON.stringify({ rjid, rjidAlt, lidJid, fromMe, tipo: d?.messageType }));
+  // GRUPO: a IA NUNCA responde mensagem de grupo (@g.us). Estar em grupo é ótimo
+  // pro AQUECIMENTO (tráfego real passivo), mas responder o grupo é desastre.
+  const ehGrupo = rjid.endsWith("@g.us") || rjidAlt.endsWith("@g.us");
+
+  if (process.env.EVOLUTION_RECEBE !== "1" || fromMe || !telefone || ehGrupo) {
+    console.log("[evo:webhook]", ehGrupo ? "grupo-ignorado" : process.env.EVOLUTION_RECEBE === "1" ? "skip" : "obs", JSON.stringify({ rjid, rjidAlt, lidJid, fromMe, grupo: ehGrupo, tipo: d?.messageType }));
     return NextResponse.json({ ok: true });
   }
 
