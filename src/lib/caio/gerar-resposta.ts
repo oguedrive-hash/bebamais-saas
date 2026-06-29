@@ -50,6 +50,14 @@ export async function gerarRespostaCaio(opts: {
    * A base de conhecimento (se houver) continua sendo anexada.
    */
   promptBaseOverride?: string;
+  /**
+   * Mensagem de SISTEMA injetada DEPOIS do histórico — é a última coisa que o
+   * modelo lê antes de gerar. Serve pra vencer a tendência do gpt-4o-mini de
+   * "continuar" a conversa / re-responder a última pergunta do lead: o system
+   * prompt do topo perde pro histórico recente, mas um lembrete no fim domina.
+   * Ex: o follow-up reforça aqui que é só um nudge curto, não uma re-resposta.
+   */
+  lembreteFinal?: string;
 }): Promise<{ resposta: string } | { error: string }> {
   const limit = opts.limit ?? 30;
   const supabase = createAdminClient();
@@ -267,8 +275,18 @@ Regras:
   // Usa o modelo configurado em OPENAI_MODEL (default gpt-4o-mini). A
   // alucinação de horários (ex: 13:00 → 14:00) é corrigida pelo pós-
   // processamento abaixo, sem depender de um modelo mais caro.
+  // Lembrete final: vai DEPOIS do histórico pra ser a última instrução que o
+  // modelo lê (vence a inércia de re-responder a última pergunta do lead).
+  const mensagensChat: ChatMessage[] = [
+    { role: "system", content: systemContent },
+    ...historico,
+  ];
+  if (opts.lembreteFinal?.trim()) {
+    mensagensChat.push({ role: "system", content: opts.lembreteFinal.trim() });
+  }
+
   const result = await chatCompletion({
-    messages: [{ role: "system", content: systemContent }, ...historico],
+    messages: mensagensChat,
     temperature: 0.8,
     max_tokens: 400,
   });

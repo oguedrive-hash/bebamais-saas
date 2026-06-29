@@ -107,6 +107,7 @@ type LeadProcess = {
   caio_ativo: boolean | null;
   followup_ativo: boolean | null;
   ultimo_followup_em: string | null;
+  proximo_followup_em: string | null;
   origem: string | null;
 };
 
@@ -149,6 +150,18 @@ REGRAS:
 - Mensagem CURTA de WhatsApp: 1 a 2 frases. Natural, sem soar automatica ou robotica.
 - Portugues do Brasil. SEM emoji. Use o primeiro nome do lead apenas se souber. NAO invente numeros, cases, prazos nem URLs.
 - Responda APENAS com a mensagem que vai pro lead, nada mais.`;
+
+/**
+ * Lembrete injetado DEPOIS do histórico (via gerarRespostaCaio.lembreteFinal).
+ * O system prompt do topo perde pro histórico recente — o gpt-4o-mini lê a
+ * última pergunta do lead e RE-RESPONDE com parágrafos em vez do nudge curto
+ * (bug visto com a Yasmin: re-explicava "diferencial" todo dia). Este lembrete
+ * é a última coisa que o modelo lê, então domina.
+ */
+const LEMBRETE_FOLLOWUP_FINAL = `LEMBRETE FINAL (vale mais que o histórico acima): escreva AGORA só o follow-up de re-engajamento — 1 a 2 frases, curto. O histórico pode terminar com uma pergunta ou assunto que você JÁ respondeu antes; NÃO responda de novo, NÃO reexplique nada, NÃO mande parágrafo. Só um empurrãozinho leve e curioso pra ele voltar a responder. Sem se reapresentar, sem emoji.`;
+
+/** Variante pro último nível: é despedida (break-up), não nudge. */
+const LEMBRETE_BREAKUP_FINAL = `LEMBRETE FINAL (vale mais que o histórico acima): escreva AGORA só uma despedida curta e cordial. NÃO faça pergunta, NÃO ofereça horário/reunião, NÃO reexplique nada. Diga que não vai mais insistir pra não incomodar, deixe a porta aberta ("quando fizer sentido, é só me chamar") e termine em ponto final. Sem emoji.`;
 
 /**
  * Linhas de [Contexto] com a intencao do nivel atual. As regras gerais ficam
@@ -206,6 +219,27 @@ export async function processarFollowupLead(
       .update({ followup_ativo: false, proximo_followup_em: null })
       .eq("id", lead.id);
     console.log(`[guardrail] followup: lead ${lead.id} bateu ${MAX_FOLLOWUP_SEM_RESPOSTA} sem resposta — para de perseguir`);
+    return { ok: true, acao: "desistencia" };
+  }
+
+  // ── IDEMPOTÊNCIA (anti-duplicação) ──────────────────────────────────────
+  // Dois processamentos concorrentes (cron duplicado / execuções sobrepostas)
+  // pegavam o MESMO lead antes de qualquer um gravar numero_followup, e o
+  // follow-up saía 2x (visto nos logs: cada nível logado 2x em ~10s). Claim
+  // atômico via "lease": troca o proximo_followup_em (vencido) por um lease
+  // curto no futuro num único UPDATE condicional. Só UM run casa a linha; o
+  // outro casa 0 e desiste. Se este run morrer no meio, o lease vence em 10min
+  // e o lead é re-tentado — não fica preso nem é perdido.
+  const agoraISO = new Date().toISOString();
+  const leaseISO = new Date(Date.now() + 10 * 60_000).toISOString();
+  const { data: claim } = await supabase
+    .from("leads")
+    .update({ proximo_followup_em: leaseISO })
+    .eq("id", lead.id)
+    .lte("proximo_followup_em", agoraISO) // só pega se ainda está vencido
+    .select("id");
+  if (!claim || claim.length === 0) {
+    // Outro run já reservou este lead — evita o envio duplicado.
     return { ok: true, acao: "desistencia" };
   }
 
@@ -308,6 +342,7 @@ export async function processarFollowupLead(
     // Follow-up inteligente: a IA le o historico e adapta. Instrucao por nivel
     // via extrasContexto. Cobre os 2 casos: lead que ja respondeu (adapta ao
     // que ele disse) e lead que nunca respondeu (puxa a conversa SEM inventar).
+    const ehUltimoNivel = proximoNivel >= regrasAtivas.length;
     const result = await gerarRespostaCaio({
       leadId: lead.id,
       promptBaseOverride: PROMPT_FOLLOWUP,
@@ -316,6 +351,11 @@ export async function processarFollowupLead(
         regrasAtivas.length,
         regra.instrucao_ia,
       ),
+      // Lembrete pós-histórico: impede o modelo de re-responder a última
+      // pergunta do lead em vez de mandar o nudge curto.
+      lembreteFinal: ehUltimoNivel
+        ? LEMBRETE_BREAKUP_FINAL
+        : LEMBRETE_FOLLOWUP_FINAL,
     });
     if ("error" in result) {
       console.error("[followup:ia]", lead.id, result.error);
@@ -589,7 +629,7 @@ export async function processarFollowupsPendentes(): Promise<{
   const { data: leads, error } = await supabase
     .from("leads")
     .select(
-      "id, nome, telefone, status, organization_id, numero_followup, numero_reativacao, chatwoot_conversation_id, caio_ativo, followup_ativo, ultimo_followup_em, origem",
+      "id, nome, telefone, status, organization_id, numero_followup, numero_reativacao, chatwoot_conversation_id, caio_ativo, followup_ativo, ultimo_followup_em, proximo_followup_em, origem",
     )
     .eq("caio_ativo", true)
     .eq("followup_ativo", true)
