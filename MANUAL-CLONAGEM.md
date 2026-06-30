@@ -105,17 +105,20 @@ for f in supabase/migrations/0*.sql; do psql "$DATABASE_URL_DO_CLIENTE" -f "$f";
 ```
 (ou via Supabase Studio → SQL Editor, colando na ordem 0001→0025).
 
-## Passo 7 — Seed da organização  **[AUTO]**
-O `organizations` é o cérebro de config (persona/prompt/base/voz por linha). Seed mínimo
-(o `id` TEM que bater com o `DEFAULT_ORG_ID` do env do painel):
-```sql
-insert into organizations (id, name, email_contato, ativo)
-values ('<DEFAULT_ORG_ID>', 'Cliente X', 'contato@clientex.com.br', true);
+## Passo 7 — Seed da organização + login admin  **[AUTO]**
+Rodar o script `scripts/seed-cliente.mjs` (cria a `organizations` com os defaults do banco
++ o usuário admin no Supabase Auth + o `profiles` role=admin; idempotente). O `ORG_ID` TEM
+que ser o mesmo `DEFAULT_ORG_ID` do env do painel:
+```bash
+SUPABASE_URL=https://supabase.CLIENTE.com.br \
+SUPABASE_SERVICE_ROLE_KEY=<service role do cliente> \
+ORG_ID=<DEFAULT_ORG_ID> ORG_NAME="Cliente X" ORG_EMAIL=contato@clientex.com.br \
+ADMIN_EMAIL=admin@clientex.com.br ADMIN_PASSWORD='<senha forte>' \
+node scripts/seed-cliente.mjs        # use --dry-run antes pra conferir
 ```
-O resto (prompt_system, base_conhecimento, agenda_config, followup_config, voz) é melhor
-preencher pela tela do painel (Passo 10). **Login do cliente:** criar usuário no Supabase
-Auth (Studio → Authentication → Add user) e a linha em `profiles` com
-`organization_id = <DEFAULT_ORG_ID>` e `role = 'admin'`.
+As colunas de config (followup_config, voz, etc.) já têm DEFAULT no banco e o script já
+seta um `prompt_system` starter. O resto (base de conhecimento, agenda, tom real) o cliente
+ajusta pela tela do painel (Passo 10).
 
 ## Passo 8 — Crons  **[AUTO]**
 Criar `/etc/cron.d/CLIENTE-cron` na VPS (followup 4x/min, prospecção 4x/min, lembretes e
@@ -166,5 +169,5 @@ conhecimento** (produtos/serviços/preços/diferenciais), **agenda** (dias/horá
    build por cliente sem repo separado. (Passo 4-A.)
 2. **Script de provisionamento** (Passo 2-3-5) — hoje é UI do EasyPanel; dá pra virar
    um `docker stack` versionado por cliente, mas o Supabase self-host é o trecho frágil.
-3. **Seed por script** (Passo 7) — um `seed-cliente.sql` parametrizado + criação do admin.
-4. **Aquecimento do chip** já é produto à parte (incubadora/aquecedor) — ver [[project_incubadora]].
+3. ~~Seed por script~~ ✅ **FEITO** — `scripts/seed-cliente.mjs` (org + login admin, idempotente, testado).
+4. **Aquecimento do chip** já é produto à parte (incubadora/aquecedor).
