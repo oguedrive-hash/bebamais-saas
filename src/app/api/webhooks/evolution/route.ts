@@ -10,8 +10,7 @@ import { salvarAudioBase64 } from "@/lib/caio/storage-audio";
 import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
 import { enviarMensagem } from "@/lib/caio/chatwoot-api";
 import { evoConnectionState } from "@/lib/caio/evolution-api";
-
-const ORG_ID = process.env.DEFAULT_ORG_ID ?? "455b9a80-6bb9-461b-b62d-188f0a28c110"; // Facilita (fallback)
+import { ORG_ID, INSTANCE_NAME, assertTenantConfig } from "@/lib/caio/config";
 
 type EvoKey = { remoteJid?: string; remoteJidAlt?: string; addressingMode?: string; fromMe?: boolean; id?: string };
 type EvoData = {
@@ -93,6 +92,14 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ ok: false }, { status: 400 });
   }
+  // Clone mal-configurado (sem DEFAULT_ORG_ID/INSTANCE/APP_BASE_URL) falha aqui,
+  // claro, em vez de escrever no tenant errado.
+  try {
+    assertTenantConfig();
+  } catch (e) {
+    console.error("[webhook:evolution]", e instanceof Error ? e.message : e);
+    return NextResponse.json({ ok: false, error: "tenant não configurado" }, { status: 500 });
+  }
   const d = body.data;
 
   // FAILOVER: evento de conexão (não tem key/mensagem). Se um número de atendimento
@@ -126,7 +133,7 @@ export async function POST(request: NextRequest) {
   const numeroJid = [rjid, rjidAlt].find((j) => j.endsWith("@s.whatsapp.net")) ?? rjid;
   const lidJid = [rjid, rjidAlt].find((j) => j.endsWith("@lid")) ?? "";
   const telefone = numeroJid.replace(/@.*/, "").replace(/[^0-9]/g, "");
-  const instance = body.instance ?? process.env.DEFAULT_INSTANCE_NAME ?? "facilita";
+  const instance = body.instance ?? INSTANCE_NAME;
 
   // GRUPO: a IA NUNCA responde mensagem de grupo (@g.us). Estar em grupo é ótimo
   // pro AQUECIMENTO (tráfego real passivo), mas responder o grupo é desastre.

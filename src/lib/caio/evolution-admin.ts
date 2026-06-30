@@ -5,6 +5,8 @@
  * pra não mexer na guarda anti-hammer. Estado de conexão segue em `evoConnectionState`.
  */
 
+import { APP_BASE_URL } from "@/lib/caio/config";
+
 function cfg(): { url: string; key: string } | { error: string } {
   const url = (process.env.EVOLUTION_API_URL ?? "").trim().replace(/\/+$/, "");
   const key = (process.env.EVOLUTION_API_KEY ?? "").trim();
@@ -46,7 +48,7 @@ async function req(
   }
 }
 
-const WEBHOOK_URL = `${(process.env.APP_BASE_URL ?? "https://app.facilitaplus.com.br").replace(/\/+$/, "")}/api/webhooks/evolution`;
+const WEBHOOK_URL = `${APP_BASE_URL}/api/webhooks/evolution`;
 
 /** Configura o webhook da instância (MESSAGES_UPSERT + CONNECTION_UPDATE → painel).
  * MESSAGES_UPSERT: inbound do lead. CONNECTION_UPDATE: detecta queda do número

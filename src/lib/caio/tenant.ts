@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { ORG_ID } from "@/lib/caio/config";
 import type { ChatwootWebhook } from "./types";
 
 /**
@@ -40,7 +41,7 @@ export async function getFacilitaOrgFallback(): Promise<{
   const { data, error } = await supabase
     .from("organizations")
     .select("id, name")
-    .eq("id", process.env.DEFAULT_ORG_ID ?? "455b9a80-6bb9-461b-b62d-188f0a28c110")
+    .eq("id", ORG_ID)
     .single();
 
   if (error || !data) return null;

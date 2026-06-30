@@ -10,6 +10,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
 import { logarEvento } from "@/lib/caio/eventos";
+import { INSTANCE_NAME, APP_BASE_URL } from "@/lib/caio/config";
 import {
   enviarComMidia,
   type TipoMidia,
@@ -298,12 +299,12 @@ async function processarLembretesAdmin(
 Lead: ${leadLabel}
 Quando: ${dataStr}
 
-Conversa: ${(process.env.APP_BASE_URL ?? "https://app.facilitaplus.com.br").replace(/\/+$/, "")}/dashboard/contatos/${ag.lead.id}`;
+Conversa: ${APP_BASE_URL}/dashboard/contatos/${ag.lead.id}`;
 
       // Chatwoot desativado: envia direto pro admin via Evolution, pela esteira.
-      // Sai pelo número de atendimento do pool (fallback "facilita").
+      // Sai pelo número de atendimento do pool (fallback = instância do tenant).
       const instanceAdmin =
-        (await numeroPorPapel(ag.organization_id, "atendimento"))?.instance_name ?? process.env.DEFAULT_INSTANCE_NAME ?? "facilita";
+        (await numeroPorPapel(ag.organization_id, "atendimento"))?.instance_name ?? INSTANCE_NAME;
       const sent = await enviarSerializado("org:" + ag.organization_id, () =>
         evoSendText({ instance: instanceAdmin, telefone: adminNumero, texto }),
       );
