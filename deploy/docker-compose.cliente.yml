@@ -1,0 +1,126 @@
+# ============================================================================
+# Stack de UM cliente (Caio) — Evolution(+db+redis) + painel + crons + Traefik(TLS).
+# O Supabase do cliente é à parte (ver MANUAL-CLONAGEM.md, Passo 2).
+#
+# Uso (na VPS do cliente, com Docker + Compose):
+#   1) cp deploy/env.cliente.example deploy/.env.cliente   # e preencher
+#   2) docker login ghcr.io                                 # imagem do painel é privada
+#   3) docker compose --env-file deploy/.env.cliente -f deploy/docker-compose.cliente.yml up -d
+#
+# Substitui os Passos 3+5+8 do manual (Evolution, painel, crons) por 1 comando.
+# NÃO usar junto com EasyPanel na mesma VPS (conflito de porta 80/443 no Traefik).
+# ============================================================================
+
+services:
+  traefik:
+    image: traefik:3.6.7
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --certificatesresolvers.le.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.le.acme.httpchallenge=true
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - traefik_le:/letsencrypt
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  evolution-db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${EVOLUTION_DB_PASSWORD}
+      POSTGRES_DB: evolution
+    volumes:
+      - evolution_db:/var/lib/postgresql/data
+
+  evolution-redis:
+    image: redis:7
+    restart: unless-stopped
+    volumes:
+      - evolution_redis:/data
+
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7 # NÃO subir p/ v2.4+ (vira PAGO)
+    restart: unless-stopped
+    depends_on: [evolution-db, evolution-redis]
+    environment:
+      SERVER_TYPE: http
+      SERVER_PORT: "8080"
+      SERVER_URL: https://${EVOLUTION_DOMAIN}
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://postgres:${EVOLUTION_DB_PASSWORD}@evolution-db:5432/evolution
+      DATABASE_CONNECTION_CLIENT_NAME: evolution_exchange
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "true"
+      DATABASE_SAVE_DATA_CHATS: "true"
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://evolution-redis:6379/6
+      CACHE_REDIS_PREFIX_KEY: evolution
+      CORS_ORIGIN: "*"
+      DEL_INSTANCE: "false"
+      LOG_LEVEL: ERROR,WARN,INFO
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.evo.rule=Host(`${EVOLUTION_DOMAIN}`)
+      - traefik.http.routers.evo.entrypoints=websecure
+      - traefik.http.routers.evo.tls.certresolver=le
+      - traefik.http.services.evo.loadbalancer.server.port=8080
+
+  painel:
+    # imagem buildada por cliente na Fase 2 (workflow build-image com inputs).
+    # NEXT_PUBLIC_* já vão EMBUTIDAS nessa imagem — não entram aqui (são build-time).
+    image: ${PAINEL_IMAGE}
+    restart: unless-stopped
+    depends_on: [evolution]
+    environment:
+      DEFAULT_ORG_ID: ${DEFAULT_ORG_ID}
+      DEFAULT_INSTANCE_NAME: ${DEFAULT_INSTANCE_NAME}
+      APP_BASE_URL: https://${APP_DOMAIN}
+      ADMIN_WHATSAPP_NUMBER: ${ADMIN_WHATSAPP_NUMBER}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      EVOLUTION_API_URL: https://${EVOLUTION_DOMAIN}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      EVOLUTION_RECEBE: "1"
+      EVOLUTION_ENVIO_TODOS: "1"
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      ELEVENLABS_VOICE_ID: ${ELEVENLABS_VOICE_ID:-}
+      CRON_SECRET: ${CRON_SECRET}
+      TZ: ${TZ:-America/Sao_Paulo}
+      PORT: "80"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.painel.rule=Host(`${APP_DOMAIN}`)
+      - traefik.http.routers.painel.entrypoints=websecure
+      - traefik.http.routers.painel.tls.certresolver=le
+      - traefik.http.services.painel.loadbalancer.server.port=80
+
+  crons:
+    # bate os endpoints /api/cron/* do painel (followup/prospeccao 4x/min, lembretes/retomadas 1x).
+    # Internamente via http://painel:80 (sem TLS, mesma rede).
+    image: alpine:3
+    restart: unless-stopped
+    depends_on: [painel]
+    environment:
+      CRON_SECRET: ${CRON_SECRET}
+    volumes:
+      - ./deploy/crons.sh:/crons.sh:ro
+    command: ["sh", "/crons.sh"]
+
+volumes:
+  traefik_le:
+  evolution_db:
+  evolution_redis:

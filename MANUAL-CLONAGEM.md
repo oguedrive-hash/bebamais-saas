@@ -12,6 +12,15 @@ Stack que compõe um cliente (espelho da Facilita):
 Legenda: **[AUTO]** = script/comando pronto · **[SEMI]** = comando + 1 valor a preencher ·
 **[MANUAL]** = passo operacional (UI/provisão).
 
+> 🚀 **Atalho — Passos 3+5+8 num comando só (compose):** Evolution(+db+redis) + painel +
+> crons + Traefik(TLS) já vêm versionados em `deploy/docker-compose.cliente.yml`. Preencha
+> `deploy/env.cliente.example` → `deploy/.env.cliente`, faça `docker login ghcr.io`, e:
+> ```bash
+> docker compose --env-file deploy/.env.cliente -f deploy/docker-compose.cliente.yml up -d
+> ```
+> Isso dispensa criar esses serviços no EasyPanel. Os Passos 3/5/8 abaixo ficam como
+> alternativa/detalhe (e pra quem prefere EasyPanel). **Supabase (Passo 2) continua à parte.**
+
 ---
 
 ## Passo 0 — Provisionar a VPS  **[MANUAL]**
@@ -164,10 +173,9 @@ conhecimento** (produtos/serviços/preços/diferenciais), **agenda** (dias/horá
 
 ---
 
-## Automação pendente (o que ainda dá pra tirar do "manual")
-1. **`workflow_dispatch` com inputs** no `build-image.yml` (Supabase do cliente + tag) →
-   build por cliente sem repo separado. (Passo 4-A.)
-2. **Script de provisionamento** (Passo 2-3-5) — hoje é UI do EasyPanel; dá pra virar
-   um `docker stack` versionado por cliente, mas o Supabase self-host é o trecho frágil.
-3. ~~Seed por script~~ ✅ **FEITO** — `scripts/seed-cliente.mjs` (org + login admin, idempotente, testado).
-4. **Aquecimento do chip** já é produto à parte (incubadora/aquecedor).
+## Status da automação
+1. ~~`workflow_dispatch` com inputs no `build-image.yml`~~ ✅ **FEITO** — build por cliente (Passo 4-A).
+2. ~~Provisão Evolution+painel+crons versionada~~ ✅ **FEITO** — `deploy/docker-compose.cliente.yml` (validado).
+3. ~~Seed por script~~ ✅ **FEITO** — `scripts/seed-cliente.mjs` (org + login admin, testado).
+4. **Supabase self-host** — segue MANUAL (Passo 2); stack próprio, frágil de empacotar.
+5. **Aquecimento do chip** — produto à parte (incubadora/aquecedor).
