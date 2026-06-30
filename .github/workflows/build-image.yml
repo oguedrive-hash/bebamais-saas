@@ -1,9 +1,16 @@
 name: build-image
 
 # A "receita": builda a imagem do painel e publica no GHCR.
-# Mata o bug do build-arg — os NEXT_PUBLIC_* vêm de repo Variables (cada clone
-# seta os seus em Settings > Secrets and variables > Actions > Variables),
-# nunca mais um `docker build` manual esquecendo o argumento e derrubando o site.
+# Mata o bug do build-arg — os NEXT_PUBLIC_* vêm de repo Variables (a Facilita
+# seta os seus em Settings > Secrets and variables > Actions > Variables).
+#
+# CLONAGEM (Fase 2): como NEXT_PUBLIC_* é build-time (embutido no bundle), cada
+# cliente precisa da SUA imagem. Rode este workflow manualmente (Run workflow /
+# workflow_dispatch) passando:
+#   - image_tag        = apelido do cliente (ex: "cliente_x") -> gera :cliente_x
+#   - supabase_url     = NEXT_PUBLIC_SUPABASE_URL do cliente
+#   - supabase_anon_key= NEXT_PUBLIC_SUPABASE_ANON_KEY do cliente
+# Sem inputs (push no master) = build normal da Facilita (:latest + :<sha>).
 
 on:
   push:
@@ -11,14 +18,31 @@ on:
     paths-ignore:
       - "**.md"
       - ".env.example"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Apelido do cliente (ex: cliente_x). Vazio = Facilita (:latest)."
+        required: false
+        default: ""
+      supabase_url:
+        description: "NEXT_PUBLIC_SUPABASE_URL do cliente (vazio = Variable da Facilita)"
+        required: false
+        default: ""
+      supabase_anon_key:
+        description: "NEXT_PUBLIC_SUPABASE_ANON_KEY do cliente (vazio = Variable da Facilita)"
+        required: false
+        default: ""
 
 concurrency:
-  group: build-image
+  # builds de clientes diferentes não cancelam um ao outro nem o da Facilita
+  group: build-image-${{ github.event.inputs.image_tag || 'facilita' }}
   cancel-in-progress: true
 
 env:
   IMAGE: ghcr.io/oguedrive-hash/facilita-painel
+  # input tem precedência; senão cai na Variable da Facilita
+  SUPA_URL: ${{ github.event.inputs.supabase_url || vars.NEXT_PUBLIC_SUPABASE_URL }}
+  SUPA_ANON: ${{ github.event.inputs.supabase_anon_key || vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
 
 jobs:
   build:
@@ -30,10 +54,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verifica build-args (falha cedo se um clone esquecer)
+      - name: Verifica build-args (falha cedo se faltar Supabase)
         run: |
-          test -n "${{ vars.NEXT_PUBLIC_SUPABASE_URL }}" || { echo "::error::repo Variable NEXT_PUBLIC_SUPABASE_URL não setada"; exit 1; }
-          test -n "${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}" || { echo "::error::repo Variable NEXT_PUBLIC_SUPABASE_ANON_KEY não setada"; exit 1; }
+          test -n "$SUPA_URL" || { echo "::error::NEXT_PUBLIC_SUPABASE_URL ausente (nem input nem Variable)"; exit 1; }
+          test -n "$SUPA_ANON" || { echo "::error::NEXT_PUBLIC_SUPABASE_ANON_KEY ausente (nem input nem Variable)"; exit 1; }
+
+      - name: Define as tags
+        id: meta
+        run: |
+          TAG="${{ github.event.inputs.image_tag }}"
+          {
+            echo 'tags<<EOF'
+            if [ -n "$TAG" ]; then
+              echo "${IMAGE}:${TAG}"
+            else
+              echo "${IMAGE}:latest"
+              echo "${IMAGE}:${{ github.sha }}"
+            fi
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
 
       - name: Login no GHCR
         uses: docker/login-action@v3
@@ -50,17 +89,16 @@ jobs:
         with:
           context: .
           push: true
-          tags: |
-            ${{ env.IMAGE }}:latest
-            ${{ env.IMAGE }}:${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
           build-args: |
-            NEXT_PUBLIC_SUPABASE_URL=${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
-            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+            NEXT_PUBLIC_SUPABASE_URL=${{ env.SUPA_URL }}
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ env.SUPA_ANON }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Resumo
         run: |
           echo "### Imagem publicada 🐳" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ env.IMAGE }}:latest\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ env.IMAGE }}:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
