@@ -15,12 +15,12 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "Facilita Plus — Painel",
-  description: "IA aplicada para facilitar processos da sua empresa.",
+  title: "Beba Mais — Painel",
+  description: "Atendimento e pedidos da Beba Mais Distribuidora.",
 };
 
 export const viewport: Viewport = {
-  themeColor: "#E8501C",
+  themeColor: "#CC1B1B",
 };
 
 export default function RootLayout({

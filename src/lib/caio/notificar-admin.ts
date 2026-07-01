@@ -60,7 +60,7 @@ export async function notificarAdminAgendamento(opts: {
     const dataStr = data.toLocaleString("pt-BR", { weekday: "long", day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
     const leadLabel = opts.leadNome ? `${opts.leadNome} (${opts.leadTelefone})` : opts.leadTelefone;
     const resumoBloco = opts.resumoIA?.trim() ? `\n\n*Contexto rapido:*\n${opts.resumoIA.trim()}` : "";
-    const texto = `🟢 *Caio agendou uma sessao*\n\nLead: ${leadLabel}\nQuando: ${dataStr}${resumoBloco}\n\nConversa: ${APP_BASE_URL}/dashboard/contatos/${opts.leadId}`;
+    const texto = `🟢 *Caio agendou uma retirada*\n\nCliente: ${leadLabel}\nQuando: ${dataStr}${resumoBloco}\n\nConversa: ${APP_BASE_URL}/dashboard/contatos/${opts.leadId}`;
     const instance = await instanciaAtendimento(opts.organizationId);
     const sent = await enviarSerializado("org:" + opts.organizationId, () =>
       evoSendText({ instance, telefone: adminNumero, texto }),
@@ -87,7 +87,7 @@ export async function notificarAdminHandoff(opts: {
     console.warn("[notificar-admin:handoff] ADMIN_WHATSAPP_NUMBER nao configurado");
     return;
   }
-  const motivoTexto = opts.motivo === "muda_reuniao" ? "quer reagendar ou cancelar a reuniao" : opts.motivo === "irritado" ? "demonstrou irritacao/frustracao" : "pediu falar com humano";
+  const motivoTexto = opts.motivo === "muda_reuniao" ? "quer reagendar ou cancelar a retirada" : opts.motivo === "irritado" ? "demonstrou irritacao/frustracao" : "pediu falar com humano";
   try {
     const leadLabel = opts.leadNome ? `${opts.leadNome} (${opts.leadTelefone})` : opts.leadTelefone;
     const recorte = opts.conteudoLead?.slice(0, 200) ?? "(sem conteudo)";

@@ -170,8 +170,8 @@ export function AgendaConfigForm({
               📅 Slot fixo
             </p>
             <p className="text-xs text-cinza-medio">
-              Cada horário abaixo vira uma reunião inteira (ex: 8h-10h30 = 1
-              consultoria). Caio só oferece esses blocos.
+              Cada horário abaixo vira uma janela de retirada inteira (ex:
+              8h-10h30). Caio só oferece esses blocos.
             </p>
           </button>
           <button
@@ -204,7 +204,7 @@ export function AgendaConfigForm({
           Dias da semana
         </h2>
         <p className="text-xs text-cinza-medio mb-4">
-          Dias em que a operação trabalha e pode agendar consultoria.
+          Dias em que a loja funciona e o cliente pode retirar o pedido.
         </p>
         <div className="flex items-center gap-2 flex-wrap">
           {DIAS_SEMANA.map((d) => {
@@ -245,8 +245,8 @@ export function AgendaConfigForm({
         </div>
         <p className="text-xs text-cinza-medio mb-4">
           {modo === "slot"
-            ? "Cada bloco vira um agendamento fixo. Pausas entre blocos (ex: almoço de 12h a 13h) são automáticas — só deixar gap."
-            : "Cada bloco é uma janela em que o Caio pode alocar consultorias com a duração padrão. Gaps entre janelas são pausas automáticas."}
+            ? "Cada bloco vira uma janela de retirada fixa. Pausas entre blocos (ex: almoço de 12h a 13h) são automáticas — só deixar gap."
+            : "Cada bloco é uma janela em que o Caio pode alocar retiradas com a duração padrão. Gaps entre janelas são pausas automáticas."}
         </p>
 
         {slots.length === 0 ? (

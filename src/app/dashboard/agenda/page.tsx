@@ -86,8 +86,8 @@ export default async function AgendaPage({
       <div>
         <div className="flex items-center justify-between gap-3 mb-6">
           <PageHeader
-            titulo="Agenda"
-            descricao="Consultorias agendadas pelo Caio"
+            titulo="Retiradas"
+            descricao="Pedidos com retirada agendada pelo Caio"
           />
           <div className="flex items-center gap-3">
             <ViewToggle viewAtual={view} />
@@ -141,13 +141,13 @@ export default async function AgendaPage({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <h2 className="text-lg font-heading font-bold text-preto mb-4">
-            Próximas reuniões
+            Próximas retiradas
           </h2>
           {!proximosAgendamentos || proximosAgendamentos.length === 0 ? (
             <EmptyState
               icone="📅"
-              titulo="Agenda vazia"
-              descricao="Quando o Caio agendar uma consultoria, vai aparecer aqui."
+              titulo="Nenhuma retirada agendada"
+              descricao="Quando o Caio agendar uma retirada, vai aparecer aqui."
             />
           ) : (
             <div className="space-y-3">
@@ -283,7 +283,7 @@ function AgendamentoCard({
             rel="noopener noreferrer"
             className="text-xs text-laranja hover:underline font-heading font-semibold"
           >
-            Link da reunião →
+            Link →
           </a>
         ) : (
           <span className="text-xs text-cinza-medio">Sem link</span>

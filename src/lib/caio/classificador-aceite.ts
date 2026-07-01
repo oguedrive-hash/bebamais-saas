@@ -1,6 +1,6 @@
 /**
  * Classifica se a última mensagem do lead indica aceite (ou rejeição) de
- * marcar a consultoria proposta pelo Caio. Quatro intenções possíveis:
+ * marcar a retirada proposta pelo Caio. Quatro intenções possíveis:
  *
  *  - aceita_sem_horario   — sim, mas não diz quando (Caio vai propor slots)
  *  - aceita_com_horario   — sim E indica momento (Caio cria agendamento)
@@ -19,18 +19,18 @@ export type ResultadoAceite =
   | { intencao: "aceita_sem_horario" }
   | { intencao: "aceita_com_horario"; momento_iso: string };
 
-const SYSTEM_PROMPT = `Você é um classificador. O Caio (atendente IA) propôs ou está propondo agendar uma CONSULTORIA com o lead. Você recebe a mensagem mais recente do lead e o contexto da conversa. Classifica a INTENÇÃO em UMA das opções:
+const SYSTEM_PROMPT = `Você é um classificador. O Caio (atendente da Beba Mais) propôs ou está propondo agendar uma RETIRADA DE PEDIDO com o lead. Você recebe a mensagem mais recente do lead e o contexto da conversa. Classifica a INTENÇÃO em UMA das opções:
 
-1. "aceita_sem_horario" — lead concorda em marcar a consultoria, mas NÃO indica dia/hora. Ex: "pode ser", "vamos lá", "fechado", "topo", "bora marcar", "qual o melhor horário?", "tu tem disponibilidade quando?", "manda os horários".
+1. "aceita_sem_horario" — lead concorda em marcar a retirada, mas NÃO indica dia/hora. Ex: "pode ser", "vamos lá", "fechado", "topo", "bora marcar", "qual o melhor horário?", "tu tem disponibilidade quando?", "manda os horários".
 
 2. "aceita_com_horario" — lead concorda em marcar E indica uma HORA ESPECIFICA (HH:MM ou HHh). Ex: "amanhã às 14h pode ser", "fechado pra 15h", "dia 5/6 às 10h", "pode ser amanhã às 9:30". Hora especifica eh obrigatorio aqui.
 
-3. "nao_aceita" — lead recusa marcar consultoria agora. Ex: "não tenho interesse", "outra hora", "deixa pra lá", "agora não", "obrigado mas não preciso".
+3. "nao_aceita" — lead recusa marcar retirada agora. Ex: "não tenho interesse", "outra hora", "deixa pra lá", "agora não", "obrigado mas não preciso".
 
 4. "responde_normal" — qualquer outra coisa. Lead conversa, faz pergunta sobre serviço, pede detalhe, agradece, etc. Inclui mensagens de saudação inicial.
 
 REGRAS:
-- Se a conversa NÃO trata de marcar consultoria/reunião, classifica como "responde_normal".
+- Se a conversa NÃO trata de marcar retirada de pedido, classifica como "responde_normal".
 - Se o Caio acabou de propor agendar (na msg anterior) e o lead responde positivamente sem horário → "aceita_sem_horario".
 - Se duvidoso entre "aceita_sem_horario" e "responde_normal", prefira "responde_normal".
 - "aceita_com_horario" EXIGE hora especifica explicita (ex: "14h", "09:30", "às 10"). APENAS turno ("tarde", "manhã", "noite") ou apenas dia ("segunda", "amanhã") NAO conta como hora especifica — classifica como "aceita_sem_horario".

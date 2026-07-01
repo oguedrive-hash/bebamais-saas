@@ -39,7 +39,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  IMAGE: ghcr.io/oguedrive-hash/facilita-painel
+  # Pacote GHCR próprio da Beba Mais (repo separado da Facilita).
+  IMAGE: ghcr.io/oguedrive-hash/bebamais-painel
   # input tem precedência; senão cai na Variable da Facilita
   SUPA_URL: ${{ github.event.inputs.supabase_url || vars.NEXT_PUBLIC_SUPABASE_URL }}
   SUPA_ANON: ${{ github.event.inputs.supabase_anon_key || vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}

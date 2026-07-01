@@ -1,15 +1,23 @@
 @import "tailwindcss";
 
 /* ============================================
-   FACILITA PLUS — Tema visual oficial
-   Baseado no Manual da Marca (versão 01)
+   BEBA MAIS — Tema visual
+   Vermelho + dourado (extraídos do logo).
+   Obs: as variáveis mantêm o nome "laranja" por compat com o código
+   herdado do Caio — o valor agora é o vermelho da marca.
    ============================================ */
 
 @theme {
-  /* Cores oficiais da marca */
-  --color-laranja: #e8501c;
-  --color-laranja-claro: #f47843;
-  --color-laranja-escuro: #c0410f;
+  /* Vermelho Beba Mais (primária) */
+  --color-laranja: #cc1b1b;
+  --color-laranja-claro: #e84040;
+  --color-laranja-escuro: #a01414;
+
+  /* Aliases semânticos (usar em código novo) */
+  --color-vermelho: #cc1b1b;
+  --color-vermelho-escuro: #a01414;
+  --color-dourado: #f5a623;
+  --color-dourado-escuro: #d4880c;
 
   --color-preto: #0a0a0a;
   --color-chumbo: #1a1a1a;
