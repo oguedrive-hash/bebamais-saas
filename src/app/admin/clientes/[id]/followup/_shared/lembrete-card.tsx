@@ -17,7 +17,7 @@ export function LembreteCard({
   onRemove: () => void;
 }) {
   const rotuloTempo =
-    contexto === "antes" ? "Antes da reunião" : "Depois da reunião";
+    contexto === "antes" ? "Antes da retirada" : "Depois da retirada";
 
   return (
     <div className="p-4 rounded-lg border border-cinza-claro bg-white">
@@ -115,7 +115,7 @@ export function LembreteCard({
           onChange={(e) => onChange({ mensagem: e.target.value })}
           placeholder={
             contexto === "antes"
-              ? "Ex: Oi {nome}, sua reunião é {data} às {hora}. Link: {meet_link}"
+              ? "Ex: Oi {nome}, sua retirada é {data} às {hora}. Link: {meet_link}"
               : "Ex: E aí {nome}, como foi? Bora dar sequência?"
           }
           className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition text-sm"

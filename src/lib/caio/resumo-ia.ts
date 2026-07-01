@@ -1,7 +1,7 @@
 /**
  * Gera resumo IA da conversa de um lead. Usado:
  *  - Server action gerarResumoIA() (manual no painel)
- *  - notificarAdminAgendamento (automatico quando Caio fecha reuniao)
+ *  - notificarAdminAgendamento (automatico quando Caio fecha retirada)
  *
  * Pega as ultimas N mensagens e roda pelo RESUMO_PROMPT.
  */

@@ -63,8 +63,8 @@ export const STATUS_CONFIG: Record<
     ordem: 4,
   },
   reuniao_agendada: {
-    label: "Reunião agendada",
-    descricao: "Aguardando consultoria",
+    label: "Retirada agendada",
+    descricao: "Aguardando retirada",
     cor: "text-emerald-700",
     bg: "bg-emerald-50",
     border: "border-emerald-200",
@@ -73,7 +73,7 @@ export const STATUS_CONFIG: Record<
   },
   fechou: {
     label: "Fechou",
-    descricao: "Cliente fechou projeto",
+    descricao: "Cliente fechou pedido",
     cor: "text-emerald-800",
     bg: "bg-emerald-100",
     border: "border-emerald-300",

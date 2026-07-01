@@ -10,7 +10,7 @@
  *     "orgId": "455b9a80-6bb9-461b-b62d-188f0a28c110",
  *     "telefone": "+5519998744971",
  *     "nome": "Lucas Teste",
- *     "texto": "Quero agendar a consultoria",
+ *     "texto": "Quero agendar a retirada",
  *     "limparHistorico": false
  *   }
  *
@@ -169,7 +169,7 @@ export async function POST(request: NextRequest) {
     contextoAnterior: contextoHandoff,
   });
   // muda_reuniao so faz sentido se ja existe agendamento — senao "marcar
-  // reuniao" / "as 10:30" sao falsos positivos.
+  // retirada" / "as 10:30" sao falsos positivos.
   let handoffAtivo = classifHandoff.intencao !== "nenhum";
   if (handoffAtivo && classifHandoff.intencao === "muda_reuniao") {
     const { data: agExistente } = await admin
@@ -259,7 +259,7 @@ export async function POST(request: NextRequest) {
       const respLLM = await gerarRespostaCaio({
         leadId: lead.id,
         extrasContexto: [
-          `[AGENDAMENTO CRIADO] O lead acabou de aceitar marcar consultoria e o agendamento JÁ FOI CRIADO pra: ${dataStr}. Confirme curto e natural.`,
+          `[AGENDAMENTO CRIADO] O cliente acabou de aceitar agendar a retirada e o agendamento JÁ FOI CRIADO pra: ${dataStr}. Confirme curto e natural.`,
         ],
       });
       const texto = "error" in respLLM ? `[erro LLM: ${respLLM.error}]` : respLLM.resposta;
@@ -349,7 +349,7 @@ export async function POST(request: NextRequest) {
     const diasDesc = descreverDiasNatural(cfg?.dias_semana ?? [1, 2, 3, 4, 5]);
     const primeiroNome = lead.nome?.split(" ")[0] ?? null;
     const sauda = primeiroNome ? `${primeiroNome}, ` : "";
-    const texto = `${sauda}perfeito! Pra agendar a consultoria, qual dia da semana funciona melhor pra você? Atendemos ${diasDesc}.`;
+    const texto = `${sauda}perfeito! Pra agendar a retirada, qual dia da semana funciona melhor pra você? Atendemos ${diasDesc}.`;
     await admin.from("mensagens").insert({
       organization_id: body.orgId,
       lead_id: lead.id,

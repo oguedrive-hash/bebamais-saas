@@ -1,5 +1,5 @@
 /**
- * Logo da Facilita Plus — versao oficial (PNG do manual da marca).
+ * Logo da Beba Mais — versao oficial (PNG do manual da marca).
  *
  * `variant="dark"` (default) — pra fundos claros (creme/branco). Plus laranja + texto preto.
  * `variant="light"` — pra fundos escuros. Tudo branco.
@@ -25,7 +25,7 @@ export function Logo({
     // eslint-disable-next-line @next/next/no-img-element
     <img
       src={src}
-      alt="Facilita Plus"
+      alt="Beba Mais"
       width={124}
       height={32}
       className={`h-8 w-auto select-none ${className}`}

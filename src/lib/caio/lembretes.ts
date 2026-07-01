@@ -1,5 +1,5 @@
 /**
- * Worker de lembretes de reuniao agendada.
+ * Worker de lembretes de retirada agendada.
  *
  * Para cada agendamento status="agendado", calcula pra cada regra de
  * lembrete_reuniao_config o instante de disparo (data_inicio +/- tempo).
@@ -58,8 +58,8 @@ type AgendamentoProcess = {
 // Lembretes do ADMIN (Lucas/especialista) - hardcoded fixos pra todo agendamento.
 // nivel 1 = 24h antes; nivel 2 = 1h antes. Salvos em lembretes_admin_enviados[].
 const LEMBRETES_ADMIN = [
-  { nivel: 1, horasAntes: 24, titulo: "Reuniao amanha" },
-  { nivel: 2, horasAntes: 1, titulo: "Reuniao em 1 hora" },
+  { nivel: 1, horasAntes: 24, titulo: "Retirada amanha" },
+  { nivel: 2, horasAntes: 1, titulo: "Retirada em 1 hora" },
 ];
 
 function calcularInstanteDisparo(
@@ -148,7 +148,7 @@ export async function processarLembretesPendentes(): Promise<{
     // Margem de seguranca: se o agendamento foi criado MUITO em cima da
     // hora (ex: lead pediu 30min antes), nao queremos disparar lembretes
     // "antes" que ja eram passado quando o agendamento nasceu — caso contrario
-    // o lead recebe "lembrete: sua reuniao e amanha" segundos depois de marcar.
+    // o lead recebe "lembrete: sua retirada e amanha" segundos depois de marcar.
     const margemMs = 5 * 60 * 1000; // 5 minutos
 
     for (const regra of config.regras) {
@@ -234,7 +234,7 @@ export async function processarLembretesPendentes(): Promise<{
         leadId: ag.lead_id,
         organizationId: ag.organization_id,
         tipo: "lembrete_enviado",
-        descricao: `Lembrete de reunião nº${regra.nivel} enviado (${regra.quando})`,
+        descricao: `Lembrete de retirada nº${regra.nivel} enviado (${regra.quando})`,
         autorNome: "Caio (automático)",
         meta: { nivel: regra.nivel, agendamento_id: ag.id },
       });

@@ -232,17 +232,17 @@ Regras:
   // respondeu (origem virou "inbound" mas origem_inicial continua "prospeccao").
   // Sem esse contexto, o Caio trataria como inbound novo e responderia tipo
   // "obrigado por entrar em contato", o que confunde o lead que lembra que
-  // foi a Facilita que iniciou.
+  // foi a Beba Mais que iniciou.
   const foiProspectado =
     lead?.origem === "prospeccao" || lead?.origem_inicial === "prospeccao";
   if (foiProspectado) {
     if (lead?.origem === "prospeccao") {
       extras.push(
-        `Esse lead veio de prospecção ATIVA — VOCÊ iniciou o contato, ele NÃO procurou a Facilita. NÃO use frases que sugiram que ele veio até nós, tipo: "obrigado por entrar em contato", "como posso te ajudar", "no que posso te ajudar", "em que posso ajudar", "como posso te ajudar hoje". Essas frases confundem o lead — ele lembra que foi a Facilita que falou com ele. Em vez disso: trate como continuação natural do contato que VOCÊ começou. Já se apresentou, agora avance o objetivo (entender o cenário, identificar dor, propor consultoria). Se o lead estranhar/perguntar por que você o contatou, explique brevemente o trabalho da Facilita e o que motivou a aproximação.`,
+        `Esse lead veio de prospecção ATIVA — VOCÊ iniciou o contato, ele NÃO procurou a Beba Mais. NÃO use frases que sugiram que ele veio até nós, tipo: "obrigado por entrar em contato", "como posso te ajudar", "no que posso te ajudar", "em que posso ajudar", "como posso te ajudar hoje". Essas frases confundem o cliente — ele lembra que foi a Beba Mais que falou com ele. Em vez disso: trate como continuação natural do contato que VOCÊ começou. Já se apresentou, agora avance o objetivo (entender o que ele precisa, montar o pedido, combinar a retirada ou entrega). Se o cliente estranhar/perguntar por que você o contatou, explique brevemente que a Beba Mais é a distribuidora de bebidas e o que motivou a aproximação.`,
       );
     } else {
       extras.push(
-        `Esse lead foi prospectado pela Facilita NO PASSADO — VOCÊ iniciou o contato originalmente. Ele não respondeu na época e a cadência se encerrou, mas agora ele está retomando a conversa por conta própria. NÃO use frases tipo "obrigado por entrar em contato", "como posso te ajudar", "no que posso te ajudar" — ele lembra que foi a Facilita que falou com ele primeiro, e essas frases vão confundi-lo. Se ele perguntar "por que você entrou em contato" ou similar, explique brevemente o trabalho da Facilita (soluções de IA para empresas) e pergunte se ele tem algum desafio específico que a gente possa ajudar.`,
+        `Esse lead foi prospectado pela Beba Mais NO PASSADO — VOCÊ iniciou o contato originalmente. Ele não respondeu na época e a cadência se encerrou, mas agora ele está retomando a conversa por conta própria. NÃO use frases tipo "obrigado por entrar em contato", "como posso te ajudar", "no que posso te ajudar" — ele lembra que foi a Beba Mais que falou com ele primeiro, e essas frases vão confundi-lo. Se ele perguntar "por que você entrou em contato" ou similar, explique brevemente que a Beba Mais é a distribuidora de bebidas e pergunte se ele precisa fazer algum pedido que a gente possa ajudar.`,
       );
     }
     const dadosExtras = lead.dados_extras as Record<string, string> | null;

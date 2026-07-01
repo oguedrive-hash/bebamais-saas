@@ -745,7 +745,7 @@ function CaioBadge({ ativo }: { ativo: boolean }) {
 function PrecisaHumanoBadge({ motivo }: { motivo: string | null }) {
   const label =
     motivo === "muda_reuniao"
-      ? "Quer mudar reunião"
+      ? "Quer mudar retirada"
       : motivo === "irritado"
         ? "Lead irritado"
         : motivo === "pede_humano"

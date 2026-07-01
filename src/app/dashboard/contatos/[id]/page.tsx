@@ -204,7 +204,7 @@ export default async function LeadDetalhePage({
           <Card titulo="Agendamentos">
             {!agendamentos || agendamentos.length === 0 ? (
               <p className="text-sm text-cinza-medio text-center py-6">
-                Nenhuma consultoria agendada ainda.
+                Nenhuma retirada agendada ainda.
               </p>
             ) : (
               <ul className="space-y-3">
@@ -228,7 +228,7 @@ export default async function LeadDetalhePage({
                         rel="noopener noreferrer"
                         className="text-xs text-laranja hover:underline"
                       >
-                        Link da reunião →
+                        Link da retirada →
                       </a>
                     )}
                     {a.observacoes && (

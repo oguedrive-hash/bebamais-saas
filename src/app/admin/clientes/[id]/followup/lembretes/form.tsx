@@ -67,10 +67,10 @@ export function LembretesForm({
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-base font-heading font-bold text-preto">
-              Lembretes de reunião agendada
+              Lembretes de retirada agendada
             </h3>
             <p className="text-xs text-cinza-medio mt-1">
-              Quando um lead tem reunião agendada, dispara lembretes em momentos
+              Quando um cliente tem retirada agendada, dispara lembretes em momentos
               específicos antes do horário marcado.
             </p>
           </div>

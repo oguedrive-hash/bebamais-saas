@@ -134,7 +134,7 @@ export default async function MetricasGlobaisPage() {
     <div>
       <PageHeader
         titulo="Métricas globais"
-        descricao="Visão consolidada de todos os clientes da Facilita Plus"
+        descricao="Visão consolidada de todos os clientes da Beba Mais"
       />
 
       {/* Métricas principais */}

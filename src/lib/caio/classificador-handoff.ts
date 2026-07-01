@@ -1,6 +1,6 @@
 /**
  * Classifica se a ultima msg do lead exige handoff pra humano:
- * - "muda_reuniao": quer reagendar ou cancelar reuniao ja marcada
+ * - "muda_reuniao": quer reagendar ou cancelar retirada ja marcada
  * - "irritado": sinais claros de raiva, frustracao, xingamento
  * - "pede_humano": pede explicitamente falar com pessoa/atendente/gerente
  * - "nenhum": fluxo normal
@@ -18,13 +18,13 @@ export type ResultadoHandoff =
 
 const SYSTEM_PROMPT = `Voce e um classificador de UMA mensagem de um lead num atendimento WhatsApp. Classifica em UMA dessas opcoes:
 
-1. "muda_reuniao" — lead pede pra REAGENDAR, REMARCAR, TROCAR HORARIO ou CANCELAR uma reuniao/consultoria. Ex: "da pra reagendar?", "preciso cancelar a reuniao", "trocar pra outro dia", "nao vou conseguir amanha".
+1. "muda_reuniao" — lead pede pra REAGENDAR, REMARCAR, TROCAR HORARIO ou CANCELAR uma retirada de pedido. Ex: "da pra reagendar?", "preciso cancelar a retirada", "trocar pra outro dia", "nao vou conseguir amanha".
 
-2. "irritado" — lead claramente irritado/ofensivo COM O ATENDIMENTO OU COM A FACILITA, xingando, reclamando do servico, perdendo a paciencia COM VOCE. Ex: "que merda esse atendimento", "voces sao um lixo", "to perdendo MEU TEMPO com voces", "porra nenhuma funciona aqui".
+2. "irritado" — lead claramente irritado/ofensivo COM O ATENDIMENTO OU COM A BEBA MAIS, xingando, reclamando do servico, perdendo a paciencia COM VOCE. Ex: "que merda esse atendimento", "voces sao um lixo", "to perdendo MEU TEMPO com voces", "porra nenhuma funciona aqui".
 
 ATENCAO — NAO eh "irritado" quando lead apenas:
-- Compartilha dor da propria operacao: "perdemos muito lead", "to com problemas no comercial", "ta dificil esse mes". Isso eh CONTEXTO, nao raiva contra voce.
-- Reclama de outras coisas que nao sao voce/Facilita: "esse mercado ta dificil", "concorrencia ta apertada".
+- Compartilha uma dificuldade propria: "meu evento e amanha e to sem bebida", "ta dificil esse mes". Isso eh CONTEXTO, nao raiva contra voce.
+- Reclama de outras coisas que nao sao voce/Beba Mais: "esse mercado ta dificil", "concorrencia ta apertada".
 - Usa palavroes leves de enfase ("porra ne", "ta foda esse trafego") sem agressao direcionada.
 Frustracao leve, desabafo, partilha de problema: classifica "nenhum".
 
@@ -39,7 +39,7 @@ ATENCAO — NAO eh "pede_humano" se:
 
 REGRAS:
 - Se duvidoso, classifica "nenhum".
-- "muda_reuniao": classifica quando o lead se refere de forma DEFINIDA a uma reuniao/consultoria DELE — pedindo pra remarcar, trocar horario ou cancelar (ex: "cancelar a reuniao que marquei", "minha consultoria", "preciso remarcar nossa reuniao"). Vale MESMO que a reuniao nao apareca no contexto recente, desde que o lead afirme ter uma. NAO classifica se for HIPOTETICO/futuro ("e se eu precisar cancelar depois?", "da pra remarcar caso precise?").
+- "muda_reuniao": classifica quando o lead se refere de forma DEFINIDA a uma retirada de pedido DELE — pedindo pra remarcar, trocar horario ou cancelar (ex: "cancelar a retirada que marquei", "minha retirada", "preciso remarcar nossa retirada"). Vale MESMO que a retirada nao apareca no contexto recente, desde que o lead afirme ter uma. NAO classifica se for HIPOTETICO/futuro ("e se eu precisar cancelar depois?", "da pra remarcar caso precise?").
 - Frustracao leve ("ah ta", "hum...", "to ocupado") NAO eh "irritado".
 - "voce eh humano?" / "eh bot?" / "eh IA?" NUNCA eh "pede_humano" — eh curiosidade, classifica "nenhum".
 

@@ -11,7 +11,7 @@ export default async function AgendaConfigPage() {
       <div className="flex items-center justify-between gap-3 mb-6">
         <PageHeader
           titulo="Configuração da Agenda"
-          descricao="Dias e horários que a operação trabalha — usado pra propor horários de consultoria"
+          descricao="Dias e horários que a operação trabalha — usado pra propor horários de retirada"
         />
         <Link
           href="/dashboard/agenda"

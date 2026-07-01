@@ -133,7 +133,7 @@ export default async function AgendaPage({
       <div className="flex items-center justify-between gap-3 mb-6">
         <PageHeader
           titulo="Agenda"
-          descricao="Consultorias agendadas pelo Caio"
+          descricao="Retiradas agendadas pelo Caio"
         />
         <ViewToggle viewAtual={view} />
       </div>

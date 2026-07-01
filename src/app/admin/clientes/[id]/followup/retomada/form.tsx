@@ -78,7 +78,7 @@ export function RetomadaForm({
               onChange={(e) =>
                 setRetomada({ ...retomada, mensagem: e.target.value })
               }
-              placeholder="Ex: Oi {nome}! Como combinamos, voltando ao contato. Posso te apresentar a Facilita?"
+              placeholder="Ex: Oi {nome}! Como combinamos, voltando ao contato. Posso te ajudar a montar seu pedido?"
               className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition text-sm"
             />
             <p className="text-[10px] text-cinza-medio mt-1">

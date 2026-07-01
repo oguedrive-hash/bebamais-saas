@@ -194,7 +194,7 @@ export function SinoHandoff({
 }
 
 function labelMotivo(motivo: string | null): string {
-  if (motivo === "muda_reuniao") return "⚠ Quer mudar reunião";
+  if (motivo === "muda_reuniao") return "⚠ Quer mudar retirada";
   if (motivo === "irritado") return "⚠ Lead irritado";
   if (motivo === "pede_humano") return "⚠ Pediu humano";
   return "⚠ Precisa humano";

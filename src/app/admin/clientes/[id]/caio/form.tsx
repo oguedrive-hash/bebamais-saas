@@ -47,8 +47,9 @@ export function CaioForm({
             Comportamento — Inbound
           </h3>
           <p className="text-xs text-cinza-medio mt-1">
-            Como o Caio age quando o lead procura a gente primeiro. Foco em
-            tirar dúvidas e induzir agendamento de reunião. Aqui vai{" "}
+            Como o Caio age quando o cliente procura a gente primeiro. Foco em
+            tirar dúvidas e induzir o fechamento do pedido e o agendamento da
+            retirada. Aqui vai{" "}
             <strong>só comportamento</strong>: identidade, tom de voz, regras,
             o que pode/não pode fazer. As informações da empresa ficam na{" "}
             <em>Base de Conhecimento</em> abaixo.
@@ -58,7 +59,7 @@ export function CaioForm({
           rows={12}
           value={inbound}
           onChange={(e) => setInbound(e.target.value)}
-          placeholder={"Você é o Caio, pré-vendedor da [Empresa].\n\nSeu objetivo: entender o que o lead precisa e marcar uma reunião.\n\nO que fazer:\n- Cumprimentar de forma calorosa\n- Fazer 1-2 perguntas pra qualificar antes de oferecer reunião\n- ...\n\nO que NÃO fazer:\n- Inventar info que não está na base\n- ..."}
+          placeholder={"Você é o Caio, atendente da Beba Mais (distribuidora de bebidas).\n\nSeu objetivo: entender o que o cliente precisa, montar o pedido e combinar a retirada na loja ou a entrega.\n\nO que fazer:\n- Cumprimentar de forma calorosa\n- Fazer 1-2 perguntas pra entender o pedido antes de fechar\n- ...\n\nO que NÃO fazer:\n- Inventar info que não está na base\n- ..."}
           className="w-full px-4 py-3 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition font-mono text-xs leading-relaxed"
         />
       </section>
@@ -102,7 +103,7 @@ export function CaioForm({
           rows={20}
           value={base}
           onChange={(e) => setBase(e.target.value)}
-          placeholder={"## Sobre a empresa\nNome: ...\nO que faz: ...\n\n## Serviços / produtos\n- Produto A — R$X, prazo Y\n- Produto B — ...\n\n## Como funciona a reunião\nLink: ...\nDuração: ...\n\n## FAQ\nP: ...\nR: ...\n\n..."}
+          placeholder={"## Sobre a empresa\nNome: ...\nO que faz: ...\n\n## Serviços / produtos\n- Produto A — R$X, prazo Y\n- Produto B — ...\n\n## Como funciona a retirada\nEndereço: ...\nHorário: ...\n\n## FAQ\nP: ...\nR: ...\n\n..."}
           className="w-full px-4 py-3 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition font-mono text-xs leading-relaxed"
         />
       </section>

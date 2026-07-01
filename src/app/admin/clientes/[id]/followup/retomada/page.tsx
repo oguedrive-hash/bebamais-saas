@@ -24,7 +24,7 @@ export default async function RetomadaPage({
   const retomadaInicial: RetomadaConfig = {
     mensagem:
       cliente.mensagem_retomada ??
-      "Oi {nome}! Como combinamos, voltando ao contato. Posso te apresentar a Facilita?",
+      "Oi {nome}! Como combinamos, voltando ao contato. Posso te ajudar a montar seu pedido?",
     usa_ia: cliente.mensagem_retomada_usa_ia ?? false,
     tipo_midia:
       (cliente.mensagem_retomada_tipo_midia as TipoMidia | null) ?? "texto",

@@ -70,7 +70,7 @@ export function PosVendaForm({
               Mensagens de pós-venda
             </h3>
             <p className="text-xs text-cinza-medio mt-1">
-              Após uma reunião acontecer, disparar mensagens em momentos
+              Após uma retirada acontecer, disparar mensagens em momentos
               específicos pra retomar o contato (feedback, próximos passos,
               etc).
             </p>
@@ -86,7 +86,7 @@ export function PosVendaForm({
 
         {regras.length === 0 ? (
           <p className="text-sm text-cinza-medio text-center py-8 bg-offwhite rounded-lg border border-cinza-claro">
-            Nenhuma mensagem de pós-venda. Após a reunião, nenhum contato
+            Nenhuma mensagem de pós-venda. Após a retirada, nenhum contato
             automático será feito.
           </p>
         ) : (

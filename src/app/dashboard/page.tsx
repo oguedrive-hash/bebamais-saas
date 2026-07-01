@@ -151,7 +151,7 @@ export default async function DashboardPage() {
       <div className="mb-8">
         <h1 className="text-4xl font-heading font-bold text-preto">Dashboard</h1>
         <p className="text-sm text-cinza-medio mt-1">
-          Visão geral do seu pré-vendedor IA
+          Visão geral do seu atendente IA
         </p>
       </div>
 
@@ -168,7 +168,7 @@ export default async function DashboardPage() {
           descricao="vs semana anterior"
         />
         <MetricCard
-          titulo="Reuniões agendadas"
+          titulo="Retiradas agendadas"
           valor={reuniao}
         />
         <MetricCard
@@ -395,7 +395,7 @@ export default async function DashboardPage() {
             </li>
             <li className="flex justify-between">
               <span className="text-amber-700 font-heading font-semibold">
-                Reunião agendada
+                Retirada agendada
               </span>
               <span className="text-preto font-mono">{reuniao}</span>
             </li>

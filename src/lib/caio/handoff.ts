@@ -1,6 +1,6 @@
 /**
  * Handoff: tira o Caio da conversa e chama humano. Dispara quando:
- *  - lead pede pra reagendar/cancelar reuniao
+ *  - lead pede pra reagendar/cancelar retirada
  *  - lead esta irritado/xingando
  *  - lead pede explicitamente falar com pessoa
  *

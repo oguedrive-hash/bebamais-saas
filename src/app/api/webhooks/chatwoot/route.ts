@@ -486,7 +486,7 @@ async function responderLeadAuto(
       return;
     }
 
-    // HANDOFF: lead pede reagendar/cancelar reunião, está irritado, ou pede
+    // HANDOFF: lead pede reagendar/cancelar retirada, está irritado, ou pede
     // humano → Caio sai, marca lead com flag, notifica admin no WhatsApp,
     // responde com canned text. Roda ANTES de aceite/adiamento porque
     // "reagendar" não é aceite e seria mal-classificado se passasse adiante.
@@ -503,7 +503,7 @@ async function responderLeadAuto(
     if (handoffResult) return;
 
     // ORDEM IMPORTA: aceite ANTES de adiamento. Quando o lead já está no
-    // contexto de marcar consultoria, "segunda de tarde" é aceite com horário,
+    // contexto de agendar retirada, "segunda de tarde" é aceite com horário,
     // não pedido pra falar depois. Se rodar adiamento primeiro, ele captura
     // a data e responde "te chamo no dia X" — comportamento errado.
     const aceite = await tentarTratarAceite(
@@ -648,7 +648,7 @@ async function tentarTratarAdiamento(
 }
 
 /**
- * Detecta se a última msg do lead aceita marcar consultoria. Retorna extras
+ * Detecta se a última msg do lead aceita agendar retirada. Retorna extras
  * pro contexto do Caio quando classifica como aceite (com ou sem horário) —
  * o caller passa esses extras pra `gerarERespondeCaio` que gera resposta
  * natural com base nas instruções.
@@ -660,7 +660,7 @@ async function tentarTratarAdiamento(
  * - nao_aceita / responde_normal: retorna null (fluxo normal).
  */
 /**
- * Detecta se o lead pede reagendar/cancelar reuniao, esta irritado ou pede
+ * Detecta se o lead pede reagendar/cancelar retirada, esta irritado ou pede
  * humano. Se sim: dispara handoff (Caio off + notifica admin + responde
  * canned text) e retorna true.
  */
@@ -706,8 +706,8 @@ async function tentarTratarHandoff(
 
   if (classif.intencao === "nenhum") return false;
 
-  // muda_reuniao so faz sentido se o lead JA TEM reuniao marcada. Sem isso,
-  // "marcar uma reuniao" ou "as 10:30" sao falsos positivos comuns.
+  // muda_reuniao so faz sentido se o lead JA TEM retirada marcada. Sem isso,
+  // "marcar uma retirada" ou "as 10:30" sao falsos positivos comuns.
   if (classif.intencao === "muda_reuniao") {
     const { data: agendamentoExistente } = await supabase
       .from("agendamentos")
@@ -836,7 +836,7 @@ async function tentarTratarAceite(
       return {
         tipo: "extras",
         extrasContexto: [
-          `[AGENDAMENTO CRIADO] O lead acabou de aceitar marcar consultoria e o agendamento JÁ FOI CRIADO pra: ${dataStr} (fuso de Brasília). Confirme com ele de forma natural e curta. Cite data e hora exatas. Avise que ele vai receber um lembrete antes. NÃO repita os horários alternativos.`,
+          `[AGENDAMENTO CRIADO] O cliente acabou de aceitar agendar a retirada e o agendamento JÁ FOI CRIADO pra: ${dataStr} (fuso de Brasília). Confirme com ele de forma natural e curta. Cite data e hora exatas. Avise que ele vai receber um lembrete antes. NÃO repita os horários alternativos.`,
         ],
       };
     }
@@ -954,7 +954,7 @@ async function tentarTratarAceite(
     const sauda2 = primeiroNome2 ? `${primeiroNome2}, ` : "";
     return {
       tipo: "resposta_direta",
-      texto: `${sauda2}perfeito! Pra agendar a consultoria, qual dia da semana funciona melhor pra você? Atendemos ${diasDesc}.`,
+      texto: `${sauda2}perfeito! Pra agendar a retirada, qual dia da semana funciona melhor pra você? Atendemos ${diasDesc}.`,
     };
   }
 
