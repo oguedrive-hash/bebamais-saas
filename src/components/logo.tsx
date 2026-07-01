@@ -1,32 +1,24 @@
 /**
- * Logo da Beba Mais — versao oficial (PNG do manual da marca).
- *
- * `variant="dark"` (default) — pra fundos claros (creme/branco). Plus laranja + texto preto.
- * `variant="light"` — pra fundos escuros. Tudo branco.
- *
- * Largura calculada do aspect ratio original (1488x384 ≈ 3.875:1) pra evitar
- * layout shift. Default h-8 (~32px) replica a visualidade do antigo `text-2xl`.
+ * Logo da Beba Mais (PNG com fundo transparente, já recortado — 633x192 ≈ 3.3:1).
+ * Só há a versão colorida (vermelho + dourado). `variant` é mantido por compat
+ * com as chamadas antigas, mas usa o mesmo arquivo nos dois casos.
+ * Default h-8 (~32px); width/height setados pra evitar layout shift.
  */
 export function Logo({
   className = "",
-  variant = "dark",
 }: {
   className?: string;
   /** @deprecated mantido por compat com chamadas antigas */
   showPlus?: boolean;
+  /** @deprecated só há uma versão do logo; mantido por compat */
   variant?: "dark" | "light";
 }) {
-  const src =
-    variant === "light"
-      ? "/logo-facilita-plus-white.png"
-      : "/logo-facilita-plus.png";
-
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={src}
+      src="/logo-bebamais-trim.png"
       alt="Beba Mais"
-      width={124}
+      width={106}
       height={32}
       className={`h-8 w-auto select-none ${className}`}
       draggable={false}
