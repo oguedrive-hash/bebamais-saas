@@ -30,6 +30,12 @@ export default async function AdminLayout({
     redirect("/dashboard");
   }
 
+  // Single-tenant: a org única vem do env (mesma fonte do resto do clone).
+  // Sem ela (dev mal configurado), os links caem no /admin, que resolve sozinho.
+  const orgId = process.env.DEFAULT_ORG_ID ?? "";
+  const cfg = (sub: string) =>
+    orgId ? `/admin/clientes/${orgId}/${sub}` : "/admin";
+
   return (
     <div className="min-h-screen bg-offwhite">
       {/* Header com banner admin */}
@@ -46,11 +52,13 @@ export default async function AdminLayout({
               <Logo />
             </Link>
             <nav className="hidden md:flex items-center gap-7">
-              <NavLink href="/admin" exact>
-                Cliente
-              </NavLink>
-              {/* "Métricas globais" removida: era do admin multi-cliente da
-                  Facilita — a Beba Mais tem 1 org só (métricas = dashboard). */}
+              {/* Single-tenant (Beba Mais): links DIRETOS pra config da org
+                  única — sem hub "cliente" no meio. "Métricas globais"
+                  (multi-cliente da Facilita) foi removida. */}
+              <NavLink href={cfg("caio")}>Caio</NavLink>
+              <NavLink href={cfg("followup")}>Follow-up</NavLink>
+              <NavLink href={cfg("numeros")}>Números</NavLink>
+              <NavLink href={cfg("editar")}>Empresa</NavLink>
               <Link
                 href="/dashboard"
                 className="text-sm font-heading font-medium text-cinza-medio hover:text-preto transition"

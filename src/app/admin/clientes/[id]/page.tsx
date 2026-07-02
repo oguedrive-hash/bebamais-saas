@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { AcoesCliente } from "@/components/acoes-cliente";
 
 export default async function ClienteDetalhePage({
   params,
@@ -54,11 +53,7 @@ export default async function ClienteDetalhePage({
             )}
           </div>
           <div className="flex flex-col items-end gap-3">
-            <StatusCliente
-              ativo={cliente.ativo}
-              inadimplente={cliente.inadimplente}
-            />
-            <PlanoLabel plano={cliente.plano} />
+            <StatusCliente ativo={cliente.ativo} />
             <div className="flex items-center gap-3 mt-2">
               <Link
                 href={`/admin/clientes/${cliente.id}/caio`}
@@ -73,12 +68,6 @@ export default async function ClienteDetalhePage({
                 Follow-up →
               </Link>
               <Link
-                href={`/admin/clientes/${cliente.id}/prospeccao`}
-                className="text-sm text-laranja hover:text-laranja-escuro font-heading font-semibold"
-              >
-                Prospecção →
-              </Link>
-              <Link
                 href={`/admin/clientes/${cliente.id}/numeros`}
                 className="text-sm text-laranja hover:text-laranja-escuro font-heading font-semibold"
               >
@@ -88,7 +77,7 @@ export default async function ClienteDetalhePage({
                 href={`/admin/clientes/${cliente.id}/editar`}
                 className="text-sm text-laranja hover:text-laranja-escuro font-heading font-semibold"
               >
-                Editar →
+                Empresa →
               </Link>
             </div>
           </div>
@@ -102,25 +91,13 @@ export default async function ClienteDetalhePage({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Config técnica */}
+        {/* Config técnica (Chatwoot/Asaas/plano eram da operação da Facilita) */}
         <Card titulo="Configuração técnica">
           <dl className="space-y-3">
             <DataRow label="Voice ID (ElevenLabs)" valor={cliente.voice_id ?? "—"} />
             <DataRow
               label="Evolution Instance"
               valor={cliente.evolution_instance_name ?? "Não provisionado"}
-            />
-            <DataRow
-              label="Chatwoot Inbox ID"
-              valor={cliente.chatwoot_inbox_id?.toString() ?? "Não provisionado"}
-            />
-            <DataRow
-              label="Asaas Customer ID"
-              valor={cliente.asaas_customer_id ?? "Não provisionado"}
-            />
-            <DataRow
-              label="Asaas Subscription ID"
-              valor={cliente.asaas_subscription_id ?? "Não provisionado"}
             />
           </dl>
         </Card>
@@ -209,16 +186,8 @@ export default async function ClienteDetalhePage({
         )}
       </div>
 
-      {/* Ações */}
-      <div className="mt-6">
-        <h2 className="text-base font-heading font-bold text-preto mb-3">
-          Gerenciar cliente
-        </h2>
-        <AcoesCliente
-          clienteId={cliente.id}
-          ativoInicial={cliente.ativo}
-        />
-      </div>
+      {/* "Gerenciar cliente" (pausar/excluir a org) removido — no single-tenant
+          da Beba Mais excluir a própria org derrubaria o sistema inteiro. */}
     </div>
   );
 }
@@ -262,21 +231,7 @@ function DataRow({ label, valor }: { label: string; valor: string }) {
   );
 }
 
-function StatusCliente({
-  ativo,
-  inadimplente,
-}: {
-  ativo: boolean;
-  inadimplente: boolean;
-}) {
-  if (inadimplente) {
-    return (
-      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-heading font-semibold bg-red-50 text-red-700 border border-red-200">
-        <span className="w-1.5 h-1.5 rounded-full bg-red-700" />
-        Inadimplente
-      </span>
-    );
-  }
+function StatusCliente({ ativo }: { ativo: boolean }) {
   if (!ativo) {
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-heading font-semibold bg-cinza-claro text-cinza-medio border border-cinza-claro">
@@ -292,16 +247,3 @@ function StatusCliente({
   );
 }
 
-function PlanoLabel({ plano }: { plano: string }) {
-  const labels: Record<string, string> = {
-    mensal_basico: "Plano Básico",
-    mensal_pro: "Plano Pro",
-    mensal_enterprise: "Plano Enterprise",
-  };
-
-  return (
-    <span className="text-sm text-cinza-medio font-heading font-medium">
-      {labels[plano] ?? plano}
-    </span>
-  );
-}
