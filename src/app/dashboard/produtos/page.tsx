@@ -1,9 +1,15 @@
 import { createClient } from "@/lib/supabase/server";
+import {
+  TabelaProdutos,
+  BotaoNovoProduto,
+  type ProdutoRow,
+} from "./tabela-produtos";
 
 /**
  * Catálogo de produtos — consulta rápida do atendente ("temos isso?").
  * Importado da planilha do cliente (código de referência + descrição).
  * SEM preço de propósito: cotação é sempre da equipe (decisão de 02/07).
+ * Busca multi-palavra: "coca 2l retor" acha "Coca Cola 2L - Retornavel".
  */
 
 export default async function ProdutosPage({
@@ -17,37 +23,66 @@ export default async function ProdutosPage({
 
   let query = supabase
     .from("produtos")
-    .select("id, codigo_ref, descricao")
+    .select("id, codigo_ref, descricao, disponivel")
     .eq("ativo", true)
     .order("descricao", { ascending: true })
     .limit(200);
 
-  if (termo) {
-    const p = `%${termo.replace(/[%_]/g, "")}%`;
-    query = query.or(`descricao.ilike.${p},codigo_ref.ilike.${p}`);
+  // Sanitiza só WILDCARDS (%_*\) — vírgula/parênteses são dados reais do
+  // catálogo ("1,5L") e só são problema dentro do .or() (tree do PostgREST),
+  // não no .ilike() (valor URL-encodado). Então: termo simples e sem
+  // vírgula/parênteses → .or() em descrição+código; qualquer outro caso →
+  // cadeia de .ilike() na descrição (AND, qualquer ordem).
+  const palavras = termo
+    .split(/\s+/)
+    .map((w) => w.replace(/[%_*\\]/g, ""))
+    .filter(Boolean);
+  const buscaInvalida = termo.length > 0 && palavras.length === 0;
+
+  if (palavras.length === 1 && !/[,()]/.test(palavras[0])) {
+    query = query.or(
+      `descricao.ilike.%${palavras[0]}%,codigo_ref.ilike.%${palavras[0]}%`,
+    );
+  } else if (palavras.length >= 1) {
+    for (const w of palavras) {
+      query = query.ilike("descricao", `%${w}%`);
+    }
   }
 
-  const { data: produtos, count } = await query;
+  const { data } = await query;
+  const produtos = (data ?? []) as ProdutoRow[];
+
   const { count: total } = await supabase
     .from("produtos")
     .select("id", { count: "exact", head: true })
     .eq("ativo", true);
+  const { count: emFalta } = await supabase
+    .from("produtos")
+    .select("id", { count: "exact", head: true })
+    .eq("ativo", true)
+    .eq("disponivel", false);
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-heading font-bold text-preto">Produtos</h1>
-        <p className="text-sm text-cinza-medio mt-1">
-          Catálogo com {total ?? 0} itens — consulta rápida do que a loja
-          trabalha. Preços e cotação: com a equipe.
-        </p>
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-heading font-bold text-preto">
+            Produtos
+          </h1>
+          <p className="text-sm text-cinza-medio mt-1">
+            Catálogo com {total ?? 0} itens
+            {(emFalta ?? 0) > 0 ? ` (${emFalta} em falta)` : ""} — clique no
+            código pra copiar. Preços e cotação: com a equipe.
+          </p>
+        </div>
+        <BotaoNovoProduto />
       </div>
 
       <form method="get" className="mb-6 flex gap-3 max-w-xl">
         <input
           name="busca"
           defaultValue={termo}
-          placeholder="Buscar por descrição ou código (ex: skol, 600C, agua...)"
+          placeholder="Buscar: descrição, código ou várias palavras (coca 2l retor)"
           autoFocus
           className="flex-1 px-4 py-2.5 rounded-lg border border-cinza-claro bg-white text-sm focus:outline-none focus:border-laranja transition"
         />
@@ -59,43 +94,29 @@ export default async function ProdutosPage({
         </button>
       </form>
 
-      {!produtos || produtos.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-cinza-claro p-10 text-center">
+      {buscaInvalida ? (
+        <div className="bg-white rounded-2xl border border-cinza-claro p-10 text-center max-w-4xl">
+          <p className="text-sm text-cinza-medio">
+            Busca inválida — usa letras ou números (ex: skol, 600C, 1,5).
+          </p>
+        </div>
+      ) : produtos.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-cinza-claro p-10 text-center max-w-4xl">
           <p className="text-sm text-cinza-medio">
             {termo
-              ? `Nada encontrado pra "${termo}" — tenta outra palavra (ex: só "coca" em vez de "coca cola 2l").`
+              ? `Nada encontrado pra "${termo}" — tenta menos palavras ou parte do nome.`
               : "Nenhum produto no catálogo ainda."}
           </p>
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-cinza-claro overflow-hidden max-w-3xl">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-offwhite border-b border-cinza-claro text-left text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider">
-                <th className="px-4 py-3 w-28">Código</th>
-                <th className="px-4 py-3">Descrição</th>
-              </tr>
-            </thead>
-            <tbody>
-              {produtos.map((p) => (
-                <tr
-                  key={p.id}
-                  className="border-b border-cinza-claro/60 last:border-0 hover:bg-offwhite/60"
-                >
-                  <td className="px-4 py-2.5 font-mono font-bold text-preto">
-                    {p.codigo_ref}
-                  </td>
-                  <td className="px-4 py-2.5 text-preto">{p.descricao}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {(produtos.length === 200 || (count ?? 0) > 200) && (
-            <p className="px-4 py-2.5 text-xs text-cinza-medio bg-offwhite border-t border-cinza-claro">
+        <>
+          <TabelaProdutos produtos={produtos} />
+          {produtos.length === 200 && (
+            <p className="mt-2 text-xs text-cinza-medio max-w-4xl">
               Mostrando os primeiros 200 — refina a busca pra achar mais rápido.
             </p>
           )}
-        </div>
+        </>
       )}
     </div>
   );
