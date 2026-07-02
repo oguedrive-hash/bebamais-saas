@@ -83,6 +83,7 @@ export default async function DashboardLayout({
               <NavLink href="/dashboard/pedidos">Pedidos</NavLink>
               <NavLink href="/dashboard/contatos">Conversas</NavLink>
               <NavLink href="/dashboard/agenda">Retiradas</NavLink>
+              <NavLink href="/dashboard/produtos">Produtos</NavLink>
               {/* Inbound (/dashboard/leads) e Prospecção (/dashboard/prospeccao)
                   saíram do menu no contexto Beba Mais (foco em pedidos inbound)
                   — as rotas continuam acessíveis por URL. */}
