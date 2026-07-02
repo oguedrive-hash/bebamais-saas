@@ -26,7 +26,8 @@ ATENCAO — NAO eh "irritado" quando lead apenas:
 - Compartilha uma dificuldade propria: "meu evento e amanha e to sem bebida", "ta dificil esse mes". Isso eh CONTEXTO, nao raiva contra voce.
 - Reclama de outras coisas que nao sao voce/Beba Mais: "esse mercado ta dificil", "concorrencia ta apertada".
 - Usa palavroes leves de enfase ("porra ne", "ta foda esse trafego") sem agressao direcionada.
-Frustracao leve, desabafo, partilha de problema: classifica "nenhum".
+- Demonstra PRESSA ou INSISTENCIA sem ofensa: "so me fala o preco, rapido", "anda logo", "como assim nao sabe?", "responde logo". Cliente apressado/insistente NAO eh irritado — classifica "nenhum" e o atendimento continua.
+Frustracao leve, desabafo, pressa, partilha de problema: classifica "nenhum". "irritado" exige HOSTILIDADE dirigida ao atendimento (xingamento, ofensa, ameaca de desistir pela raiva).
 
 3. "pede_humano" — lead pede EXPLICITAMENTE pra ser TRANSFERIDO/FALAR com uma pessoa/humano/atendente/vendedor/gerente/responsavel. Ex: "quero falar com uma pessoa", "me passa pro humano", "passa pro atendente", "quero falar com o responsavel", "chama alguem ai".
 

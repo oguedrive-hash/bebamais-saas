@@ -21,14 +21,14 @@ function gerarRespostaHandoff(
   motivo: MotivoHandoff,
   primeiroNome: string | null,
 ): string {
-  const sauda = primeiroNome ? `${primeiroNome}, ` : "";
+  const nome = primeiroNome ? `, ${primeiroNome}` : "";
   if (motivo === "muda_reuniao") {
-    return `${sauda}vou chamar nosso time pra te atender. Em alguns minutos alguem entra em contato.`;
+    return `Deixa comigo${nome}! Vou chamar nosso time pra ajustar isso pra você — em alguns minutos alguém te chama por aqui.`;
   }
   if (motivo === "irritado") {
-    return `${sauda}entendo. Vou chamar nosso time pra te atender direto. Em alguns minutos alguem entra em contato.`;
+    return `Poxa${nome}, sinto muito pelo transtorno! Já chamei nosso time pra resolver isso com você — em alguns minutos alguém fala com você por aqui.`;
   }
-  return `${sauda}claro, vou chamar nosso time pra te atender. Em alguns minutos alguem entra em contato.`;
+  return `Claro${nome}! Já chamei nosso time pra te atender — em alguns minutos alguém fala com você por aqui.`;
 }
 
 export async function dispararHandoff(opts: {

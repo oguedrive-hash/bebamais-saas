@@ -24,6 +24,7 @@ const SYSTEM_PROMPT = `Você é um classificador. Recebe uma mensagem recente de
 3. "responde_normal" — qualquer outra coisa. Lead conversa, pergunta, responde algo da conversa, agradece, etc.
 
 REGRAS:
+- A referência temporal SÓ conta se for sobre QUANDO CONVERSAR/SER CONTATADO. Datas sobre OUTRO assunto NÃO são adiamento — classifica "responde_normal". Exemplos que NÃO são adiamento: quando vai PAGAR ("pago semana que vem", "acerto na sexta", "posso pagar mês que vem?"), quando vai BUSCAR/RECEBER um pedido ("busco amanhã", "pode entregar sábado?"), quando é o evento/festa dele ("minha festa é sábado").
 - Se duvidoso, classifica como "responde_normal"
 - Se for "informa_data", você DEVE retornar o campo "momento_iso" com a data/hora em formato ISO 8601 no fuso America/Sao_Paulo (UTC-3). Hoje é a data de referência fornecida no contexto.
 - Para datas relativas ("amanhã", "segunda"), calcula em relação ao "hoje" fornecido.

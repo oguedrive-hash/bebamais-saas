@@ -951,10 +951,10 @@ async function tentarTratarAceite(
       .eq("id", leadId)
       .single();
     const primeiroNome2 = leadInfo2?.nome?.split(" ")[0] ?? null;
-    const sauda2 = primeiroNome2 ? `${primeiroNome2}, ` : "";
+    const nome2 = primeiroNome2 ? `, ${primeiroNome2}` : "";
     return {
       tipo: "resposta_direta",
-      texto: `${sauda2}perfeito! Pra agendar a retirada, qual dia da semana funciona melhor pra você? Atendemos ${diasDesc}.`,
+      texto: `Perfeito${nome2}! Que dia fica melhor pra você buscar? A gente atende ${diasDesc}.`,
     };
   }
 

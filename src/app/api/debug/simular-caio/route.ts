@@ -348,8 +348,8 @@ export async function POST(request: NextRequest) {
     const cfg = orgInfo?.agenda_config as { dias_semana?: number[] } | null;
     const diasDesc = descreverDiasNatural(cfg?.dias_semana ?? [1, 2, 3, 4, 5]);
     const primeiroNome = lead.nome?.split(" ")[0] ?? null;
-    const sauda = primeiroNome ? `${primeiroNome}, ` : "";
-    const texto = `${sauda}perfeito! Pra agendar a retirada, qual dia da semana funciona melhor pra você? Atendemos ${diasDesc}.`;
+    const nome = primeiroNome ? `, ${primeiroNome}` : "";
+    const texto = `Perfeito${nome}! Que dia fica melhor pra você buscar? A gente atende ${diasDesc}.`;
     await admin.from("mensagens").insert({
       organization_id: body.orgId,
       lead_id: lead.id,
