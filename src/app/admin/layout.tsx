@@ -49,7 +49,8 @@ export default async function AdminLayout({
               <NavLink href="/admin" exact>
                 Cliente
               </NavLink>
-              <NavLink href="/admin/metricas">Métricas globais</NavLink>
+              {/* "Métricas globais" removida: era do admin multi-cliente da
+                  Facilita — a Beba Mais tem 1 org só (métricas = dashboard). */}
               <Link
                 href="/dashboard"
                 className="text-sm font-heading font-medium text-cinza-medio hover:text-preto transition"
