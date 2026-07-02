@@ -24,7 +24,11 @@ import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
 import { gerarAudio } from "@/lib/caio/elevenlabs";
 import { personaDoLead } from "@/lib/caio/numeros";
 import { logarEvento } from "@/lib/caio/eventos";
-import { MAX_FOLLOWUP_SEM_RESPOSTA, podeEnviarProativo } from "@/lib/caio/guardrails";
+import {
+  MAX_FOLLOWUP_SEM_RESPOSTA,
+  podeEnviarProativo,
+  dentroDaJanelaProativa,
+} from "@/lib/caio/guardrails";
 
 type Regra = {
   nivel: number;
@@ -210,6 +214,13 @@ export async function processarFollowupLead(
     return { ok: true, acao: "desistencia" };
   }
 
+  // GUARDRAIL: janela de horário comercial — follow-up de madrugada queima o
+  // número e irrita o cliente. Fora da janela só pula (não consome o lease);
+  // o cron re-pega o lead quando a janela abrir.
+  if (!dentroDaJanelaProativa()) {
+    return { ok: true, acao: "desistencia" };
+  }
+
   // GUARDRAIL anti-ban: teto de follow-ups SEM RESPOSTA por lead. Protege o
   // contador de "msgs sem resposta em 48h" do WhatsApp (gatilho de ban em 2026).
   // numero_followup zera quando o lead responde → é a contagem consecutiva.
@@ -343,14 +354,49 @@ export async function processarFollowupLead(
     // via extrasContexto. Cobre os 2 casos: lead que ja respondeu (adapta ao
     // que ele disse) e lead que nunca respondeu (puxa a conversa SEM inventar).
     const ehUltimoNivel = proximoNivel >= regrasAtivas.length;
+    const extras = montarExtrasFollowup(
+      proximoNivel,
+      regrasAtivas.length,
+      regra.instrucao_ia,
+    );
+    // Contexto Beba Mais: lead com PEDIDO EM ABERTO = carrinho abandonado.
+    // O follow-up retoma o pedido concreto, não um re-engajamento genérico.
+    // (Não entra no break-up, que proíbe falar de pedido.)
+    if (!ehUltimoNivel) {
+      const { data: pedidoAberto } = await supabase
+        .from("pedidos")
+        .select("itens, modalidade, endereco")
+        .eq("lead_id", lead.id)
+        // Só CAPTANDO: quem já confirmou (pronto_para_equipe) está esperando
+        // a EQUIPE — "quer que eu feche seu pedido?" soaria perdido.
+        .eq("status", "captando")
+        .maybeSingle();
+      const itensPed = (pedidoAberto?.itens ?? []) as {
+        produto: string;
+        quantidade: number;
+        unidade?: string | null;
+      }[];
+      if (itensPed.length > 0) {
+        const lista = itensPed
+          .map(
+            (i) =>
+              `${i.quantidade}${i.unidade ? ` ${i.unidade}` : "x"} ${i.produto}`,
+          )
+          .join(", ");
+        const falta = !pedidoAberto?.modalidade
+          ? " Falta ele dizer se é retirada na loja ou entrega."
+          : pedidoAberto.modalidade === "entrega" && !pedidoAberto.endereco
+            ? " Falta o endereço de entrega."
+            : "";
+        extras.push(
+          `O cliente tem um PEDIDO EM ABERTO que começou e não terminou: ${lista}.${falta} O follow-up deve retomar ESSE pedido de forma leve (ex: "quer que eu feche seu pedido?" ou perguntando só o dado que falta) — NÃO puxe assunto genérico.`,
+        );
+      }
+    }
     const result = await gerarRespostaCaio({
       leadId: lead.id,
       promptBaseOverride: PROMPT_FOLLOWUP,
-      extrasContexto: montarExtrasFollowup(
-        proximoNivel,
-        regrasAtivas.length,
-        regra.instrucao_ia,
-      ),
+      extrasContexto: extras,
       // Lembrete pós-histórico: impede o modelo de re-responder a última
       // pergunta do lead em vez de mandar o nudge curto.
       lembreteFinal: ehUltimoNivel

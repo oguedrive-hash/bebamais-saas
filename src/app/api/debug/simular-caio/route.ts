@@ -24,6 +24,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { gerarRespostaCaio } from "@/lib/caio/gerar-resposta";
 import { classificarAceite } from "@/lib/caio/classificador-aceite";
 import { classificarAdiamento } from "@/lib/caio/classificador-adiamento";
+import { extrairEAtualizarPedido } from "@/lib/caio/extrator-pedido";
 import { classificarHandoff } from "@/lib/caio/classificador-handoff";
 import { dispararHandoff } from "@/lib/caio/handoff";
 import { tentarAgendar } from "@/lib/caio/tentar-agendar";
@@ -130,6 +131,25 @@ export async function POST(request: NextRequest) {
     chatwoot_message_id: Date.now(),
   });
 
+  // 2.5 Extrator de pedido — AWAITED aqui (diferente do fluxo real, que é
+  // fire-and-forget) pra simulação ser determinística: a resposta já sai
+  // com o estado do pedido pós-extração.
+  try {
+    await extrairEAtualizarPedido({ organizationId: body.orgId, leadId: lead.id });
+  } catch (e) {
+    console.warn("[simular-caio] extrator falhou:", e instanceof Error ? e.message : String(e));
+  }
+  const pedidoAtual = async () =>
+    (
+      await admin
+        .from("pedidos")
+        .select("id, status, itens, modalidade, endereco, nome_cliente, agendamento_id")
+        .eq("lead_id", lead.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    ).data ?? null;
+
   // 3. Roda os atalhos do webhook handler
   //    Caminho A: resposta determinística sobre disponibilidade
   const respDisp = await tentarResponderDisponibilidade({
@@ -149,6 +169,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       caminho: "disponibilidade",
       resposta: respDisp,
+      pedido: await pedidoAtual(),
     });
   }
 
@@ -203,6 +224,7 @@ export async function POST(request: NextRequest) {
       caminho: "handoff",
       motivo: classifHandoff.intencao,
       resposta: texto,
+      pedido: await pedidoAtual(),
     });
   }
 
@@ -275,6 +297,7 @@ export async function POST(request: NextRequest) {
         caminho: "aceita_com_horario_ok",
         agendamento: result.agendamento,
         resposta: texto,
+        pedido: await pedidoAtual(),
       });
     }
     // Falha: resposta determinística
@@ -336,6 +359,7 @@ export async function POST(request: NextRequest) {
       caminho: "aceita_com_horario_falha",
       motivo: result.motivo,
       resposta: respFalha,
+      pedido: await pedidoAtual(),
     });
   }
 
@@ -361,6 +385,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       caminho: "aceita_sem_horario",
       resposta: texto,
+      pedido: await pedidoAtual(),
     });
   }
 
@@ -392,5 +417,6 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     caminho: "llm_normal",
     resposta: texto,
+    pedido: await pedidoAtual(),
   });
 }

@@ -25,6 +25,19 @@ export const MAX_PROSPECCAO_DIA = 18;
 /** Teto de envios PROATIVOS por hora por número (anti-velocidade). Reativo NÃO conta. */
 const MAX_PROATIVO_HORA = 25;
 
+/** Janela de horário comercial pra envio PROATIVO (follow-up/reativação):
+ *  8h–20h America/Sao_Paulo. Reativo (responder quem chamou) NÃO passa por aqui. */
+export function dentroDaJanelaProativa(): boolean {
+  const hora = Number(
+    new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit",
+      hour12: false,
+      timeZone: "America/Sao_Paulo",
+    }).format(new Date()),
+  );
+  return hora >= 8 && hora < 20;
+}
+
 // Janela deslizante em memória (o painel roda 1 réplica no swarm; reset no deploy
 // é aceitável pra um guard soft). NÃO usar pra reativo — só proativo.
 const janelaHora = new Map<string, number[]>();

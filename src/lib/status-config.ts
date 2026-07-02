@@ -27,7 +27,7 @@ export const STATUS_CONFIG: Record<
   }
 > = {
   novo_lead: {
-    label: "Novo Lead",
+    label: "Novo contato",
     descricao: "Lead chegou, ainda não respondeu",
     cor: "text-blue-700",
     bg: "bg-blue-50",
@@ -45,7 +45,7 @@ export const STATUS_CONFIG: Record<
     ordem: 2,
   },
   followup: {
-    label: "Follow-up",
+    label: "Reengajando",
     descricao: "Caio fazendo follow-ups",
     cor: "text-amber-700",
     bg: "bg-amber-50",
@@ -54,7 +54,7 @@ export const STATUS_CONFIG: Record<
     ordem: 3,
   },
   contatar_futuramente: {
-    label: "Contatar futuro",
+    label: "Contatar depois",
     descricao: "Lead com data específica pra contato",
     cor: "text-purple-700",
     bg: "bg-purple-50",
@@ -72,7 +72,7 @@ export const STATUS_CONFIG: Record<
     ordem: 5,
   },
   fechou: {
-    label: "Fechou",
+    label: "Pedido concluído",
     descricao: "Cliente fechou pedido",
     cor: "text-emerald-800",
     bg: "bg-emerald-100",
@@ -81,7 +81,7 @@ export const STATUS_CONFIG: Record<
     ordem: 6,
   },
   perdido: {
-    label: "Perdido",
+    label: "Não converteu",
     descricao: "Lead não converteu",
     cor: "text-cinza-medio",
     bg: "bg-cinza-claro",

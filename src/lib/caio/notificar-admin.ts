@@ -75,6 +75,51 @@ export async function notificarAdminAgendamento(opts: {
   }
 }
 
+export async function notificarAdminPedidoPronto(opts: {
+  organizationId: string;
+  leadId: string;
+  leadNome: string | null;
+  leadTelefone: string;
+  itens: { produto: string; quantidade: number; unidade?: string | null }[];
+  modalidade: "retirada" | "entrega" | null;
+  endereco: string | null;
+}): Promise<void> {
+  const adminNumero = process.env.ADMIN_WHATSAPP_NUMBER?.trim();
+  if (!adminNumero) {
+    console.warn("[notificar-admin:pedido] ADMIN_WHATSAPP_NUMBER nao configurado");
+    return;
+  }
+  try {
+    const leadLabel = opts.leadNome
+      ? `${opts.leadNome} (${opts.leadTelefone})`
+      : opts.leadTelefone;
+    const linhas = opts.itens
+      .map((i) => `• ${i.quantidade}${i.unidade ? ` ${i.unidade}` : "x"} ${i.produto}`)
+      .join("\n");
+    const modalidadeTxt =
+      opts.modalidade === "entrega"
+        ? `ENTREGA${opts.endereco ? ` — ${opts.endereco}` : ""}`
+        : opts.modalidade === "retirada"
+          ? "RETIRADA na loja"
+          : "(retirada/entrega a definir)";
+    const texto = `🛒 *Pedido pronto pra finalizar*\n\nCliente: ${leadLabel}\n${linhas}\n${modalidadeTxt}\n\nFinalize valores e pagamento: ${APP_BASE_URL}/dashboard/contatos/${opts.leadId}`;
+    const instance = await instanciaAtendimento(opts.organizationId);
+    const sent = await enviarSerializado("org:" + opts.organizationId, () =>
+      evoSendText({ instance, telefone: adminNumero, texto }),
+    );
+    if ("error" in sent) {
+      console.warn("[notificar-admin:pedido] falha enviar:", sent.error);
+      return;
+    }
+    console.log("[notificar-admin:pedido] admin notificado:", opts.leadTelefone);
+  } catch (err) {
+    console.warn(
+      "[notificar-admin:pedido] erro:",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+}
+
 export async function notificarAdminHandoff(opts: {
   organizationId: string;
   leadNome: string | null;

@@ -265,6 +265,19 @@ export async function tentarAgendar(opts: {
     return { error: error?.message ?? "falha ao criar", motivo: "falha_db" };
   }
 
+  // Vincula o agendamento ao pedido aberto do lead (contexto Beba Mais:
+  // retirada agendada é a hora de buscar o PEDIDO). Best-effort — se não
+  // há pedido aberto, o extrator reconcilia depois. Guardas de ownership:
+  // não mexe em pedido editado pelo humano, não sobrescreve vínculo
+  // existente, e não toca pedido que o atendente já assumiu.
+  await admin
+    .from("pedidos")
+    .update({ agendamento_id: novo.id, modalidade: "retirada" })
+    .eq("lead_id", opts.leadId)
+    .eq("editado_pelo_painel", false)
+    .is("agendamento_id", null)
+    .in("status", ["captando", "pronto_para_equipe"]);
+
   // Em background: gera resumo IA do lead e notifica o admin no WhatsApp.
   // Fire-and-forget pra nao atrasar a resposta pro lead.
   void (async () => {

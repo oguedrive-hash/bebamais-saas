@@ -61,6 +61,66 @@ export async function dispararHandoff(opts: {
     meta: { motivo: opts.motivo, ultima_msg: opts.ultimaMsg.slice(0, 200) },
   });
 
+  // Se o lead tem pedido em captação com itens, promove pra fila da equipe —
+  // o humano vai assumir a conversa e precisa ver o pedido. Carimba
+  // equipe_notificada_em pra NÃO gerar segunda notificação (o próprio handoff
+  // já avisa o admin) e confirmado_em pra entrar na ordem FIFO da fila.
+  async function promoverPedidoCaptando(): Promise<string | null> {
+    const agoraISO = new Date().toISOString();
+    const { data } = await supabase
+      .from("pedidos")
+      .update({
+        status: "pronto_para_equipe",
+        confirmado_em: agoraISO,
+        equipe_notificada_em: agoraISO,
+      })
+      .eq("lead_id", opts.leadId)
+      .eq("status", "captando")
+      .neq("itens", "[]")
+      .select("id")
+      .maybeSingle();
+    return data?.id ?? null;
+  }
+
+  const pedidoPromovidoId = await promoverPedidoCaptando();
+  if (pedidoPromovidoId) {
+    await logarEvento({
+      leadId: opts.leadId,
+      organizationId: opts.organizationId,
+      tipo: "pedido_pronto",
+      descricao: "Pedido em captação promovido pra equipe (handoff humano).",
+      autorNome: "Caio (automatico)",
+      meta: { pedido_id: pedidoPromovidoId, via: "handoff" },
+    });
+  } else {
+    // Corrida: a extração do MESMO ciclo pode ainda estar em voo (fire-and-
+    // forget com LLM de 2-8s) e criar o pedido DEPOIS deste promote. Como o
+    // handoff desliga o Caio (extrator não roda mais pro lead), o pedido
+    // nasceria e morreria em "captando". Retry único e atrasado cobre isso.
+    setTimeout(() => {
+      void promoverPedidoCaptando()
+        .then((id) => {
+          if (id) {
+            void logarEvento({
+              leadId: opts.leadId,
+              organizationId: opts.organizationId,
+              tipo: "pedido_pronto",
+              descricao:
+                "Pedido em captação promovido pra equipe (handoff humano, retry).",
+              autorNome: "Caio (automatico)",
+              meta: { pedido_id: id, via: "handoff_retry" },
+            });
+          }
+        })
+        .catch((e) =>
+          console.warn(
+            "[handoff] retry promote falhou:",
+            e instanceof Error ? e.message : String(e),
+          ),
+        );
+    }, 15_000);
+  }
+
   // Notifica Lucas no WhatsApp (nao bloqueia se falhar)
   await notificarAdminHandoff({
     organizationId: opts.organizationId,

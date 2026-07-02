@@ -22,6 +22,7 @@ import {
 import { transcreverAudio } from "@/lib/caio/openai";
 import { gerarAudio } from "@/lib/caio/elevenlabs";
 import { classificarAdiamento } from "@/lib/caio/classificador-adiamento";
+import { extrairEAtualizarPedido } from "@/lib/caio/extrator-pedido";
 import {
   enviarMensagem,
   enviarMensagemComAudio,
@@ -440,6 +441,17 @@ async function responderLeadAuto(
     .from("leads")
     .update({ caio_processing_since: new Date().toISOString() })
     .eq("id", leadId);
+
+  // Extrator de pedido (Beba Mais): mantém o pedido estruturado do lead em
+  // sincronia com a conversa. Fire-and-forget — nunca atrasa nem derruba a
+  // resposta. Roda 1x por ciclo (o debounce já serializa por lead) e cobre
+  // todos os branches abaixo (handoff/aceite/adiamento/LLM).
+  void extrairEAtualizarPedido({ organizationId, leadId }).catch((e) =>
+    console.warn(
+      "[pedido:extrator]",
+      e instanceof Error ? e.message : String(e),
+    ),
+  );
 
   try {
     // GUARDRAIL anti-ban — OPT-OUT: lead pediu pra parar ("não quero mais",

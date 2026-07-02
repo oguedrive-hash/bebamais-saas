@@ -16,6 +16,7 @@ import { NavegacaoLeads } from "@/components/navegacao-leads";
 import { TimelineEventos } from "@/components/timeline-eventos";
 import { NotasLead } from "@/components/notas-lead";
 import { ResumoIA } from "@/components/resumo-ia";
+import { PedidoCard } from "@/components/pedido-card";
 import { BotaoDeletarLead } from "@/components/botao-deletar-lead";
 import { STATUS_CONFIG, type StatusLead } from "@/lib/status-config";
 
@@ -39,6 +40,7 @@ export default async function LeadDetalhePage({
     { data: mensagens },
     { data: idsLeads },
     { data: eventos },
+    { data: pedidos },
   ] = await Promise.all([
     supabase.from("leads").select("*").eq("id", id).single(),
     supabase
@@ -76,6 +78,15 @@ export default async function LeadDetalhePage({
       .eq("lead_id", id)
       .order("created_at", { ascending: false })
       .limit(50),
+    // Pedidos do lead (aberto no topo + histórico do cliente recorrente)
+    supabase
+      .from("pedidos")
+      .select(
+        "id, status, itens, modalidade, endereco, nome_cliente, obs, confirmado_em, created_at, updated_at",
+      )
+      .eq("lead_id", id)
+      .order("created_at", { ascending: false })
+      .limit(10),
   ]);
 
   if (error || !lead) {
@@ -245,6 +256,20 @@ export default async function LeadDetalhePage({
 
         {/* Coluna direita — Metadata */}
         <div className="space-y-6">
+          {(pedidos ?? []).length > 0 && (
+            <Card titulo="Pedido">
+              <div className="space-y-3">
+                {(pedidos ?? []).map((p, idx) => (
+                  <PedidoCard
+                    key={p.id}
+                    pedido={p}
+                    compacto={idx > 0} // só o mais recente tem ações/edição
+                  />
+                ))}
+              </div>
+            </Card>
+          )}
+
           <Card titulo="Resumo IA">
             <ResumoIA
               leadId={lead.id}

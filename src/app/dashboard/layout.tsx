@@ -80,10 +80,12 @@ export default async function DashboardLayout({
               <NavLink href="/dashboard" exact>
                 Dashboard
               </NavLink>
-              <NavLink href="/dashboard/contatos">Contatos</NavLink>
-              <NavLink href="/dashboard/leads">Inbound</NavLink>
-              <NavLink href="/dashboard/prospeccao">Prospecção</NavLink>
-              <NavLink href="/dashboard/agenda">Agenda</NavLink>
+              <NavLink href="/dashboard/pedidos">Pedidos</NavLink>
+              <NavLink href="/dashboard/contatos">Conversas</NavLink>
+              <NavLink href="/dashboard/agenda">Retiradas</NavLink>
+              {/* Inbound (/dashboard/leads) e Prospecção (/dashboard/prospeccao)
+                  saíram do menu no contexto Beba Mais (foco em pedidos inbound)
+                  — as rotas continuam acessíveis por URL. */}
               {profile?.role === "admin" && (
                 <NavLink href="/admin" variant="admin">
                   Admin
