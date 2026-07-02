@@ -11,7 +11,7 @@
  * Retorna:
  *  - { ok, agendamento } se criou
  *  - { error, alternativas? } se não pôde — alternativas são slots livres
- *    próximos do momento pedido, pro Caio reoferecer ao lead
+ *    próximos do momento pedido, pra IA reoferecer ao lead
  */
 
 import { createAdminClient } from "@/lib/supabase/admin";

@@ -15,7 +15,7 @@ export function ToggleCaio({
   const [erro, setErro] = useState<string | null>(null);
 
   // Sincroniza com a prop quando o parent re-renderiza (via realtime). Sem
-  // isso, o badge fica "preso" no estado inicial — quem desliga Caio pela
+  // isso, o badge fica "preso" no estado inicial — quem desliga a IA pela
   // caixa de resposta (ou outro evento) nao atualiza o badge ate o F5.
   // Skip enquanto pending pra nao atropelar o optimistic update do clique.
   useEffect(() => {
@@ -50,8 +50,8 @@ export function ToggleCaio({
         }`}
         title={
           ativo
-            ? "Caio responde automaticamente. Clica pra desligar."
-            : "Caio está desligado pra esse lead. Clica pra reativar."
+            ? "A IA responde automaticamente. Clica pra desligar."
+            : "A IA está desligada pra esse lead. Clica pra reativar."
         }
       >
         <span
@@ -62,8 +62,8 @@ export function ToggleCaio({
         {pending
           ? "..."
           : ativo
-            ? "Caio respondendo"
-            : "Caio desligado"}
+            ? "IA respondendo"
+            : "IA desligada"}
       </button>
       {erro && <span className="text-[10px] text-red-600">{erro}</span>}
     </div>

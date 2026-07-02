@@ -42,7 +42,7 @@ export function BotaoEnviarProspeccao({
         type="button"
         onClick={() => setConfirmando(true)}
         className="text-xs px-3 py-1.5 rounded-lg border border-cinza-claro text-cinza-medio hover:border-laranja hover:text-laranja font-heading font-semibold transition"
-        title="Move esse lead pro fluxo de prospecção ativa — Caio começa a cadência de outbound"
+        title="Move esse lead pro fluxo de prospecção ativa — a IA começa a cadência de outbound"
       >
         🎯 Enviar pra prospecção
       </button>

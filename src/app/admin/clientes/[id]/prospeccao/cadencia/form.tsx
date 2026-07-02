@@ -84,7 +84,7 @@ export function CadenciaForm({
               Cadência de prospecção
             </h3>
             <p className="text-xs text-cinza-medio mt-1">
-              Mensagens disparadas pelo Caio em sequência após o lead ser
+              Mensagens disparadas pela IA em sequência após o lead ser
               importado. Mensagens são template fixo (sem personalização IA).
               Quando o lead responder, a cadência para e o fluxo de conversa
               normal assume.

@@ -4,7 +4,7 @@
  * Fluxo por lead:
  * 1. Le followup_config da org
  * 2. Olha numero_followup atual e pega a regra do nivel seguinte
- * 3. Se regra.usa_ia, gera resposta via Caio com prompt especial de follow-up
+ * 3. Se regra.usa_ia, gera resposta via IA com prompt especial de follow-up
  *    Senao, usa o template substituindo {nome}
  * 4. Envia via Chatwoot
  * 5. Atualiza numero_followup + ultimo_followup_em + proximo_followup_em
@@ -142,12 +142,12 @@ function calcularProximoEm(
  * qualificando. Regras gerais vivem aqui; a intencao por nivel entra via
  * extrasContexto (montarExtrasFollowup).
  */
-export const PROMPT_FOLLOWUP = `Voce e o Caio, atendente da Beba Mais — distribuidora de bebidas que ajuda o cliente a montar o pedido e combinar a retirada na loja ou a entrega.
+export const PROMPT_FOLLOWUP = `Voce e o atendente virtual da Beba Mais — distribuidora de bebidas que ajuda o cliente a montar o pedido e combinar a retirada na loja ou a entrega.
 
 TAREFA: esta conversa no WhatsApp PAROU e voce esta fazendo um FOLLOW-UP pra re-engajar o cliente. ISTO NAO E O PRIMEIRO CONTATO — o cliente ja recebeu mensagem sua e nao respondeu.
 
 REGRAS:
-- NUNCA se reapresente. NAO diga "Aqui e o Caio, da Beba Mais", nao repita seu nome nem o nome da distribuidora — o cliente ja sabe quem voce e.
+- NUNCA se reapresente. NAO diga "aqui e o [seu nome], da Beba Mais", nao repita seu nome nem o nome da distribuidora — o cliente ja sabe quem voce e.
 - Reconheca de leve que voce ja falou antes e nao teve retorno: "voltando aqui", "passando pra saber", "so retomando".
 - Leia o historico. Se o lead JA te contou algo (dor, ramo, contexto), retome e adapte a mensagem a isso. Se ele NUNCA respondeu (so ha mensagens SUAS no historico), NAO invente contexto nem diga "aquilo que voce me contou" — puxe a conversa de forma leve e curiosa pra ele responder.
 - NAO repita perguntas que voce ja fez; varie a abordagem.
@@ -206,7 +206,7 @@ export async function processarFollowupLead(
     return { error: "lead sem chatwoot_conversation_id" };
   }
   if (!lead.caio_ativo || lead.followup_ativo === false) {
-    // Caio desligado ou follow-up pausado pelo user — zera o agendamento
+    // IA desligada ou follow-up pausado pelo user — zera o agendamento
     await supabase
       .from("leads")
       .update({ proximo_followup_em: null })
@@ -561,7 +561,7 @@ export async function processarFollowupLead(
     organizationId: lead.organization_id,
     tipo: "followup_enviado",
     descricao: `Follow-up nº${proximoNivel} enviado${regra.usa_ia ? " (gerado por IA)" : ""}`,
-    autorNome: "Caio (automático)",
+    autorNome: "Atendente IA (automático)",
     meta: { nivel: proximoNivel, usa_ia: regra.usa_ia },
   });
 
@@ -654,7 +654,7 @@ async function processarFimRegras(
     organizationId: lead.organization_id,
     tipo: "reativacao_enviada",
     descricao: `Reativação nº${proximoNivelReat} enviada${proximaRegra ? "" : " — lead marcado como perdido"}`,
-    autorNome: "Caio (automático)",
+    autorNome: "Atendente IA (automático)",
     meta: { nivel: proximoNivelReat, usa_ia: regra.usa_ia },
   });
 

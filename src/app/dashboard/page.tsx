@@ -223,7 +223,7 @@ export default async function DashboardPage() {
               secundario={
                 l.precisa_humano
                   ? labelMotivoHandoff(l.precisa_humano_motivo)
-                  : "Mandou mensagem com o Caio desligado"
+                  : "Mandou mensagem com a IA desligada"
               }
             />
           ))}
@@ -268,7 +268,7 @@ export default async function DashboardPage() {
           descricao={`${captandoCount} com pedido sendo anotado · ${emAtendimentoCount} com atendente`}
         />
         <MetricCard
-          titulo="Resposta do Caio"
+          titulo="Resposta da IA"
           valor={tempoResposta.valor}
           sufixo={tempoResposta.unidade}
           descricao="tempo médio da 1ª resposta"
@@ -451,7 +451,7 @@ function labelMotivoHandoff(motivo: string | null): string {
   if (motivo === "muda_reuniao") return "Quer mudar a retirada";
   if (motivo === "irritado") return "Cliente irritado — assumir com carinho";
   if (motivo === "pede_humano") return "Pediu pra falar com uma pessoa";
-  return "Caio passou pra você";
+  return "Atendente IA passou pra você";
 }
 
 function countNaJanela(

@@ -87,7 +87,7 @@ export default async function AgendaPage({
         <div className="flex items-center justify-between gap-3 mb-6">
           <PageHeader
             titulo="Retiradas"
-            descricao="Pedidos com retirada agendada pelo Caio"
+            descricao="Pedidos com retirada agendada pela IA"
           />
           <div className="flex items-center gap-3">
             <ViewToggle viewAtual={view} />
@@ -133,7 +133,7 @@ export default async function AgendaPage({
       <div className="flex items-center justify-between gap-3 mb-6">
         <PageHeader
           titulo="Agenda"
-          descricao="Retiradas agendadas pelo Caio"
+          descricao="Retiradas agendadas pela IA"
         />
         <ViewToggle viewAtual={view} />
       </div>
@@ -147,7 +147,7 @@ export default async function AgendaPage({
             <EmptyState
               icone="📅"
               titulo="Nenhuma retirada agendada"
-              descricao="Quando o Caio agendar uma retirada, vai aparecer aqui."
+              descricao="Quando a IA agendar uma retirada, vai aparecer aqui."
             />
           ) : (
             <div className="space-y-3">

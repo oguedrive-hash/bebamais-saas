@@ -35,7 +35,7 @@ export default async function DashboardLayout({
   const orgName = Array.isArray(orgRef) ? orgRef[0]?.name : orgRef?.name;
 
   // Notificacoes do sino: leads com handoff disparado (precisa_humano)
-  // + leads com Caio desligado e msg nova nao respondida (precisa_resposta_humana).
+  // + leads com IA desligada e msg nova nao respondida (precisa_resposta_humana).
   // RLS filtra pela org do operador.
   const [
     { count: precisaHumanoCount },

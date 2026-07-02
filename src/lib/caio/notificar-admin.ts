@@ -12,6 +12,15 @@ async function instanciaAtendimento(orgId: string): Promise<string> {
   return (await numeroPorPapel(orgId, "atendimento"))?.instance_name ?? INSTANCE_NAME;
 }
 
+/** Nome da persona do atendimento (configurável no painel) — pros textos das
+ *  notificações ("Exato agendou..."). Fallback genérico se não houver. */
+async function nomeAtendente(orgId: string): Promise<string> {
+  return (
+    (await numeroPorPapel(orgId, "atendimento"))?.persona_nome?.trim() ||
+    "O atendente"
+  );
+}
+
 export async function notificarAdminFalha(opts: {
   organizationId: string;
   leadNome: string | null;
@@ -27,7 +36,8 @@ export async function notificarAdminFalha(opts: {
   try {
     const leadLabel = opts.leadNome ? `${opts.leadNome} (${opts.leadTelefone})` : opts.leadTelefone;
     const recorte = opts.conteudoLead?.slice(0, 200) ?? "(sem conteúdo)";
-    const texto = `🚨 *Caio precisou de ajuda*\n\nLead: ${leadLabel}\nÚltima msg dele: "${recorte}"\n\nErro: ${opts.erro}\n\nResponda esse lead manualmente pelo painel.`;
+    const quem1 = await nomeAtendente(opts.organizationId);
+    const texto = `🚨 *${quem1} precisou de ajuda*\n\nLead: ${leadLabel}\nÚltima msg dele: "${recorte}"\n\nErro: ${opts.erro}\n\nResponda esse lead manualmente pelo painel.`;
     const instance = await instanciaAtendimento(opts.organizationId);
     const sent = await enviarSerializado("org:" + opts.organizationId, () =>
       evoSendText({ instance, telefone: adminNumero, texto }),
@@ -60,7 +70,8 @@ export async function notificarAdminAgendamento(opts: {
     const dataStr = data.toLocaleString("pt-BR", { weekday: "long", day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
     const leadLabel = opts.leadNome ? `${opts.leadNome} (${opts.leadTelefone})` : opts.leadTelefone;
     const resumoBloco = opts.resumoIA?.trim() ? `\n\n*Contexto rapido:*\n${opts.resumoIA.trim()}` : "";
-    const texto = `🟢 *Caio agendou uma retirada*\n\nCliente: ${leadLabel}\nQuando: ${dataStr}${resumoBloco}\n\nConversa: ${APP_BASE_URL}/dashboard/contatos/${opts.leadId}`;
+    const quem2 = await nomeAtendente(opts.organizationId);
+    const texto = `🟢 *${quem2} agendou uma retirada*\n\nCliente: ${leadLabel}\nQuando: ${dataStr}${resumoBloco}\n\nConversa: ${APP_BASE_URL}/dashboard/contatos/${opts.leadId}`;
     const instance = await instanciaAtendimento(opts.organizationId);
     const sent = await enviarSerializado("org:" + opts.organizationId, () =>
       evoSendText({ instance, telefone: adminNumero, texto }),
@@ -139,7 +150,8 @@ export async function notificarAdminHandoff(opts: {
   try {
     const leadLabel = opts.leadNome ? `${opts.leadNome} (${opts.leadTelefone})` : opts.leadTelefone;
     const recorte = opts.conteudoLead?.slice(0, 200) ?? "(sem conteudo)";
-    const texto = `🔔 *Caio passou pra voce*\n\nLead: ${leadLabel}\nMotivo: ${motivoTexto}.\nUltima msg: "${recorte}"\n\nCaio ja avisou o lead que voce vai entrar em contato. Responda pelo painel.`;
+    const quem3 = await nomeAtendente(opts.organizationId);
+    const texto = `🔔 *${quem3} passou pra voce*\n\nLead: ${leadLabel}\nMotivo: ${motivoTexto}.\nUltima msg: "${recorte}"\n\nO atendente virtual ja avisou o cliente que voce vai entrar em contato. Responda pelo painel.`;
     const instance = await instanciaAtendimento(opts.organizationId);
     const sent = await enviarSerializado("org:" + opts.organizationId, () =>
       evoSendText({ instance, telefone: adminNumero, texto }),

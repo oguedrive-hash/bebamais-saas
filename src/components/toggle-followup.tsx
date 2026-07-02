@@ -57,7 +57,7 @@ export function ToggleFollowup({
         </p>
         <p className="text-xs text-cinza-medio mt-0.5">
           {!ativo
-            ? "Caio não vai disparar lembretes nesse lead."
+            ? "A IA não vai disparar lembretes nesse lead."
             : proximoEm
               ? `Próximo: ${new Date(proximoEm).toLocaleString("pt-BR")} (nível ${numeroAtual + 1})`
               : numeroAtual > 0

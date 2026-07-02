@@ -43,7 +43,7 @@ export function RetomadaForm({
           </h3>
           <p className="text-xs text-cinza-medio mt-1">
             Quando lead pede pra ser chamado em data específica (&quot;me chama
-            amanhã às 14h&quot;), o Caio agenda automaticamente. Na hora
+            amanhã às 14h&quot;), a IA agenda automaticamente. Na hora
             combinada, dispara essa mensagem.
           </p>
         </div>
@@ -96,7 +96,7 @@ export function RetomadaForm({
               className="w-4 h-4 rounded text-laranja focus:ring-laranja"
             />
             <span className="text-sm text-preto">
-              Personalizar com IA (Caio adapta ao histórico)
+              Personalizar com IA (adapta ao histórico)
             </span>
             <span className="text-[10px] text-cinza-medio ml-2">
               Recomendado deixar desligado pra mensagem ficar previsível

@@ -2,7 +2,7 @@
  * Resposta determinística pra perguntas do lead sobre dias/horários atendidos.
  *
  * Lê DIRETO da `agenda_config` da org (sem LLM, sem contexto, sem histórico).
- * Objetivo: garantir que o Caio nunca diga "não atendemos terça" quando a
+ * Objetivo: garantir que a IA nunca diga "não atendemos terça" quando a
  * config diz que sim. LLM era estocástico demais — esse caminho é fixo.
  *
  * Detecta o caso via regex simples no texto do lead. Se bate, gera resposta
@@ -306,7 +306,7 @@ export async function gerarLinhaHorariosDoDia(opts: {
 
   // 1ª ocorrência (pode ser HOJE). Se hoje já esgotou (todos os slots caíram
   // dentro da antecedência), rola pra próxima semana daquele dia em vez de só
-  // pedir "qual outro dia" — assim o Caio sempre oferece horário concreto.
+  // pedir "qual outro dia" — assim a IA sempre oferece horário concreto.
   let oc = encontrarProximaOcorrencia(agora, opts.diaSemana);
   if (!oc) return null;
   let horariosLivres = await slotsDaOcorrencia(oc);

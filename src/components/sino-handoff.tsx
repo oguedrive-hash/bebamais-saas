@@ -126,7 +126,7 @@ export function SinoHandoff({
                             {lead.telefone}
                           </p>
                           <p className="text-[11px] text-amber-700 font-heading font-semibold mt-1">
-                            Mensagem nova (Caio desligado)
+                            Mensagem nova (IA desligada)
                           </p>
                         </div>
                         <span className="text-[10px] text-cinza-medio whitespace-nowrap mt-0.5">

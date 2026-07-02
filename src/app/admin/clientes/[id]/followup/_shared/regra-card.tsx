@@ -168,7 +168,7 @@ export function RegraCard({
             className="w-4 h-4 rounded text-laranja focus:ring-laranja"
           />
           <span className="text-xs text-preto">
-            Personalizar com IA (Caio adapta ao histórico do lead)
+            Personalizar com IA (adapta ao histórico do lead)
           </span>
         </label>
         <label className="flex items-center gap-2 cursor-pointer">

@@ -101,7 +101,7 @@ export function EditarClienteForm({ cliente }: { cliente: ClienteData }) {
       {/* Seção 2: configuração do agente */}
       <section>
         <h3 className="text-base font-heading font-bold text-preto mb-4">
-          Configuração do Caio (agente IA)
+          Configuração do atendente (agente IA)
         </h3>
 
         <div className="space-y-5">
@@ -203,7 +203,7 @@ export function EditarClienteForm({ cliente }: { cliente: ClienteData }) {
               className="w-32 px-4 py-3 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:ring-2 focus:ring-laranja focus:border-transparent transition"
             />
             <p className="text-xs text-cinza-medio mt-1">
-              Quando o lead manda várias mensagens em sequência, o Caio espera
+              Quando o lead manda várias mensagens em sequência, a IA espera
               esse tempo sem mensagem nova antes de responder (responde uma vez
               ao conjunto). Padrão: 6s. Entre 1 e 60.
             </p>
@@ -211,14 +211,14 @@ export function EditarClienteForm({ cliente }: { cliente: ClienteData }) {
 
           <div className="p-4 rounded-lg bg-offwhite border border-cinza-claro">
             <p className="text-sm text-preto mb-2">
-              <strong>Configuração do Caio</strong> (prompts e base de
+              <strong>Configuração do atendente IA</strong> (prompts e base de
               conhecimento) ficam em uma página dedicada:
             </p>
             <a
               href={`/admin/clientes/${cliente.id}/caio`}
               className="text-sm text-laranja hover:text-laranja-escuro font-heading font-semibold"
             >
-              Abrir configuração do Caio →
+              Abrir configuração do atendente →
             </a>
           </div>
         </div>
@@ -242,7 +242,7 @@ export function EditarClienteForm({ cliente }: { cliente: ClienteData }) {
               Cliente ativo
             </p>
             <p className="text-xs text-cinza-medio">
-              Quando desmarcado, o Caio é pausado pra esse cliente
+              Quando desmarcado, a IA é pausada pra esse cliente
             </p>
           </div>
         </label>

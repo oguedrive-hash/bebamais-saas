@@ -138,7 +138,7 @@ export function StatusSelector({
               Marcar como &ldquo;{STATUS_CONFIG[confirmando].label}&rdquo;?
             </h3>
             <p className="text-sm text-cinza-medio mb-4">
-              Caio vai parar de responder esse lead automaticamente e a
+              A IA vai parar de responder esse lead automaticamente e a
               conversa vai ser resolvida no Chatwoot.
             </p>
             <label className="block text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-2">

@@ -1,9 +1,9 @@
 /**
- * Detecta se a resposta gerada pelo Caio eh uma desqualificacao do lead
+ * Detecta se a resposta gerada pela IA eh uma desqualificacao do lead
  * (BANT nao passou — autonomo sozinho, sem autoridade, volume baixo, etc).
  *
  * Detecta por pattern matching nos fingerprints do prompt — o prompt instrui
- * o Caio a usar frases especificas pra desqualificar, entao a deteccao eh
+ * a IA a usar frases especificas pra desqualificar, entao a deteccao eh
  * deterministica e barata (sem chamada extra a LLM).
  */
 

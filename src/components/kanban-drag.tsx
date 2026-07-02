@@ -181,7 +181,7 @@ export function KanbanDrag({
                               lead.caio_ativo ? "bg-green-500" : "bg-red-500"
                             }`}
                           />
-                          {lead.caio_ativo ? "Caio on" : "Caio off"}
+                          {lead.caio_ativo ? "IA on" : "IA off"}
                         </span>
                         <span className="text-[10px] text-cinza-medio">
                           {formatRelativeDate(lead.updated_at)}

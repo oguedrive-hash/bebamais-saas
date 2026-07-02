@@ -1,7 +1,7 @@
 /**
  * Endpoint de simulação: roda o mesmo fluxo que o webhook handler do
  * Chatwoot rodaria para uma mensagem incoming, mas SEM enviar pelo Chatwoot.
- * Retorna o que o Caio responderia + qual caminho ativou.
+ * Retorna o que a IA responderia + qual caminho ativou.
  *
  * Uso (via curl):
  *   POST /api/debug/simular-caio
@@ -183,7 +183,7 @@ export async function POST(request: NextRequest) {
     .limit(6);
   const contextoHandoff = (msgsHandoff ?? [])
     .reverse()
-    .map((m) => `${m.direcao === "entrada" ? "Lead" : "Caio"}: ${m.conteudo}`)
+    .map((m) => `${m.direcao === "entrada" ? "Lead" : "Atendente"}: ${m.conteudo}`)
     .join("\n");
   const classifHandoff = await classificarHandoff({
     ultimaMensagem: body.texto,
@@ -250,7 +250,7 @@ export async function POST(request: NextRequest) {
     .limit(6);
   const contexto = (msgs ?? [])
     .reverse()
-    .map((m) => `${m.direcao === "entrada" ? "Lead" : "Caio"}: ${m.conteudo}`)
+    .map((m) => `${m.direcao === "entrada" ? "Lead" : "Atendente"}: ${m.conteudo}`)
     .join("\n");
   const classifAceite = agendamentoExistente
     ? { intencao: "responde_normal" as const }

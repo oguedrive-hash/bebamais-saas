@@ -35,7 +35,7 @@ export default async function NumerosPage({
 
       <div className="mb-8">
         <h1 className="text-4xl font-heading font-bold text-preto">
-          Números do Caio
+          Números do atendente IA
         </h1>
         <p className="text-sm text-cinza-medio mt-1">
           {cliente.name} — pool de números (atendimento, prospecção e backup).

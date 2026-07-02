@@ -26,7 +26,7 @@ export async function salvarCaioConfig(
     .eq("id", user.id)
     .single();
   if (profile?.role !== "admin") {
-    return { error: "Apenas admin pode editar o Caio" };
+    return { error: "Apenas admin pode editar o atendente IA" };
   }
 
   // Le valores atuais pra preservar campos nao enviados

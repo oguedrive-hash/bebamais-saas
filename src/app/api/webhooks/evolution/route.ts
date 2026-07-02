@@ -1,7 +1,7 @@
 /**
  * Webhook da Evolution (F3). EVOLUTION_RECEBE != "1": observa. ="1": processa
  * texto E áudio (transcreve via Whisper), acha/cria lead por telefone, salva e
- * dispara o Caio. Cutover = flag on + guard no webhook Chatwoot.
+ * dispara a IA. Cutover = flag on + guard no webhook Chatwoot.
  */
 import { NextResponse, type NextRequest, after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Dedup: a Evolution RE-ENTREGA o webhook se não receber 200 rápido. Sem isto a
-  // mesma mensagem era processada várias vezes (duplicava no painel + Caio em loop).
+  // mesma mensagem era processada várias vezes (duplicava no painel + IA em loop).
   if (jaProcessado(d?.key?.id)) {
     console.log("[evo:webhook] duplicado, ignorando", d?.key?.id);
     return NextResponse.json({ ok: true });
@@ -386,7 +386,7 @@ async function processarEvolution(
     if (lidJid) updReengaja.whatsapp_jid = lidJid; // captura/atualiza o @lid em leads que já existiam
     // Troca de atendente/número: o lead vinha servido por OUTRA instância e agora
     // escreveu por esta. Marca a anterior pra a persona nova RECONHECER a continuação
-    // ("vamos continuar por aqui, lá com o Caio você disse X?") na resposta. A flag é
+    // ("vamos continuar por aqui, lá com o outro atendente você disse X?") na resposta. A flag é
     // consumida (limpa) quando a resposta a usa. Só marca em troca real (anterior != atual).
     if (instAntiga && instAntiga !== instance) updReengaja.instancia_anterior = instAntiga;
     await admin.from("leads").update(updReengaja).eq("id", leadId);

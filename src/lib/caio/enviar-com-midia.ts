@@ -1,5 +1,5 @@
 /**
- * Helper compartilhado pra enviar mensagem do Caio com qualquer tipo de
+ * Helper compartilhado pra enviar mensagem da IA com qualquer tipo de
  * midia (texto/audio/imagem/video). Usado por todos os workers:
  * follow-up, retomada, lembretes, reativacao, pos-venda.
  *

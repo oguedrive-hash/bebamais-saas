@@ -37,7 +37,7 @@ export default async function FollowupLayout({
           Cadência de follow-up
         </h1>
         <p className="text-sm text-cinza-medio mt-1">
-          {cliente.name} — como o Caio insiste com leads que param de responder
+          {cliente.name} — como a IA insiste com leads que param de responder
         </p>
       </div>
 

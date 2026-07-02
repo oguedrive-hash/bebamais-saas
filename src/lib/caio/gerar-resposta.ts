@@ -26,7 +26,7 @@ function descreverDias(dias: number[]): string {
 }
 
 /**
- * Gera uma resposta como Caio responderia, baseado no histórico do lead.
+ * Gera uma resposta como o atendente IA responderia, baseado no histórico do lead.
  *
  * Pega últimas N mensagens (não-shadow) do lead, monta o contexto no
  * formato OpenAI e chama o modelo configurado em OPENAI_MODEL.
@@ -95,8 +95,8 @@ export async function gerarRespostaCaio(opts: {
     )
     .eq("id", lead.organization_id)
     .single();
-  // Comportamento (como Caio age) varia por canal. Base de conhecimento
-  // (o que Caio sabe sobre a empresa) é compartilhada.
+  // Comportamento (como o atendente age) varia por canal. Base de conhecimento
+  // (o que o atendente sabe sobre a empresa) é compartilhada.
   //   - prospeccao + comportamento de prospeccao preenchido → usa ele
   //   - resto → usa o inbound padrao
   // Se prospeccao sem comportamento proprio, cai no inbound — pelo menos
@@ -112,7 +112,7 @@ export async function gerarRespostaCaio(opts: {
   if (!comportamento) {
     return {
       error:
-        "Organization sem prompt configurado — configure em Admin → Caio",
+        "Organization sem prompt configurado — configure em Admin → Atendente",
     };
   }
   // Follow-up (e outros callers) podem trocar o comportamento por um prompt
@@ -152,19 +152,20 @@ export async function gerarRespostaCaio(opts: {
     );
   }
 
-  // Persona por número (Fase 3 do pool): se o número que serve o lead tem uma
-  // persona diferente do Caio (ex: Yasmin no backup), troca a identidade. Com o
-  // número padrão ("Caio"), NÃO injeta nada — comportamento idêntico ao de hoje.
+  // Persona por número: o NOME do atendente virtual vem SEMPRE do número que
+  // serve o lead (org_numeros.persona_nome — configurável no painel, ex: Exato).
+  // Os prompts-base são neutros ("atendente virtual") e o nome entra aqui.
   const persona = await personaDoLead(
     (lead as { evolution_instance?: string | null })?.evolution_instance ?? null,
   );
-  if (persona?.persona_nome && persona.persona_nome.trim().toLowerCase() !== "caio") {
+  if (persona?.persona_nome?.trim()) {
+    const nomePersona = persona.persona_nome.trim();
     extras.push(
-      `IMPORTANTE: neste atendimento o seu nome é ${persona.persona_nome.trim()} (NÃO Caio). Sempre que se referir a si mesmo, use ${persona.persona_nome.trim()}.`,
+      `IMPORTANTE: neste atendimento o seu nome é ${nomePersona}. Sempre que se referir a si mesmo ou se apresentar, use ${nomePersona}.`,
     );
   }
 
-  // Disponibilidade da agenda — incluída no fluxo normal pra que o Caio responda
+  // Disponibilidade da agenda — incluída no fluxo normal pra que a IA responda
   // perguntas tipo "atendem sábado?" sem escalar. NÃO entra em follow-up
   // (promptBaseOverride): o follow-up é re-engajamento, e listar horários empurrava
   // o modelo pro agendamento — atropelava o break-up do último nível com lead engajado.
@@ -204,7 +205,7 @@ Regras:
 - NÃO escale pra humano por causa de horário/dia — só por casos genuinamente complexos.
 
 [POSTURA — VOCÊ CONDUZ]
-Você é o Caio e SEMPRE conduz a conversa pra fechar o pedido e agendar a retirada. NUNCA deixe a decisão de avançar na mão do lead. Em qualquer interação onde ele demonstrou o mínimo de interesse:
+Você SEMPRE conduz a conversa pra fechar o pedido e agendar a retirada. NUNCA deixe a decisão de avançar na mão do lead. Em qualquer interação onde ele demonstrou o mínimo de interesse:
 1. Pergunte DIRETAMENTE qual dia da semana é melhor pra ele (entre os dias atendidos)
 2. Depois que ele indicar o dia, oferece os horários daquele dia (isso será tratado automaticamente)
 3. Se ele desviar o assunto, responde a pergunta dele e em seguida volta pra agendar
@@ -230,7 +231,7 @@ Regras:
   // Contexto de prospecção: cobre tanto cadência ATIVA (origem=prospeccao)
   // quanto lead que foi prospectado no passado, virou "perdido", e agora
   // respondeu (origem virou "inbound" mas origem_inicial continua "prospeccao").
-  // Sem esse contexto, o Caio trataria como inbound novo e responderia tipo
+  // Sem esse contexto, a IA trataria como inbound novo e responderia tipo
   // "obrigado por entrar em contato", o que confunde o lead que lembra que
   // foi a Beba Mais que iniciou.
   const foiProspectado =
@@ -257,7 +258,7 @@ Regras:
   }
   // Extras injetados pelo caller (ex: lista de horários disponíveis,
   // confirmação de agendamento criado). Concatena APÓS os extras automáticos
-  // (origem, dados_extras) pra ter preferência na hora do Caio formular.
+  // (origem, dados_extras) pra ter preferência na hora da IA formular.
   const extrasFinal = [...extras, ...(opts.extrasContexto ?? [])];
   // Persona por número (Fase 3): o prompt vem saturado de "Caio". Se o número que
   // serve o lead tem outra persona (ex: Yasmin no backup), troca "Caio" pela persona
@@ -300,7 +301,7 @@ Regras:
     const agenda = getAgendaConfig(org.agenda_config);
     if (agenda.modo === "slot") {
       const permitidos = new Set(agenda.slots.map((s) => s.inicio));
-      // Inclui também os horários de FIM como permitidos (caso o Caio cite
+      // Inclui também os horários de FIM como permitidos (caso a IA cite
       // a faixa completa "13:00 às 15:30")
       agenda.slots.forEach((s) => permitidos.add(s.fim));
       const minutos = (hhmm: string) => {

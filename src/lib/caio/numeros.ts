@@ -1,5 +1,5 @@
 /**
- * Pool de números do Caio (tabela `org_numeros`).
+ * Pool de números do atendente IA (tabela `org_numeros`).
  * Fase 1 da arquitetura multi-número (ver conhecimento/arquitetura-pool-numeros.md no cérebro).
  *
  * `numeroPorPapel` resolve o número ATIVO de um slot (atendimento/prospeccao/backup).

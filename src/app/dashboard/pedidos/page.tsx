@@ -59,7 +59,7 @@ export default async function PedidosPage({
       <div className="flex items-center justify-between gap-3 mb-6">
         <PageHeader
           titulo="Pedidos"
-          descricao="O que o Caio anotou nas conversas — a equipe finaliza valores e pagamento"
+          descricao="O que a IA anotou nas conversas — a equipe finaliza valores e pagamento"
         />
         <div className="inline-flex rounded-lg border border-cinza-claro overflow-hidden">
           <Link
@@ -90,7 +90,7 @@ export default async function PedidosPage({
           <EmptyState
             icone="🛒"
             titulo="Nenhum pedido em aberto"
-            descricao="Quando o Caio anotar um pedido numa conversa, ele aparece aqui."
+            descricao="Quando a IA anotar um pedido numa conversa, ele aparece aqui."
           />
         ) : (
           <div className="space-y-8">
@@ -114,7 +114,7 @@ export default async function PedidosPage({
             </Secao>
 
             <Secao
-              titulo={`Caio ainda anotando (${captando.length})`}
+              titulo={`IA ainda anotando (${captando.length})`}
               vazio="Nenhuma captação em andamento."
             >
               {captando.map((p) => (

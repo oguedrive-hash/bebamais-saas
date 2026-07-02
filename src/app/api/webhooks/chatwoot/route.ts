@@ -82,7 +82,7 @@ async function processWebhook(webhook: ChatwootWebhook) {
 
   const supabase = createAdminClient();
 
-  // Sincroniza estado do Caio (caio_ativo) com a etiqueta `agente-off`
+  // Sincroniza estado da IA (caio_ativo) com a etiqueta `agente-off`
   // do Chatwoot — vem nos eventos conversation_*
   await sincronizarCaioAtivo(supabase, org.id, webhook);
 
@@ -164,9 +164,9 @@ async function processWebhook(webhook: ChatwootWebhook) {
       .in("id", ids)
       .eq("status", "novo_lead");
 
-    // Lead com Caio desligado mandou msg nova: marca pra notificar humano.
+    // Lead com IA desligada mandou msg nova: marca pra notificar humano.
     // Esse flag aparece no sino do header como secao "Aguardando sua resposta".
-    // Limpa quando humano responde pelo painel ou liga o Caio de volta.
+    // Limpa quando humano responde pelo painel ou liga a IA de volta.
     await supabase
       .from("leads")
       .update({
@@ -179,7 +179,7 @@ async function processWebhook(webhook: ChatwootWebhook) {
 
   // Pra cada lead com incoming nova: agenda resposta com debounce. Se chegar
   // outra msg desse lead dentro do debounce, o ciclo antigo desiste e o novo
-  // assume — Caio so responde quando o lead realmente parou de digitar.
+  // assume — a IA so responde quando o lead realmente parou de digitar.
   for (const leadId of leadsComIncomingNova) {
     await agendarRespostaCaioComDebounce(supabase, org.id, leadId);
   }
@@ -213,7 +213,7 @@ function calcularTempoAudio(texto: string): number {
 
 /**
  * Wrapper pra enviarMensagem com delay de digitacao. Use em respostas
- * AUTOMATICAS do Caio. Nao usa em notificacoes admin / workers.
+ * AUTOMATICAS da IA. Nao usa em notificacoes admin / workers.
  */
 async function enviarComoCaio(opts: {
   conversationId: number;
@@ -228,8 +228,8 @@ async function enviarComoCaio(opts: {
 }
 
 /**
- * Agenda resposta do Caio com debounce: se chegar outra msg do mesmo lead
- * antes do timer estourar, esse ciclo desiste e o novo assume. Caio so
+ * Agenda resposta da IA com debounce: se chegar outra msg do mesmo lead
+ * antes do timer estourar, esse ciclo desiste e o novo assume. A IA so
  * responde quando o lead parou de mandar mensagens por DEBOUNCE segundos.
  */
 export async function agendarRespostaCaioComDebounce(
@@ -287,7 +287,7 @@ export async function agendarRespostaCaioComDebounce(
   // eu rodava o responderLeadAuto e atualizou caio_responder_em pra outro
   // valor, NÃO posso zerar — senão a próxima rodada vai pensar que perdeu
   // a corrida e desistir (race condition observada quando duas msgs chegam
-  // em sequência e o Caio leva mais que 6s pra responder a primeira).
+  // em sequência e a IA leva mais que 6s pra responder a primeira).
   const { data: leadFinal } = await supabase
     .from("leads")
     .select("caio_responder_em")
@@ -385,9 +385,9 @@ function extrairMensagens(webhook: ChatwootWebhook): MensagemNormalizada[] {
 }
 
 /**
- * Caio responde o lead automaticamente.
+ * A IA responde o lead automaticamente.
  *
- * 1. Verifica se Caio tá ativo (se humano assumiu via agente-off, não responde)
+ * 1. Verifica se a IA tá ativa (se humano assumiu via agente-off, não responde)
  * 2. Gera resposta texto via OpenAI
  * 3. Se a ÚLTIMA mensagem do lead foi áudio, converte resposta em áudio TTS
  *    (ElevenLabs) e envia como attachment de áudio
@@ -436,7 +436,7 @@ async function responderLeadAuto(
     .single();
   const responderComAudio = ultimaIncoming?.tipo === "audio";
 
-  // Marca que Caio começou a processar — UI mostra "está digitando..."
+  // Marca que a IA começou a processar — UI mostra "está digitando..."
   await supabase
     .from("leads")
     .update({ caio_processing_since: new Date().toISOString() })
@@ -499,7 +499,7 @@ async function responderLeadAuto(
     }
 
     // HANDOFF: lead pede reagendar/cancelar retirada, está irritado, ou pede
-    // humano → Caio sai, marca lead com flag, notifica admin no WhatsApp,
+    // humano → a IA sai, marca lead com flag, notifica admin no WhatsApp,
     // responde com canned text. Roda ANTES de aceite/adiamento porque
     // "reagendar" não é aceite e seria mal-classificado se passasse adiante.
     const handoffResult = await tentarTratarHandoff(
@@ -559,7 +559,7 @@ async function responderLeadAuto(
       aceite?.tipo === "extras" ? aceite.extrasContexto : undefined,
       instancePin,
     );
-    // Caio respondeu — agenda o primeiro follow-up baseado na config da org
+    // A IA respondeu — agenda o primeiro follow-up baseado na config da org
     await agendarPrimeiroFollowup(supabase, organizationId, leadId);
   } finally {
     // Sempre limpa o flag, mesmo em erro — UI volta ao normal
@@ -597,7 +597,7 @@ async function tentarTratarAdiamento(
     .limit(6);
   const contexto = (msgs ?? [])
     .reverse()
-    .map((m) => `${m.direcao === "entrada" ? "Lead" : "Caio"}: ${m.conteudo}`)
+    .map((m) => `${m.direcao === "entrada" ? "Lead" : "Atendente"}: ${m.conteudo}`)
     .join("\n");
 
   const classif = await classificarAdiamento({
@@ -609,7 +609,7 @@ async function tentarTratarAdiamento(
   const primeiroNome = nome?.split(" ")[0] || "tudo bem";
 
   if (classif.intencao === "pede_adiamento_sem_data") {
-    // Caio pergunta quando — marca flag pra proxima msg ser interpretada como resposta
+    // A IA pergunta quando — marca flag pra proxima msg ser interpretada como resposta
     await supabase
       .from("leads")
       .update({ aguardando_resposta_adiamento: true })
@@ -661,19 +661,19 @@ async function tentarTratarAdiamento(
 
 /**
  * Detecta se a última msg do lead aceita agendar retirada. Retorna extras
- * pro contexto do Caio quando classifica como aceite (com ou sem horário) —
+ * pro contexto da IA quando classifica como aceite (com ou sem horário) —
  * o caller passa esses extras pra `gerarERespondeCaio` que gera resposta
  * natural com base nas instruções.
  *
  * - aceita_com_horario: tenta criar agendamento. Se conseguir, extras instruem
- *   o Caio a confirmar. Se falhar (fora de slot, conflito), extras instruem
- *   o Caio a propor alternativas.
- * - aceita_sem_horario: busca slots livres e instrui o Caio a propor.
+ *   a IA a confirmar. Se falhar (fora de slot, conflito), extras instruem
+ *   a IA a propor alternativas.
+ * - aceita_sem_horario: busca slots livres e instrui a IA a propor.
  * - nao_aceita / responde_normal: retorna null (fluxo normal).
  */
 /**
  * Detecta se o lead pede reagendar/cancelar retirada, esta irritado ou pede
- * humano. Se sim: dispara handoff (Caio off + notifica admin + responde
+ * humano. Se sim: dispara handoff (IA off + notifica admin + responde
  * canned text) e retorna true.
  */
 async function tentarTratarHandoff(
@@ -688,7 +688,7 @@ async function tentarTratarHandoff(
 ): Promise<boolean> {
   if (!ultimaMsg?.trim()) return false;
 
-  // Contexto: ultimas 6 msgs (Lead/Caio)
+  // Contexto: ultimas 6 msgs (Lead/Atendente)
   const { data: msgs } = await supabase
     .from("mensagens")
     .select("direcao, conteudo")
@@ -698,7 +698,7 @@ async function tentarTratarHandoff(
     .limit(6);
   const contexto = (msgs ?? [])
     .reverse()
-    .map((m) => `${m.direcao === "entrada" ? "Lead" : "Caio"}: ${m.conteudo}`)
+    .map((m) => `${m.direcao === "entrada" ? "Lead" : "Atendente"}: ${m.conteudo}`)
     .join("\n");
 
   // Todas as personas do pool (Caio, Yasmin, ...) são a MESMA IA — o classificador
@@ -804,7 +804,7 @@ async function tentarTratarAceite(
     .limit(6);
   const contexto = (msgs ?? [])
     .reverse()
-    .map((m) => `${m.direcao === "entrada" ? "Lead" : "Caio"}: ${m.conteudo}`)
+    .map((m) => `${m.direcao === "entrada" ? "Lead" : "Atendente"}: ${m.conteudo}`)
     .join("\n");
 
   const classif = await classificarAceite({
@@ -865,7 +865,7 @@ async function tentarTratarAceite(
       alternativas.map((s) => s.label).join(" | "),
     );
     // Pré-checa se EXISTE o mesmo horário em outro dia atendido. Se sim,
-    // damos isso de dica pro Caio (sem listar horários ainda — só pra ele
+    // damos isso de dica pra IA (sem listar horários ainda — só pra ela
     // saber que pode sugerir mesmo horário).
     const horaPedida = new Intl.DateTimeFormat("en-GB", {
       hour: "2-digit",
@@ -880,7 +880,7 @@ async function tentarTratarAceite(
     });
     const slotsMesmaHora =
       "slots" in buscaHora ? buscaHora.slots : [];
-    // Resposta determinística — sem LLM. Garante que o Caio realmente pede
+    // Resposta determinística — sem LLM. Garante que a IA realmente pede
     // outro dia em vez de listar horários inventados (LLM tendia a desobedecer).
     const { data: leadInfo } = await supabase
       .from("leads")
@@ -975,7 +975,7 @@ async function tentarTratarAceite(
 }
 
 /**
- * Depois que Caio responde, agenda o 1º follow-up segundo a config da org.
+ * Depois que a IA responde, agenda o 1º follow-up segundo a config da org.
  * Se a org nao tem followup_config ou nao tem regras ativas, nao agenda nada.
  */
 async function agendarPrimeiroFollowup(
@@ -1078,7 +1078,7 @@ async function gerarERespondeCaio(
   const result = await gerarRespostaCaio({ leadId, extrasContexto: extrasFinal });
   if ("error" in result) {
     console.error("[caio:auto]", "erro ao gerar:", result.error);
-    // Notifica admin via WhatsApp — Caio realmente desistiu deste lead.
+    // Notifica admin via WhatsApp — a IA realmente desistiu deste lead.
     // Busca dados do lead pra mensagem do alerta.
     const { data: leadFalha } = await supabase
       .from("leads")
@@ -1105,7 +1105,7 @@ async function gerarERespondeCaio(
   const texto = result.resposta;
 
   // Detecta se a resposta eh uma desqualificacao BANT. Se sim, marca o lead
-  // (pra metricas) e desliga Caio. nao_encaixa = lead nao serve; trazer_decisor
+  // (pra metricas) e desliga a IA. nao_encaixa = lead nao serve; trazer_decisor
   // eh hint do prompt mas nao desqualifica definitivo (so vira "perdido" se
   // lead recusar trazer o decisor depois).
   const desq = detectarDesqualificacao(texto);
@@ -1128,7 +1128,7 @@ async function gerarERespondeCaio(
 
   if (responderComAudio) {
     // Voz: prefere a do NÚMERO que serve o lead (persona_voice_id — ex: Juliana
-    // com voz própria); fallback pra voz global da org (Caio). Usa a instância
+    // com voz própria); fallback pra voz global da org. Usa a instância
     // PINADA (a que originou a resposta) — não o evolution_instance atual do lead,
     // que pode ter trocado de número no meio (senão sairia a voz errada).
     let instVoz = instancePin ?? null;
@@ -1410,7 +1410,7 @@ function inferirTipo(
 
 export async function GET() {
   return NextResponse.json({
-    name: "Caio webhook handler",
+    name: "Webhook handler do atendente IA",
     mode: "shadow",
     description:
       "Recebe eventos do Chatwoot (message_* e conversation_*), grava lead e mensagens no Supabase.",

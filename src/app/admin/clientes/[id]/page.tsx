@@ -59,7 +59,7 @@ export default async function ClienteDetalhePage({
                 href={`/admin/clientes/${cliente.id}/caio`}
                 className="text-sm text-laranja hover:text-laranja-escuro font-heading font-semibold"
               >
-                Caio →
+                Atendente →
               </Link>
               <Link
                 href={`/admin/clientes/${cliente.id}/followup`}
@@ -102,8 +102,8 @@ export default async function ClienteDetalhePage({
           </dl>
         </Card>
 
-        {/* Status da configuração do Caio */}
-        <Card titulo="Configuração do Caio">
+        {/* Status da configuração do atendente IA */}
+        <Card titulo="Configuração do Atendente IA">
           <ul className="text-sm space-y-1.5">
             <li className="flex items-center gap-2">
               <span>{cliente.prompt_system ? "✓" : "✕"}</span>

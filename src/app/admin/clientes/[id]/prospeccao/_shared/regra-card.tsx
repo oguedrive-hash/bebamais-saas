@@ -147,7 +147,7 @@ export function RegraCard({
           rows={3}
           value={regra.mensagem}
           onChange={(e) => onChange({ mensagem: e.target.value })}
-          placeholder="Ex: Oi {nome}, aqui é o Caio da {empresa}. Vi que vocês atuam no segmento de..."
+          placeholder="Ex: Oi {nome}, sou da {empresa}. Vi que vocês atuam no segmento de..."
           className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition text-sm"
         />
         <p className="text-[10px] text-cinza-medio mt-1">

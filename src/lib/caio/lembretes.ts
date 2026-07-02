@@ -235,7 +235,7 @@ export async function processarLembretesPendentes(): Promise<{
         organizationId: ag.organization_id,
         tipo: "lembrete_enviado",
         descricao: `Lembrete de retirada nº${regra.nivel} enviado (${regra.quando})`,
-        autorNome: "Caio (automático)",
+        autorNome: "Atendente IA (automático)",
         meta: { nivel: regra.nivel, agendamento_id: ag.id },
       });
     }

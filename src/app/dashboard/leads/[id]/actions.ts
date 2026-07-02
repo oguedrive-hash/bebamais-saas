@@ -17,14 +17,14 @@ import { STATUS_CONFIG, type StatusLead } from "@/lib/status-config";
 const AGENTE_OFF = "agente-off";
 
 // Status que sinalizam que o lead "saiu" do funil — ao chegar nesses
-// status, desligamos o Caio e resolvemos a conversa no Chatwoot.
+// status, desligamos a IA e resolvemos a conversa no Chatwoot.
 const STATUS_TERMINAIS: StatusLead[] = ["fechou", "perdido"];
 
 /**
  * Envia uma mensagem pelo painel respondendo um lead.
  *
  * Aceita `desligar_caio` como flag opcional no FormData. Se for "true",
- * aplica a etiqueta `agente-off` (Caio para de responder esse lead).
+ * aplica a etiqueta `agente-off` (a IA para de responder esse lead).
  */
 export async function responderLead(formData: FormData): Promise<
   { ok: true } | { error: string }
@@ -110,7 +110,7 @@ export async function responderLead(formData: FormData): Promise<
     leadId,
     organizationId: lead.organization_id,
     tipo: "msg_painel",
-    descricao: `Resposta manual enviada${desligarCaio ? " e Caio desligado" : ""}`,
+    descricao: `Resposta manual enviada${desligarCaio ? " e IA desligada" : ""}`,
     autorId: userMsg?.id ?? null,
     autorNome: userMsg?.email ?? null,
     meta: { conteudo: conteudo.trim().slice(0, 200) },
@@ -121,7 +121,7 @@ export async function responderLead(formData: FormData): Promise<
 }
 
 /**
- * Liga/desliga o Caio pra um lead específico. Fonte da verdade =
+ * Liga/desliga a IA pra um lead específico. Fonte da verdade =
  * leads.caio_ativo no Supabase (Chatwoot desativado / migrado p/ Evolution):
  * lê o estado atual, inverte e grava no banco.
  */
@@ -143,10 +143,10 @@ export async function toggleCaio(formData: FormData): Promise<
 
   if (error || !lead) return { error: "Lead não encontrado" };
 
-  const novoEstado = !(lead.caio_ativo ?? true); // true = Caio respondendo
+  const novoEstado = !(lead.caio_ativo ?? true); // true = IA respondendo
 
   // Espelha no banco (fonte da verdade). Se RELIGOU (novoEstado=true), limpa
-  // o flag de "aguardando humano" — o Caio voltou e vai cuidar.
+  // o flag de "aguardando humano" — a IA voltou e vai cuidar.
   const updates: Record<string, unknown> = { caio_ativo: novoEstado };
   if (novoEstado) {
     updates.precisa_resposta_humana = false;
@@ -156,7 +156,7 @@ export async function toggleCaio(formData: FormData): Promise<
     .from("leads")
     .update(updates)
     .eq("id", leadId);
-  if (updErr) return { error: `Falha ao atualizar o Caio: ${updErr.message}` };
+  if (updErr) return { error: `Falha ao atualizar a IA: ${updErr.message}` };
 
   // Loga evento
   const {
@@ -167,7 +167,7 @@ export async function toggleCaio(formData: FormData): Promise<
       leadId,
       organizationId: lead.organization_id,
       tipo: "caio_toggle",
-      descricao: novoEstado ? "Caio reativado" : "Caio desligado (humano assumiu)",
+      descricao: novoEstado ? "IA reativada" : "IA desligada (humano assumiu)",
       autorId: userToggle?.id ?? null,
       autorNome: userToggle?.email ?? null,
     });
@@ -183,7 +183,7 @@ export async function toggleCaio(formData: FormData): Promise<
  * Troca MANUALMENTE qual número/persona do pool atende este lead (override).
  * Carimba `lead.evolution_instance` no número escolhido e marca `instancia_anterior`
  * — assim a PRÓXIMA resposta da nova persona reconhece a troca ("vamos continuar por
- * aqui, lá com o Caio você disse..."). A IA on/off continua sendo o ToggleCaio.
+ * aqui, lá com o outro atendente você disse..."). A IA on/off continua sendo o ToggleCaio.
  */
 export async function trocarAtendente(formData: FormData): Promise<
   { ok: true } | { error: string }
@@ -239,7 +239,7 @@ export async function trocarAtendente(formData: FormData): Promise<
  * Muda o status do lead manualmente pelo painel.
  *
  * Se o novo status for terminal (`fechou` ou `perdido`):
- *   - Aplica etiqueta `agente-off` (Caio para)
+ *   - Aplica etiqueta `agente-off` (a IA para)
  *   - Resolve a conversa no Chatwoot
  *   - Atualiza `caio_ativo = false` no Supabase
  *
@@ -347,7 +347,7 @@ export async function mudarStatusLead(formData: FormData): Promise<
     }
   } else if (statusNovo === "em_prospeccao") {
     // Continua na cadencia de prospeccao — nao mexe em numero_prospeccao
-    // pra nao perder progresso. Garante Caio ligado.
+    // pra nao perder progresso. Garante a IA ligada.
     update.caio_ativo = true;
     update.followup_ativo = true;
   } else {
@@ -456,7 +456,7 @@ export async function gerarResumoIA(formData: FormData): Promise<
 }
 
 /**
- * Gera uma sugestão de resposta do Caio com base no histórico da conversa.
+ * Gera uma sugestão de resposta da IA com base no histórico da conversa.
  * NÃO envia — só devolve o texto pra UI preencher o textarea.
  */
 export async function gerarSugestaoResposta(formData: FormData): Promise<
@@ -473,8 +473,8 @@ export async function gerarSugestaoResposta(formData: FormData): Promise<
 }
 
 /**
- * Aprova uma sugestão shadow do Caio IA: envia pelo Chatwoot, aplica
- * agente-off (Caio do n8n para de responder) e converte a mensagem
+ * Aprova uma sugestão shadow da IA: envia pelo Chatwoot, aplica
+ * agente-off (o agente do n8n para de responder) e converte a mensagem
  * shadow em mensagem real (saida) atualizando o chatwoot_message_id.
  */
 export async function aprovarShadow(formData: FormData): Promise<
@@ -509,7 +509,7 @@ export async function aprovarShadow(formData: FormData): Promise<
     return { error: `Falha ao enviar pro Chatwoot: ${sent.error}` };
   }
 
-  // 2. Aplica agente-off (Caio do n8n para de responder)
+  // 2. Aplica agente-off (o agente do n8n para de responder)
   const label = await addLabel({
     conversationId: msg.chatwoot_conversation_id,
     label: AGENTE_OFF,
@@ -525,7 +525,7 @@ export async function aprovarShadow(formData: FormData): Promise<
     .update({
       shadow: false,
       chatwoot_message_id: sent.id,
-      remetente_nome: "Você (aprovou sugestão Caio IA)",
+      remetente_nome: "Você (aprovou sugestão da IA)",
     })
     .eq("id", mensagemId);
 
@@ -541,7 +541,7 @@ export async function aprovarShadow(formData: FormData): Promise<
 }
 
 /**
- * Descarta uma sugestão shadow do Caio IA — deleta a mensagem do banco.
+ * Descarta uma sugestão shadow da IA — deleta a mensagem do banco.
  */
 export async function descartarShadow(formData: FormData): Promise<
   { ok: true } | { error: string }

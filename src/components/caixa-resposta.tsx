@@ -73,7 +73,7 @@ export function CaixaResposta({
           onClick={onSugerir}
           disabled={pending}
           className="text-xs text-laranja hover:text-laranja-escuro font-heading font-semibold transition disabled:opacity-50"
-          title="Pega o histórico da conversa e gera o que o Caio responderia. Edite antes de enviar."
+          title="Pega o histórico da conversa e gera o que a IA responderia. Edite antes de enviar."
         >
           {pendingSugestao ? "Gerando..." : "Sugerir resposta IA →"}
         </button>
@@ -100,7 +100,7 @@ export function CaixaResposta({
             disabled={pending}
             className="w-4 h-4 accent-laranja"
           />
-          Desligar Caio ao enviar (aplica <code>agente-off</code>)
+          Desligar IA ao enviar (aplica <code>agente-off</code>)
         </label>
 
         <button

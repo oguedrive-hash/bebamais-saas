@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 /**
- * Renderiza o balão "Caio está digitando..." quando processingSince é
+ * Renderiza o balão "IA está digitando..." quando processingSince é
  * recente (menos de 90s). Client-side only pra evitar hydration mismatch
  * com Date.now() — server renderiza nada, client decide dinamicamente.
  */
@@ -34,7 +34,7 @@ export function BalaoDigitando({
       <div className="max-w-[75%] px-4 py-3 rounded-2xl bg-laranja text-white">
         <div className="flex items-center gap-1.5">
           <span className="text-xs font-medium opacity-90">
-            Caio está digitando
+            IA está digitando
           </span>
           <span className="flex gap-0.5">
             <span

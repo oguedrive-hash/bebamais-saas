@@ -42,7 +42,7 @@ export function BotaoVoltarInbound({
         type="button"
         onClick={() => setConfirmando(true)}
         className="text-xs px-3 py-1.5 rounded-lg border border-cinza-claro text-cinza-medio hover:border-preto hover:text-preto font-heading font-semibold transition"
-        title="Tira da prospecção e marca como inbound (em conversa, Caio ligado)"
+        title="Tira da prospecção e marca como inbound (em conversa, IA ligada)"
       >
         ← Voltar pra Inbound
       </button>

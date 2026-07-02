@@ -1,11 +1,11 @@
 /**
- * Handoff: tira o Caio da conversa e chama humano. Dispara quando:
+ * Handoff: tira a IA da conversa e chama humano. Dispara quando:
  *  - lead pede pra reagendar/cancelar retirada
  *  - lead esta irritado/xingando
  *  - lead pede explicitamente falar com pessoa
  *
  * Acoes:
- *  - leads.caio_ativo=false, followup_ativo=false (Caio para)
+ *  - leads.caio_ativo=false, followup_ativo=false (a IA para)
  *  - leads.precisa_humano=true + motivo + timestamp (badge no painel)
  *  - logarEvento "handoff_humano"
  *  - notificarAdminHandoff (WhatsApp pro Lucas)
@@ -56,8 +56,8 @@ export async function dispararHandoff(opts: {
     leadId: opts.leadId,
     organizationId: opts.organizationId,
     tipo: "handoff_humano",
-    descricao: `Handoff disparado (${opts.motivo}). Caio off, time avisado.`,
-    autorNome: "Caio (automatico)",
+    descricao: `Handoff disparado (${opts.motivo}). IA off, time avisado.`,
+    autorNome: "Atendente IA (automatico)",
     meta: { motivo: opts.motivo, ultima_msg: opts.ultimaMsg.slice(0, 200) },
   });
 
@@ -89,13 +89,13 @@ export async function dispararHandoff(opts: {
       organizationId: opts.organizationId,
       tipo: "pedido_pronto",
       descricao: "Pedido em captação promovido pra equipe (handoff humano).",
-      autorNome: "Caio (automatico)",
+      autorNome: "Atendente IA (automatico)",
       meta: { pedido_id: pedidoPromovidoId, via: "handoff" },
     });
   } else {
     // Corrida: a extração do MESMO ciclo pode ainda estar em voo (fire-and-
     // forget com LLM de 2-8s) e criar o pedido DEPOIS deste promote. Como o
-    // handoff desliga o Caio (extrator não roda mais pro lead), o pedido
+    // handoff desliga a IA (extrator não roda mais pro lead), o pedido
     // nasceria e morreria em "captando". Retry único e atrasado cobre isso.
     setTimeout(() => {
       void promoverPedidoCaptando()
@@ -107,7 +107,7 @@ export async function dispararHandoff(opts: {
               tipo: "pedido_pronto",
               descricao:
                 "Pedido em captação promovido pra equipe (handoff humano, retry).",
-              autorNome: "Caio (automatico)",
+              autorNome: "Atendente IA (automatico)",
               meta: { pedido_id: id, via: "handoff_retry" },
             });
           }

@@ -1,10 +1,10 @@
 /**
  * Prompt usado pra gerar resumo curto da conversa de um lead.
- * Não é o prompt do Caio — é prompt de um "analisador" externo.
- * (O system prompt do Caio fica em organizations.prompt_system, editavel
+ * Não é o prompt do atendente — é prompt de um "analisador" externo.
+ * (O system prompt do atendente fica em organizations.prompt_system, editavel
  * pelo painel admin.)
  */
-export const RESUMO_PROMPT = `Você é um assistente que lê conversas de WhatsApp entre um cliente e o Caio (atendente IA da Beba Mais, distribuidora de bebidas) e produz um resumo CURTO e ÚTIL pra um humano que vai assumir essa conversa.
+export const RESUMO_PROMPT = `Você é um assistente que lê conversas de WhatsApp entre um cliente e o atendente IA da Beba Mais (distribuidora de bebidas) e produz um resumo CURTO e ÚTIL pra um humano que vai assumir essa conversa.
 
 Gere o resumo em no máximo 60 palavras, dividido em 3 parágrafos curtos separados por linha em branco. Cada parágrafo começa com um título em **negrito** seguido de travessão e o conteúdo:
 

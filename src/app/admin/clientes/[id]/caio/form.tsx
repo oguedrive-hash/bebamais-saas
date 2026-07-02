@@ -47,7 +47,7 @@ export function CaioForm({
             Comportamento — Inbound
           </h3>
           <p className="text-xs text-cinza-medio mt-1">
-            Como o Caio age quando o cliente procura a gente primeiro. Foco em
+            Como o atendente age quando o cliente procura a gente primeiro. Foco em
             tirar dúvidas e induzir o fechamento do pedido e o agendamento da
             retirada. Aqui vai{" "}
             <strong>só comportamento</strong>: identidade, tom de voz, regras,
@@ -59,7 +59,7 @@ export function CaioForm({
           rows={12}
           value={inbound}
           onChange={(e) => setInbound(e.target.value)}
-          placeholder={"Você é o Caio, atendente da Beba Mais (distribuidora de bebidas).\n\nSeu objetivo: entender o que o cliente precisa, montar o pedido e combinar a retirada na loja ou a entrega.\n\nO que fazer:\n- Cumprimentar de forma calorosa\n- Fazer 1-2 perguntas pra entender o pedido antes de fechar\n- ...\n\nO que NÃO fazer:\n- Inventar info que não está na base\n- ..."}
+          placeholder={"Você é o atendente virtual da Beba Mais (distribuidora de bebidas).\n\nSeu objetivo: entender o que o cliente precisa, montar o pedido e combinar a retirada na loja ou a entrega.\n\nO que fazer:\n- Cumprimentar de forma calorosa\n- Fazer 1-2 perguntas pra entender o pedido antes de fechar\n- ...\n\nO que NÃO fazer:\n- Inventar info que não está na base\n- ..."}
           className="w-full px-4 py-3 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition font-mono text-xs leading-relaxed"
         />
       </section>
@@ -71,7 +71,7 @@ export function CaioForm({
             Comportamento — Prospecção
           </h3>
           <p className="text-xs text-cinza-medio mt-1">
-            Como o Caio age quando VOCÊ iniciou o contato (lead nunca falou
+            Como o atendente age quando VOCÊ iniciou o contato (lead nunca falou
             antes). Foco em fazer perguntas sobre a empresa do lead e explicar
             como o nosso trabalho funciona. Tom diferente do inbound — não
             agradece por &quot;ter entrado em contato&quot;.
@@ -81,7 +81,7 @@ export function CaioForm({
           rows={12}
           value={prospeccao}
           onChange={(e) => setProspeccao(e.target.value)}
-          placeholder={"Você é o Caio. Você está prospectando ativamente.\n\nSeu objetivo: descobrir como a empresa do lead funciona e mostrar como nosso trabalho pode ajudar.\n\nComo abrir uma conversa:\n- Sem dizer 'obrigado por entrar em contato'\n- Apresentar-se brevemente e fazer pergunta exploratória\n\nO que perguntar:\n- Como funciona o setor de... na empresa dele?\n- Quantos leads/clientes/etc.\n\n..."}
+          placeholder={"Você é o atendente virtual da empresa. Você está prospectando ativamente.\n\nSeu objetivo: descobrir como a empresa do lead funciona e mostrar como nosso trabalho pode ajudar.\n\nComo abrir uma conversa:\n- Sem dizer 'obrigado por entrar em contato'\n- Apresentar-se brevemente e fazer pergunta exploratória\n\nO que perguntar:\n- Como funciona o setor de... na empresa dele?\n- Quantos leads/clientes/etc.\n\n..."}
           className="w-full px-4 py-3 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition font-mono text-xs leading-relaxed"
         />
       </section>
@@ -93,7 +93,7 @@ export function CaioForm({
             Base de Conhecimento
           </h3>
           <p className="text-xs text-cinza-medio mt-1">
-            Tudo que o Caio precisa SABER sobre a empresa: produtos, serviços,
+            Tudo que o atendente precisa SABER sobre a empresa: produtos, serviços,
             preços, horários, processo de venda, FAQs, depoimentos, link de
             agendamento, etc. Esse conteúdo é compartilhado pelos dois
             comportamentos (inbound e prospecção) — escreve uma vez só.
@@ -116,7 +116,7 @@ export function CaioForm({
 
       <div className="sticky bottom-4 z-10 flex items-center justify-between gap-3 p-4 rounded-2xl bg-white border border-cinza-claro shadow-lg">
         <p className="text-xs text-cinza-medio">
-          Tudo é salvo de uma vez. Em produção, próximas respostas do Caio já
+          Tudo é salvo de uma vez. Em produção, próximas respostas da IA já
           usam o novo conteúdo.
         </p>
         <div className="flex items-center gap-3">

@@ -1,7 +1,7 @@
 /**
  * Gera resumo IA da conversa de um lead. Usado:
  *  - Server action gerarResumoIA() (manual no painel)
- *  - notificarAdminAgendamento (automatico quando Caio fecha retirada)
+ *  - notificarAdminAgendamento (automatico quando a IA fecha retirada)
  *
  * Pega as ultimas N mensagens e roda pelo RESUMO_PROMPT.
  */
@@ -38,7 +38,7 @@ export async function gerarResumoLead(opts: {
 
   const transcript = mensagens
     .map((m) => {
-      const quem = m.direcao === "entrada" ? lead.nome ?? "Lead" : "Caio";
+      const quem = m.direcao === "entrada" ? lead.nome ?? "Lead" : "Atendente";
       const conteudo =
         m.tipo !== "texto"
           ? `[${m.tipo}${m.conteudo ? `: ${m.conteudo}` : ""}]`

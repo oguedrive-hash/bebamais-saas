@@ -74,7 +74,7 @@ async function postEvolution(
   // NÃO envia: só fail-fast. Evita a tempestade de "Connection Closed" pós-logout
   // e poupa o número de parecer bot tentando mandar offline. Só vale pra envio de
   // mensagem (grupo "message"); presença (grupo "chat") é fire-and-forget. Em
-  // "unknown"/timeout do check, segue o envio (fail-open) pra não travar o Caio.
+  // "unknown"/timeout do check, segue o envio (fail-open) pra não travar a IA.
   if (grupo === "message") {
     const estado = await evoConnectionState(instance);
     if (estado === "close") {

@@ -1,5 +1,5 @@
 /**
- * Calcula slots de horário disponíveis pro Caio propor ao lead.
+ * Calcula slots de horário disponíveis pra IA propor ao lead.
  *
  * Respeita:
  *  - agenda_config (modo, dias_semana, slots, duracao_padrao, antecedência,
@@ -304,7 +304,7 @@ export async function calcularSlotsLivres(opts: {
     }
   }
 
-  // Reordena cronologicamente pra ficar coerente na mensagem do Caio
+  // Reordena cronologicamente pra ficar coerente na mensagem da IA
   livres.sort((a, b) => a.inicio.localeCompare(b.inicio));
 
   return { slots: livres, config };

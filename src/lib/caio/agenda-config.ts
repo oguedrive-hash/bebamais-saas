@@ -3,7 +3,7 @@
  *
  * - dias_semana: ISO (1=segunda ... 7=domingo). Default: seg a sex.
  * - slots: blocos de horário FIXOS que a operação trabalha (ex: 8h-10h30).
- *   Cada slot é independente — o Caio (quando agenda automaticamente) propõe
+ *   Cada slot é independente — a IA (quando agenda automaticamente) propõe
  *   o slot inteiro ao lead. Operação manual também pode usar como sugestão.
  *
  * Horário sempre em HH:mm 24h, fuso da org (atualmente só America/Sao_Paulo).
@@ -17,9 +17,9 @@ export type SlotHorario = {
 /**
  * Modo de agendamento:
  *  - "slot": cada bloco de `slots` vira um agendamento fixo (ex: 8h-10h30
- *    é uma reunião inteira). Caio só agenda dentro desses blocos.
+ *    é uma reunião inteira). A IA só agenda dentro desses blocos.
  *  - "duracao": os blocos de `slots` viram JANELAS de atendimento (ex: 8h-12h
- *    é a janela da manhã). Caio aloca dentro com `duracao_padrao`. Gap entre
+ *    é a janela da manhã). A IA aloca dentro com `duracao_padrao`. Gap entre
  *    janelas (12h-13h) é pausa automática.
  *
  * Org escolhe um dos dois — nunca os dois juntos.
@@ -31,10 +31,10 @@ export type AgendaConfig = {
   dias_semana: number[]; // 1=seg, 7=dom
   slots: SlotHorario[];
   duracoes: number[]; // minutos — botões de duração no form "Novo agendamento"
-  duracao_padrao: number; // qual duração o Caio usa por default no modo "duracao"
+  duracao_padrao: number; // qual duração a IA usa por default no modo "duracao"
   antecedencia_minima_horas: number; // não agendar nas próximas N horas
   horizonte_dias: number; // só agendar nos próximos N dias
-  qtd_opcoes_propor: number; // quantos slots o Caio oferece por vez
+  qtd_opcoes_propor: number; // quantos slots a IA oferece por vez
 };
 
 export const AGENDA_CONFIG_DEFAULT: AgendaConfig = {

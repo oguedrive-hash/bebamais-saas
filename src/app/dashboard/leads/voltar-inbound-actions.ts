@@ -11,10 +11,10 @@ export type RelatorioVoltar = {
 };
 
 /**
- * Move leads pra origem=inbound, status=em_conversa, Caio LIGADO.
+ * Move leads pra origem=inbound, status=em_conversa, IA LIGADA.
  *
  * Usado quando o operador quer tirar contato(s) do fluxo de prospecção
- * (parar cadência outbound) e deixar o Caio responder se o cliente mandar
+ * (parar cadência outbound) e deixar a IA responder se o cliente mandar
  * msg. Tambem da pra usar pra reverter um lead movido por engano.
  *
  * Mantem chatwoot_conversation_id existente — não cria conversa nova.

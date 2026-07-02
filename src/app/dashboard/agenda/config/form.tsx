@@ -149,7 +149,7 @@ export function AgendaConfigForm({
           Modo de agendamento
         </h2>
         <p className="text-xs text-cinza-medio mb-4">
-          Escolhe como o Caio (e o painel) interpretam os horários abaixo. Os
+          Escolhe como a IA (e o painel) interpretam os horários abaixo. Os
           dois modos usam a mesma lista de horários, mas com lógica diferente.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -171,7 +171,7 @@ export function AgendaConfigForm({
             </p>
             <p className="text-xs text-cinza-medio">
               Cada horário abaixo vira uma janela de retirada inteira (ex:
-              8h-10h30). Caio só oferece esses blocos.
+              8h-10h30). A IA só oferece esses blocos.
             </p>
           </button>
           <button
@@ -192,7 +192,7 @@ export function AgendaConfigForm({
             </p>
             <p className="text-xs text-cinza-medio">
               Os horários abaixo viram janelas de atendimento (ex: 8h-12h =
-              manhã). Caio aloca dentro com a duração padrão.
+              manhã). A IA aloca dentro com a duração padrão.
             </p>
           </button>
         </div>
@@ -246,7 +246,7 @@ export function AgendaConfigForm({
         <p className="text-xs text-cinza-medio mb-4">
           {modo === "slot"
             ? "Cada bloco vira uma janela de retirada fixa. Pausas entre blocos (ex: almoço de 12h a 13h) são automáticas — só deixar gap."
-            : "Cada bloco é uma janela em que o Caio pode alocar retiradas com a duração padrão. Gaps entre janelas são pausas automáticas."}
+            : "Cada bloco é uma janela em que a IA pode alocar retiradas com a duração padrão. Gaps entre janelas são pausas automáticas."}
         </p>
 
         {slots.length === 0 ? (
@@ -361,7 +361,7 @@ export function AgendaConfigForm({
         {modo === "duracao" && duracoes.length > 0 && (
           <div>
             <label className="block text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-2">
-              Duração padrão (Caio usa por default)
+              Duração padrão (a IA usa por default)
             </label>
             <select
               value={duracaoPadrao}
@@ -382,13 +382,13 @@ export function AgendaConfigForm({
         )}
       </section>
 
-      {/* Regras de agendamento do Caio */}
+      {/* Regras de agendamento da IA */}
       <section className="bg-white rounded-2xl border border-cinza-claro p-6">
         <h2 className="text-base font-heading font-bold text-preto mb-1">
           Regras de agendamento
         </h2>
         <p className="text-xs text-cinza-medio mb-4">
-          Quando o Caio for propor horários pro lead, segue essas regras.
+          Quando a IA for propor horários pro lead, segue essas regras.
         </p>
 
         <div className="space-y-4">
@@ -452,7 +452,7 @@ export function AgendaConfigForm({
               className="w-32 px-3 py-1.5 border border-cinza-claro rounded-lg text-sm focus:outline-none focus:border-laranja transition disabled:opacity-50"
             />
             <p className="text-[10px] text-cinza-medio mt-1">
-              Quantos horários o Caio oferece em uma mensagem.
+              Quantos horários a IA oferece em uma mensagem.
             </p>
           </div>
         </div>
@@ -474,7 +474,7 @@ export function AgendaConfigForm({
           </button>
         </div>
         <p className="text-xs text-cinza-medio mb-4">
-          O que o Caio proporia ao lead AGORA com a config atual (lê a config
+          O que a IA proporia ao lead AGORA com a config atual (lê a config
           salva no banco — clica em &ldquo;Salvar&rdquo; antes pra ver mudanças
           recém-editadas).
         </p>

@@ -1,9 +1,9 @@
 /**
  * Extrator de pedido — mantém o pedido ESTRUTURADO do lead sincronizado
- * com a conversa (contexto Beba Mais: o Caio tira pedidos; o atendente
+ * com a conversa (contexto Beba Mais: a IA tira pedidos; o atendente
  * humano finaliza preço/pagamento no painel).
  *
- * Roda fire-and-forget 1x por ciclo de resposta do Caio (pós-debounce,
+ * Roda fire-and-forget 1x por ciclo de resposta da IA (pós-debounce,
  * plugado no responderLeadAuto). Lê a janela recente da conversa, extrai
  * itens/modalidade/endereço/nome via gpt-4o-mini (JSON, temp 0 — padrão
  * dos classificadores) e faz upsert na tabela `pedidos`.
@@ -260,7 +260,7 @@ export async function extrairEAtualizarPedido(opts: {
           organizationId: opts.organizationId,
           tipo: "pedido_extraido",
           descricao: `Pedido detectado na conversa: ${itensLabel(extracao.itens)}`,
-          autorNome: "Caio (extrator)",
+          autorNome: "Atendente IA (extrator)",
           meta: { pedido_id: pedidoId, itens: extracao.itens },
         });
       }
@@ -296,7 +296,7 @@ export async function extrairEAtualizarPedido(opts: {
         organizationId: opts.organizationId,
         tipo: "pedido_alterado",
         descricao: `Cliente alterou o pedido após confirmar: ${itensLabel(extracao.itens)}`,
-        autorNome: "Caio (extrator)",
+        autorNome: "Atendente IA (extrator)",
         meta: { pedido_id: pedidoId, itens: extracao.itens },
       });
     }
@@ -372,7 +372,7 @@ export async function extrairEAtualizarPedido(opts: {
         organizationId: opts.organizationId,
         tipo: "pedido_pronto",
         descricao: `Pedido confirmado pelo cliente — pronto pra equipe finalizar: ${itensLabel(itensPromocao)}`,
-        autorNome: "Caio (extrator)",
+        autorNome: "Atendente IA (extrator)",
         meta: { pedido_id: pedidoId, itens: itensPromocao, modalidade: modalidadePromocao },
       });
       await notificarAdminPedidoPronto({

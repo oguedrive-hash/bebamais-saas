@@ -249,7 +249,7 @@ export default async function ProspeccaoPage({
             </div>
             <button type="submit" className="sr-only" aria-label="Buscar" />
           </form>
-          {/* Caio on/off */}
+          {/* IA on/off */}
           <div className="inline-flex rounded-lg overflow-hidden">
             <Link
               href={buildHref({
@@ -260,7 +260,7 @@ export default async function ProspeccaoPage({
                   ? "bg-green-200 text-green-800"
                   : "bg-green-100 text-green-700 hover:bg-green-200"
               }`}
-              title="Filtrar leads com Caio respondendo"
+              title="Filtrar leads com IA respondendo"
             >
               {contagens.caio_on}
             </Link>
@@ -273,7 +273,7 @@ export default async function ProspeccaoPage({
                   ? "bg-red-200 text-red-800"
                   : "bg-red-100 text-red-700 hover:bg-red-200"
               }`}
-              title="Filtrar leads com Caio desligado"
+              title="Filtrar leads com IA desligada"
             >
               {contagens.caio_off}
             </Link>
@@ -622,7 +622,7 @@ function CaioBadge({ ativo }: { ativo: boolean }) {
       <span
         className={`w-1.5 h-1.5 rounded-full ${ativo ? "bg-green-500" : "bg-red-500"}`}
       />
-      {ativo ? "Caio respondendo" : "Caio desligado"}
+      {ativo ? "IA respondendo" : "IA desligada"}
     </span>
   );
 }

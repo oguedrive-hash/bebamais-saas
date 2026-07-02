@@ -35,7 +35,7 @@ export default async function ProspeccaoLayout({
           Prospecção ativa
         </h1>
         <p className="text-sm text-cinza-medio mt-1">
-          {cliente.name} — como o Caio inicia contato com leads importados
+          {cliente.name} — como a IA inicia contato com leads importados
         </p>
       </div>
 

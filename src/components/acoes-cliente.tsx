@@ -43,8 +43,8 @@ export function AcoesCliente({
             </h3>
             <p className="text-xs text-cinza-medio mt-1">
               {ativo
-                ? "Caio para de responder em todos os leads desse cliente. Não deleta dados."
-                : "Caio volta a responder em todos os leads desse cliente."}
+                ? "O atendente IA para de responder em todos os leads desse cliente. Não deleta dados."
+                : "O atendente IA volta a responder em todos os leads desse cliente."}
             </p>
           </div>
           <button

@@ -206,7 +206,7 @@ export async function processarRetomadasPendentes(): Promise<{
       organizationId: lead.organization_id,
       tipo: "lembrete_enviado",
       descricao: "Msg de retomada enviada (data combinada chegou)",
-      autorNome: "Caio (automático)",
+      autorNome: "Atendente IA (automático)",
     });
 
     enviadosCount++;

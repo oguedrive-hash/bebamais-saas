@@ -37,7 +37,7 @@ const STATUS_PEDIDO: Record<
   { label: string; cor: string; bg: string; border: string }
 > = {
   captando: {
-    label: "Caio anotando",
+    label: "IA anotando",
     cor: "text-sky-700",
     bg: "bg-sky-50",
     border: "border-sky-200",

@@ -102,7 +102,7 @@ export default async function LeadDetalhePage({
     .eq("ativo", true)
     .order("prioridade", { ascending: true });
 
-  // Estado do Caio: leads.caio_ativo no Supabase é a ÚNICA fonte da verdade
+  // Estado da IA: leads.caio_ativo no Supabase é a ÚNICA fonte da verdade
   // (Chatwoot desativado / migrado p/ Evolution). O webhook reativo e o toggle
   // do painel mantêm esse campo atualizado no banco — não relê do Chatwoot.
   const caioAtivo = lead.caio_ativo ?? true;

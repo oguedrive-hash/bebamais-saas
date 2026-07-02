@@ -55,7 +55,7 @@ export default async function AdminLayout({
               {/* Single-tenant (Beba Mais): links DIRETOS pra config da org
                   única — sem hub "cliente" no meio. "Métricas globais"
                   (multi-cliente da Facilita) foi removida. */}
-              <NavLink href={cfg("caio")}>Caio</NavLink>
+              <NavLink href={cfg("caio")}>Atendente</NavLink>
               <NavLink href={cfg("followup")}>Follow-up</NavLink>
               <NavLink href={cfg("numeros")}>Números</NavLink>
               <NavLink href={cfg("editar")}>Empresa</NavLink>

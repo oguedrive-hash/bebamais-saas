@@ -341,7 +341,7 @@ function CaioBadge({ ativo }: { ativo: boolean }) {
       <span
         className={`w-1.5 h-1.5 rounded-full ${ativo ? "bg-green-500" : "bg-red-500"}`}
       />
-      {ativo ? "Caio respondendo" : "Caio desligado"}
+      {ativo ? "IA respondendo" : "IA desligada"}
     </span>
   );
 }

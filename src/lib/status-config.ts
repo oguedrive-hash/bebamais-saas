@@ -37,7 +37,7 @@ export const STATUS_CONFIG: Record<
   },
   em_conversa: {
     label: "Em conversa",
-    descricao: "Caio conversando com o lead",
+    descricao: "IA conversando com o lead",
     cor: "text-laranja",
     bg: "bg-laranja/10",
     border: "border-laranja/30",
@@ -46,7 +46,7 @@ export const STATUS_CONFIG: Record<
   },
   followup: {
     label: "Reengajando",
-    descricao: "Caio fazendo follow-ups",
+    descricao: "IA fazendo follow-ups",
     cor: "text-amber-700",
     bg: "bg-amber-50",
     border: "border-amber-200",
@@ -100,7 +100,7 @@ export const STATUS_CONFIG: Record<
   },
   em_prospeccao: {
     label: "Em prospecção",
-    descricao: "Caio enviando cadência de prospecção",
+    descricao: "IA enviando cadência de prospecção",
     cor: "text-blue-700",
     bg: "bg-blue-50",
     border: "border-blue-200",

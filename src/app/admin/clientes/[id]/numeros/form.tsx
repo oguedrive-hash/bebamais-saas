@@ -293,7 +293,7 @@ export function NumerosManager({
               <input
                 value={persona}
                 onChange={(e) => setPersona(e.target.value)}
-                placeholder="Caio, Yasmin…"
+                placeholder="Ex.: Yasmin, Ana…"
                 className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition"
               />
             </div>
@@ -367,7 +367,7 @@ export function NumerosManager({
               <input
                 value={edPersona}
                 onChange={(e) => setEdPersona(e.target.value)}
-                placeholder="Caio, Yasmin…"
+                placeholder="Ex.: Yasmin, Ana…"
                 className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition"
               />
             </div>

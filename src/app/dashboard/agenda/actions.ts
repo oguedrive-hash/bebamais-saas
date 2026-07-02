@@ -131,9 +131,9 @@ export async function salvarAgendaConfig(
 }
 
 /**
- * Pré-visualiza os próximos slots livres pro Caio propor ao lead.
+ * Pré-visualiza os próximos slots livres pra IA propor ao lead.
  * Usado pelo botão "Ver próximos slots" na página de config — mostra o que
- * o Caio faria AGORA com a config atual.
+ * a IA faria AGORA com a config atual.
  */
 export async function previewSlotsLivres(): Promise<
   { ok: true; slots: SlotLivre[] } | { error: string }

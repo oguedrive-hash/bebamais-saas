@@ -89,7 +89,7 @@ export function ReativacaoForm({
               Reativação de leads perdidos
             </h3>
             <p className="text-xs text-cinza-medio mt-1">
-              Depois que o Caio esgotar a cadência principal, dispara mensagens
+              Depois que a IA esgotar a cadência principal, dispara mensagens
               de reativação em intervalos. Cada regra é relativa à anterior.
             </p>
           </div>

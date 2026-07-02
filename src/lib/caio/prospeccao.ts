@@ -211,7 +211,7 @@ export async function processarProspeccaoLead(
         organizationId: lead.organization_id,
         tipo: "prospeccao_numero_invalido",
         descricao: `Número ${lead.telefone} não existe no WhatsApp — prospecção encerrada.`,
-        autorNome: "Caio (automático)",
+        autorNome: "Atendente IA (automático)",
       }).catch(() => {});
       return { ok: true, acao: "esgotou" };
     }
@@ -274,7 +274,7 @@ export async function processarProspeccaoLead(
     organizationId: lead.organization_id,
     tipo: "prospeccao_enviada",
     descricao: `Mensagem de prospecção nº${proximoNivel} enviada`,
-    autorNome: "Caio (automático)",
+    autorNome: "Atendente IA (automático)",
     meta: { nivel: proximoNivel },
   });
 

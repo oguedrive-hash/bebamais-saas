@@ -66,7 +66,7 @@ function Balao({ mensagem }: { mensagem: Mensagem }) {
       <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${bubbleClasses}`}>
         {isShadow && (
           <p className="text-[10px] font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1">
-            Sugestão do Caio IA (não enviada)
+            Sugestão da IA (não enviada)
           </p>
         )}
         <ConteudoMensagem mensagem={mensagem} />
