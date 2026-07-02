@@ -166,13 +166,30 @@ export async function atualizarPedido(
   const ctx = await carregarPedido(pedidoId);
   if ("error" in ctx) return ctx;
 
-  // Valida itens (mesma régua do extrator)
+  // Valida e RECONSTRÓI os itens (whitelist de chaves — nada de campo forjado
+  // indo verbatim pro jsonb; ref inválido quebraria a fila e a notificação).
+  let itensLimpos: ItemPedido[] | undefined;
   if (patch.itens) {
     if (patch.itens.length > 30) return { error: "Máximo de 30 itens" };
+    itensLimpos = [];
     for (const i of patch.itens) {
       if (!i.produto?.trim()) return { error: "Item sem nome de produto" };
       if (!Number.isFinite(i.quantidade) || i.quantidade <= 0)
         return { error: `Quantidade inválida em "${i.produto}"` };
+      if (i.ref != null && typeof i.ref !== "string")
+        return { error: "Código de referência inválido" };
+      itensLimpos.push({
+        produto: String(i.produto).trim().slice(0, 120),
+        quantidade: i.quantidade,
+        unidade:
+          i.unidade && typeof i.unidade === "string"
+            ? i.unidade.trim().slice(0, 30) || null
+            : null,
+        ref:
+          typeof i.ref === "string" && i.ref.trim()
+            ? i.ref.trim().slice(0, 20)
+            : null,
+      });
     }
   }
   if (
@@ -188,7 +205,7 @@ export async function atualizarPedido(
   const { data: linha, error } = await admin
     .from("pedidos")
     .update({
-      ...(patch.itens !== undefined ? { itens: patch.itens } : {}),
+      ...(itensLimpos !== undefined ? { itens: itensLimpos } : {}),
       ...(patch.modalidade !== undefined ? { modalidade: patch.modalidade } : {}),
       ...(patch.endereco !== undefined ? { endereco: patch.endereco?.trim() || null } : {}),
       ...(patch.nome_cliente !== undefined
@@ -210,7 +227,7 @@ export async function atualizarPedido(
     tipo: "pedido_alterado",
     descricao: "Pedido editado pelo atendente no painel.",
     autorNome: ctx.usuarioNome,
-    meta: { pedido_id: pedidoId, itens: patch.itens ?? null },
+    meta: { pedido_id: pedidoId, itens: itensLimpos ?? null },
   });
   revalidar(ctx.pedido.lead_id);
   return { ok: true };

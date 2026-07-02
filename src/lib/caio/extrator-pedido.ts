@@ -26,11 +26,14 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { chatCompletion } from "./openai";
 import { logarEvento } from "./eventos";
 import { notificarAdminPedidoPronto } from "./notificar-admin";
+import { matchCatalogo } from "./catalogo";
 
 export type ItemPedido = {
   produto: string;
   quantidade: number;
   unidade?: string | null;
+  /** código de referência do catálogo (matching determinístico) — null se ambíguo */
+  ref?: string | null;
 };
 
 export type ExtracaoPedido = {
@@ -198,6 +201,24 @@ export async function extrairEAtualizarPedido(opts: {
   }
   if (!extracao) return;
 
+  // Matching com o catálogo (best-effort): item ganha o código de referência
+  // da equipe + nome canônico quando o casamento é inequívoco; na dúvida fica
+  // sem ref (a equipe resolve — errar código é pior que não sugerir).
+  for (const item of extracao.itens) {
+    try {
+      const m = await matchCatalogo(opts.organizationId, item.produto);
+      if (m) {
+        item.ref = m.codigo_ref;
+        item.produto = m.descricao;
+      }
+    } catch (e) {
+      console.warn(
+        "[pedido:catalogo] matching falhou:",
+        e instanceof Error ? e.message : String(e),
+      );
+    }
+  }
+
   // Nada pedido ainda e sem pedido aberto → não cria linha vazia
   if (extracao.itens.length === 0 && !aberto) return;
 
@@ -250,8 +271,13 @@ export async function extrairEAtualizarPedido(opts: {
     // endereço/nome pra trás — extração null NÃO apaga valor já gravado.
     // CAS via updated_at: se outro ciclo escreveu no meio, este write stale
     // casa 0 linhas e desiste (o próximo ciclo re-extrai).
-    const mudou =
-      JSON.stringify(aberto.itens ?? []) !== JSON.stringify(extracao.itens);
+    // Comparação por CONTEÚDO (não JSON.stringify: o jsonb do Postgres
+    // reordena chaves e acusaria "mudou" em todo ciclo).
+    const chaveItens = (arr: ItemPedido[]) =>
+      arr
+        .map((i) => `${i.quantidade}|${i.unidade ?? ""}|${i.produto}|${i.ref ?? ""}`)
+        .join("\n");
+    const mudou = chaveItens(aberto.itens ?? []) !== chaveItens(extracao.itens);
     await admin
       .from("pedidos")
       .update({

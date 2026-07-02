@@ -80,7 +80,7 @@ export async function notificarAdminPedidoPronto(opts: {
   leadId: string;
   leadNome: string | null;
   leadTelefone: string;
-  itens: { produto: string; quantidade: number; unidade?: string | null }[];
+  itens: { produto: string; quantidade: number; unidade?: string | null; ref?: string | null }[];
   modalidade: "retirada" | "entrega" | null;
   endereco: string | null;
 }): Promise<void> {
@@ -94,7 +94,10 @@ export async function notificarAdminPedidoPronto(opts: {
       ? `${opts.leadNome} (${opts.leadTelefone})`
       : opts.leadTelefone;
     const linhas = opts.itens
-      .map((i) => `• ${i.quantidade}${i.unidade ? ` ${i.unidade}` : "x"} ${i.produto}`)
+      .map(
+        (i) =>
+          `• ${i.quantidade}${i.unidade ? ` ${i.unidade}` : "x"} ${i.produto}${i.ref ? ` [${i.ref}]` : ""}`,
+      )
       .join("\n");
     const modalidadeTxt =
       opts.modalidade === "entrega"

@@ -7,7 +7,7 @@
  * não é técnico. Editar seta editado_pelo_painel (extrator para de mexer).
  */
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ItemPedido } from "@/lib/caio/extrator-pedido";
@@ -17,6 +17,7 @@ import {
   cancelarPedido,
   atualizarPedido,
 } from "@/app/dashboard/pedidos/actions";
+import { buscarProdutosAtivos } from "@/app/dashboard/produtos/actions";
 
 export type PedidoRow = {
   id: string;
@@ -185,6 +186,17 @@ export function PedidoCard({
                     {i.unidade ? ` ${i.unidade}` : "x"}
                   </span>{" "}
                   {i.produto}
+                  {i.ref && (
+                    <span
+                      title="Código do catálogo — clique pra copiar"
+                      onClick={() =>
+                        navigator.clipboard?.writeText(i.ref!).catch(() => {})
+                      }
+                      className="ml-1.5 inline-flex px-1.5 py-0.5 rounded font-mono text-[10px] font-bold text-laranja-escuro bg-laranja/10 border border-laranja/30 cursor-copy align-middle"
+                    >
+                      {i.ref}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
@@ -235,17 +247,26 @@ export function PedidoCard({
                 }
                 className="w-20 px-2 py-1.5 border border-cinza-claro rounded-lg text-sm"
               />
-              <input
-                value={item.produto}
-                placeholder="produto"
-                onChange={(e) =>
+              <ProdutoAutocomplete
+                valor={item.produto}
+                temRef={!!item.ref}
+                onMudar={(texto) =>
                   setItens((s) =>
                     s.map((it, i) =>
-                      i === idx ? { ...it, produto: e.target.value } : it,
+                      // digitou por cima → solta o vínculo com o catálogo
+                      i === idx ? { ...it, produto: texto, ref: null } : it,
                     ),
                   )
                 }
-                className="flex-1 px-2 py-1.5 border border-cinza-claro rounded-lg text-sm"
+                onEscolher={(p) =>
+                  setItens((s) =>
+                    s.map((it, i) =>
+                      i === idx
+                        ? { ...it, produto: p.descricao, ref: p.codigo_ref }
+                        : it,
+                    ),
+                  )
+                }
               />
               <button
                 type="button"
@@ -352,6 +373,103 @@ export function PedidoCard({
             Cancelar pedido
           </button>
         </div>
+      )}
+    </div>
+  );
+}
+
+function ProdutoAutocomplete({
+  valor,
+  temRef,
+  onMudar,
+  onEscolher,
+}: {
+  valor: string;
+  temRef: boolean;
+  onMudar: (texto: string) => void;
+  onEscolher: (p: { codigo_ref: string; descricao: string }) => void;
+}) {
+  const [sugestoes, setSugestoes] = useState<
+    { codigo_ref: string; descricao: string }[]
+  >([]);
+  const [aberto, setAberto] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const escolhendo = useRef(false);
+
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+
+  function buscar(texto: string) {
+    if (timer.current) clearTimeout(timer.current);
+    if (texto.trim().length < 2) {
+      setSugestoes([]);
+      setAberto(false);
+      return;
+    }
+    timer.current = setTimeout(async () => {
+      try {
+        const r = await buscarProdutosAtivos(texto);
+        setSugestoes(r);
+        setAberto(r.length > 0);
+      } catch {
+        setSugestoes([]);
+      }
+    }, 250);
+  }
+
+  return (
+    <div className="relative flex-1">
+      <input
+        value={valor}
+        placeholder="produto (busca no catálogo)"
+        onChange={(e) => {
+          onMudar(e.target.value);
+          buscar(e.target.value);
+        }}
+        onBlur={() => {
+          // dá tempo do clique na sugestão disparar antes de fechar
+          setTimeout(() => {
+            if (!escolhendo.current) setAberto(false);
+            escolhendo.current = false;
+          }, 150);
+        }}
+        className={`w-full px-2 py-1.5 border rounded-lg text-sm ${
+          temRef ? "border-laranja/50 bg-laranja/5" : "border-cinza-claro"
+        }`}
+      />
+      {temRef && (
+        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-mono text-laranja-escuro">
+          ✓ catálogo
+        </span>
+      )}
+      {aberto && sugestoes.length > 0 && (
+        <ul className="absolute z-20 mt-1 w-full bg-white border border-cinza-claro rounded-lg shadow-lg overflow-hidden">
+          {sugestoes.map((s) => (
+            <li key={s.codigo_ref}>
+              <button
+                type="button"
+                onMouseDown={() => {
+                  escolhendo.current = true;
+                }}
+                onClick={() => {
+                  // cancela busca em voo — senão o debounce reabre o dropdown
+                  // com resultados velhos por cima da escolha
+                  if (timer.current) clearTimeout(timer.current);
+                  onEscolher(s);
+                  setAberto(false);
+                  setSugestoes([]);
+                }}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-laranja/5 flex items-center gap-2"
+              >
+                <span className="font-mono font-bold text-laranja-escuro text-xs w-14 shrink-0">
+                  {s.codigo_ref}
+                </span>
+                <span className="truncate">{s.descricao}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

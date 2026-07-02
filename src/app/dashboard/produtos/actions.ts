@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { invalidarCatalogo } from "@/lib/caio/catalogo";
 
 /**
  * CRUD do catálogo de produtos. Padrão do projeto: valida acesso com o client
@@ -64,13 +65,15 @@ export async function criarProduto(input: {
         .maybeSingle();
       if (errReativa) return { error: errReativa.message };
       if (reativado) {
-        revalidatePath("/dashboard/produtos");
+        invalidarCatalogo(ctx.orgId);
+  revalidatePath("/dashboard/produtos");
         return { ok: true };
       }
       return { error: `Já existe um produto com o código ${input.codigoRef.trim().toUpperCase()}` };
     }
     return { error: error.message };
   }
+  invalidarCatalogo(ctx.orgId);
   revalidatePath("/dashboard/produtos");
   return { ok: true };
 }
@@ -102,6 +105,7 @@ export async function atualizarProduto(
     return { error: error.message };
   }
   if (!linha) return { error: "Produto não encontrado" };
+  invalidarCatalogo(ctx.orgId);
   revalidatePath("/dashboard/produtos");
   return { ok: true };
 }
@@ -123,8 +127,44 @@ export async function setDisponivel(
     .maybeSingle();
   if (error) return { error: error.message };
   if (!linha) return { error: "Produto não encontrado" };
+  invalidarCatalogo(ctx.orgId);
   revalidatePath("/dashboard/produtos");
   return { ok: true };
+}
+
+/** Busca leve pro autocomplete (edição de item do pedido).
+ *  Filtro de org explícito: a RLS libera tudo pra admin (is_admin), então sem
+ *  o filtro um admin veria catálogos de outras orgs misturados. */
+export async function buscarProdutosAtivos(
+  termo: string,
+): Promise<{ codigo_ref: string; descricao: string }[]> {
+  if (termo.trim().length < 2) return [];
+  const ctx = await orgDoUsuario();
+  if ("error" in ctx) return [];
+  const supabase = await createClient();
+  const palavras = termo
+    .split(/\s+/)
+    .map((w) => w.replace(/[%_*\\]/g, ""))
+    .filter(Boolean);
+  if (palavras.length === 0) return [];
+
+  let query = supabase
+    .from("produtos")
+    .select("codigo_ref, descricao")
+    .eq("organization_id", ctx.orgId)
+    .eq("ativo", true)
+    .eq("disponivel", true)
+    .order("descricao")
+    .limit(8);
+  if (palavras.length === 1 && !/[,()]/.test(palavras[0])) {
+    query = query.or(
+      `descricao.ilike.%${palavras[0]}%,codigo_ref.ilike.%${palavras[0]}%`,
+    );
+  } else {
+    for (const w of palavras) query = query.ilike("descricao", `%${w}%`);
+  }
+  const { data } = await query;
+  return data ?? [];
 }
 
 export async function removerProduto(
@@ -143,6 +183,7 @@ export async function removerProduto(
     .maybeSingle();
   if (error) return { error: error.message };
   if (!linha) return { error: "Produto não encontrado" };
+  invalidarCatalogo(ctx.orgId);
   revalidatePath("/dashboard/produtos");
   return { ok: true };
 }
