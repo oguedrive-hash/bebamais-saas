@@ -18,6 +18,7 @@ on:
     paths-ignore:
       - "**.md"
       - ".env.example"
+      - "supabase/**"
   workflow_dispatch:
     inputs:
       image_tag:
