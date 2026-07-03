@@ -6,7 +6,7 @@ import {
   STATUS_ORDEM,
   type StatusLead,
 } from "@/lib/status-config";
-import { ContatosTabela } from "./tabela";
+import { ContatosTabela, BotaoImportarContatos } from "./tabela";
 
 type FiltroEstado = "ativos" | "encerrados" | "todos";
 type FiltroOrigem = "todos" | "inbound" | "prospeccao";
@@ -101,6 +101,10 @@ export default async function ContatosPage({
 
   const totalPages = Math.max(1, Math.ceil((count ?? 0) / PER_PAGE));
 
+  const statusVisiveis = STATUS_ORDEM.filter(
+    (s) => (contagemPorStatus[s] ?? 0) > 0 || statusFiltro === s,
+  );
+
   function buildHref(opts: Partial<FilterParams>): string {
     const sp = new URLSearchParams();
     const e = opts.estado ?? estado;
@@ -119,42 +123,45 @@ export default async function ContatosPage({
 
   return (
     <div>
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+      {/* Header compacto: título + busca + importar numa linha só */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
         <div className="flex items-baseline gap-3">
-          <h1 className="text-4xl font-heading font-bold text-preto">
+          <h1 className="text-2xl font-heading font-bold text-preto">
             Conversas
           </h1>
           <span className="text-sm text-cinza-medio">
             {contagens.todos} no total
           </span>
         </div>
-        <form
-          method="get"
-          action="/dashboard/contatos"
-          className="flex items-center gap-1.5"
-        >
-          {estado !== "ativos" && (
-            <input type="hidden" name="estado" value={estado} />
-          )}
-          {origem !== "todos" && (
-            <input type="hidden" name="origem" value={origem} />
-          )}
-          {statusFiltro && (
-            <input type="hidden" name="status" value={statusFiltro} />
-          )}
-          <input
-            type="text"
-            name="q"
-            defaultValue={searchQuery}
-            placeholder="Buscar nome ou telefone..."
-            className="px-3 py-2.5 w-80 border border-cinza-claro rounded-lg text-sm text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja focus:ring-2 focus:ring-laranja/20 transition"
-          />
-        </form>
+        <div className="flex items-center gap-2">
+          <form
+            method="get"
+            action="/dashboard/contatos"
+            className="flex items-center gap-1.5"
+          >
+            {estado !== "ativos" && (
+              <input type="hidden" name="estado" value={estado} />
+            )}
+            {origem !== "todos" && (
+              <input type="hidden" name="origem" value={origem} />
+            )}
+            {statusFiltro && (
+              <input type="hidden" name="status" value={statusFiltro} />
+            )}
+            <input
+              type="text"
+              name="q"
+              defaultValue={searchQuery}
+              placeholder="Buscar nome ou telefone..."
+              className="px-3 py-2 w-64 border border-cinza-claro rounded-lg text-sm text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja focus:ring-2 focus:ring-laranja/20 transition"
+            />
+          </form>
+          <BotaoImportarContatos />
+        </div>
       </div>
 
       {/* Filtros: agrupadores Ativos/Encerrados + filtro fino por status */}
-      <div className="flex flex-wrap items-center gap-2 mb-3">
+      <div className="flex flex-wrap items-center gap-1.5 mb-3">
         <FilterChip
           label="Ativos"
           count={contagens.ativos}
@@ -173,8 +180,12 @@ export default async function ContatosPage({
           active={!statusFiltro && estado === "todos"}
           href={buildHref({ estado: "todos", status: "" })}
         />
-        <span className="text-cinza-claro mx-2">|</span>
-        {STATUS_ORDEM.map((s) => (
+        {/* Só mostra status com gente (chip zerado é ruído); o ativo fica
+            visível mesmo zerado pra dar como desligar o filtro. */}
+        {statusVisiveis.length > 0 && (
+          <span className="text-cinza-claro mx-1">|</span>
+        )}
+        {statusVisiveis.map((s) => (
           <FilterChip
             key={s}
             label={STATUS_CONFIG[s].label}
@@ -247,7 +258,7 @@ function FilterChip({
   return (
     <Link
       href={href}
-      className={`inline-flex items-center gap-2 rounded-full font-heading font-medium transition whitespace-nowrap px-3 py-1.5 text-sm ${
+      className={`inline-flex items-center gap-1.5 rounded-full font-heading font-medium transition whitespace-nowrap px-2.5 py-1 text-xs ${
         active
           ? "bg-preto text-white"
           : "bg-white text-cinza-medio border border-cinza-claro hover:border-laranja hover:text-preto"

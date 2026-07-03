@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { STATUS_CONFIG, type StatusLead } from "@/lib/status-config";
@@ -119,7 +118,9 @@ export function ContatosTabela({ leads }: { leads: Lead[] }) {
 
   return (
     <>
-      {PROSPECCAO_ATIVA ? (
+      {/* Com prospecção desligada, o botão de importar mora na linha do
+          título (BotaoImportarContatos, renderizado pela page). */}
+      {PROSPECCAO_ATIVA && (
         <Toolbar
           totalSelecionados={selecionados.size}
           onMover={mover}
@@ -130,16 +131,6 @@ export function ContatosTabela({ leads }: { leads: Lead[] }) {
           resultado={resultadoMover}
           onFecharResultado={() => setResultadoMover(null)}
         />
-      ) : (
-        <div className="mb-3 flex justify-end">
-          <button
-            type="button"
-            onClick={() => setModalAberto(true)}
-            className="px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto hover:border-laranja hover:text-laranja font-heading font-semibold text-sm transition"
-          >
-            + Importar contatos
-          </button>
-        </div>
       )}
 
       <div className="bg-white rounded-2xl border border-cinza-claro">
@@ -164,19 +155,22 @@ export function ContatosTabela({ leads }: { leads: Lead[] }) {
               {PROSPECCAO_ATIVA && <Th>Origem</Th>}
               <Th>Status</Th>
               <Th>Última atividade</Th>
-              <Th className="text-right">Ações</Th>
             </tr>
           </thead>
           <tbody>
             {leads.map((lead) => (
               <tr
                 key={lead.id}
-                className={`border-b border-cinza-claro last:border-0 hover:bg-offwhite/50 transition ${
+                onClick={() => router.push(`/dashboard/contatos/${lead.id}`)}
+                className={`border-b border-cinza-claro last:border-0 hover:bg-offwhite/50 transition cursor-pointer ${
                   selecionados.has(lead.id) ? "bg-laranja/5" : ""
                 }`}
               >
                 {PROSPECCAO_ATIVA && (
-                  <td className="w-10 px-4 py-4">
+                  <td
+                    className="w-10 px-4 py-2.5"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <input
                       type="checkbox"
                       checked={selecionados.has(lead.id)}
@@ -188,9 +182,9 @@ export function ContatosTabela({ leads }: { leads: Lead[] }) {
                 <Td>
                   <p className="font-heading font-semibold text-preto">
                     {lead.nome ?? "Sem nome"}
-                  </p>
-                  <p className="text-xs text-cinza-medio font-mono mt-0.5">
-                    {lead.telefone}
+                    <span className="text-xs text-cinza-medio font-mono font-normal ml-2">
+                      {lead.telefone}
+                    </span>
                   </p>
                 </Td>
                 {PROSPECCAO_ATIVA && (
@@ -206,14 +200,6 @@ export function ContatosTabela({ leads }: { leads: Lead[] }) {
                     {formatRelativeDate(lead.updated_at)}
                   </span>
                 </Td>
-                <Td className="text-right">
-                  <Link
-                    href={`/dashboard/contatos/${lead.id}`}
-                    className="text-sm text-laranja hover:text-laranja-escuro font-heading font-semibold"
-                  >
-                    Ver →
-                  </Link>
-                </Td>
               </tr>
             ))}
           </tbody>
@@ -223,6 +209,24 @@ export function ContatosTabela({ leads }: { leads: Lead[] }) {
       {modalAberto && (
         <ImportarModal onFechar={() => setModalAberto(false)} />
       )}
+    </>
+  );
+}
+
+// Botão + modal de importação — renderizado pela page na linha do título,
+// pra não gastar uma linha inteira da tela só com ele.
+export function BotaoImportarContatos() {
+  const [aberto, setAberto] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setAberto(true)}
+        className="px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto hover:border-laranja hover:text-laranja font-heading font-semibold text-sm transition whitespace-nowrap"
+      >
+        + Importar contatos
+      </button>
+      {aberto && <ImportarModal onFechar={() => setAberto(false)} />}
     </>
   );
 }
@@ -738,7 +742,7 @@ function Td({
   children: React.ReactNode;
   className?: string;
 }) {
-  return <td className={`px-6 py-4 ${className}`}>{children}</td>;
+  return <td className={`px-6 py-2.5 ${className}`}>{children}</td>;
 }
 
 function OrigemBadge({ origem }: { origem: string }) {
