@@ -23,7 +23,7 @@ export function CaixaResposta({
     return (
       <div className="border-t border-cinza-claro pt-4 mt-4">
         <p className="text-xs text-cinza-medio text-center">
-          Sem conversa do Chatwoot vinculada — não dá pra responder este lead.
+          Sem conversa vinculada — não dá pra responder este contato ainda.
         </p>
       </div>
     );

@@ -207,7 +207,22 @@ export async function criarAgendamento(
   if (typeof dataHora !== "string" || !dataHora) {
     return { error: "Informe data e hora" };
   }
-  const dataInicio = new Date(dataHora);
+  // datetime-local chega SEM offset ("2026-07-04T15:00"). new Date() cru
+  // interpretaria no TZ do container (UTC em produção) e gravaria 3h errado.
+  // O horário digitado é SEMPRE wall time de São Paulo (-03:00).
+  const mParts = dataHora.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/,
+  );
+  if (!mParts) return { error: "Data/hora inválida" };
+  const dataInicio = new Date(
+    Date.UTC(
+      Number(mParts[1]),
+      Number(mParts[2]) - 1,
+      Number(mParts[3]),
+      Number(mParts[4]) + 3, // SP = UTC-3 (Brasil sem horário de verão)
+      Number(mParts[5]),
+    ),
+  );
   if (Number.isNaN(dataInicio.getTime())) {
     return { error: "Data/hora inválida" };
   }
@@ -256,7 +271,18 @@ export async function criarAgendamento(
     return { error: error?.message ?? "Falha ao criar agendamento" };
   }
 
+  // Vincula ao pedido aberto do lead (mesmo padrão do tentarAgendar) — sem
+  // isso o horário criado manualmente nunca aparece na fila de Pedidos.
+  await admin
+    .from("pedidos")
+    .update({ agendamento_id: novo.id })
+    .eq("lead_id", lead.id)
+    .eq("editado_pelo_painel", false)
+    .is("agendamento_id", null)
+    .in("status", ["captando", "pronto_para_equipe"]);
+
   revalidatePath("/dashboard/agenda");
+  revalidatePath("/dashboard/pedidos");
   revalidatePath(`/dashboard/contatos/${lead.id}`);
   return { ok: true, id: novo.id };
 }
@@ -274,7 +300,9 @@ export async function buscarLeadsParaAgendamento(
   } = await supabase.auth.getUser();
   if (!user) return { error: "Não autenticado" };
 
-  const q = query.trim();
+  // Vírgula/parênteses quebram a sintaxe do .or() do PostgREST ("Silva, João"
+  // ou "(19)" viravam erro mostrado como "nenhum lead") — sanitiza.
+  const q = query.trim().replace(/[(),%_\\]/g, " ").trim();
   if (q.length < 2) return { leads: [] };
 
   // Busca em nome OR telefone — RLS filtra pela org
@@ -303,11 +331,17 @@ export async function deletarAgendamento(
     return { error: "agendamentoId ausente" };
   }
   const supabase = await createClient();
-  const { error } = await supabase
+  // .select() pra detectar delete de 0 linhas (id inexistente ou RLS
+  // bloqueando) — senão o botão reporta sucesso sem apagar nada.
+  const { data: deletados, error } = await supabase
     .from("agendamentos")
     .delete()
-    .eq("id", agendamentoId);
+    .eq("id", agendamentoId)
+    .select("id");
   if (error) return { error: error.message };
+  if (!deletados || deletados.length === 0) {
+    return { error: "Agendamento não encontrado (ou já foi deletado)." };
+  }
   revalidatePath("/dashboard/agenda");
   return { ok: true };
 }
@@ -325,21 +359,28 @@ export async function mudarStatusAgendamento(
   }
 
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data: atualizados, error } = await supabase
     .from("agendamentos")
     .update({ status: novoStatus })
-    .eq("id", agendamentoId);
+    .eq("id", agendamentoId)
+    .select("id");
   if (error) return { error: error.message };
+  if (!atualizados || atualizados.length === 0) {
+    return { error: "Agendamento não encontrado (pode ter sido deletado)." };
+  }
 
-  // Cancelou o horário → desvincula dos pedidos ainda abertos, senão o
-  // pedido fica preso a um agendamento cancelado e um novo horário sugerido
-  // pelo cliente nunca consegue vincular (o vínculo exige agendamento_id null).
-  if (novoStatus === "cancelado") {
+  // Cancelou (ou cliente não apareceu) → desvincula dos pedidos ainda
+  // abertos, senão o pedido fica preso a um agendamento morto e um novo
+  // horário sugerido pelo cliente nunca consegue vincular (o vínculo exige
+  // agendamento_id null). no_show é justamente o caso em que o cliente vai
+  // sugerir horário novo.
+  if (novoStatus === "cancelado" || novoStatus === "no_show") {
     await createAdminClient()
       .from("pedidos")
       .update({ agendamento_id: null })
       .eq("agendamento_id", agendamentoId)
       .in("status", ["captando", "pronto_para_equipe", "em_atendimento"]);
+    revalidatePath("/dashboard/pedidos");
   }
 
   revalidatePath("/dashboard/agenda");

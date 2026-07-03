@@ -53,8 +53,9 @@ export function BotaoDeletarLead({
               Deletar &ldquo;{nomeLead}&rdquo;?
             </h3>
             <p className="text-sm text-cinza-medio mb-2">
-              Vai apagar <strong>permanentemente</strong> esse contato e todas
-              as mensagens e retiradas vinculadas.
+              Vai apagar <strong>permanentemente</strong> esse contato e tudo
+              que está vinculado a ele: mensagens, <strong>pedidos (inclusive
+              finalizados)</strong> e retiradas.
             </p>
             <p className="text-xs text-cinza-medio mb-4">
               Se o contato mandar nova mensagem no WhatsApp, ele vai ser

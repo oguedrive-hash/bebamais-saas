@@ -53,7 +53,7 @@ export async function responderLead(formData: FormData): Promise<
   if (!lead.chatwoot_conversation_id) {
     return {
       error:
-        "Esse lead não tem conversa do Chatwoot vinculada — não dá pra responder",
+        "Esse contato ainda não tem conversa vinculada — não dá pra responder",
     };
   }
 
@@ -62,7 +62,7 @@ export async function responderLead(formData: FormData): Promise<
     content: conteudo.trim(),
   });
   if ("error" in sent) {
-    return { error: `Falha ao enviar pro Chatwoot: ${sent.error}` };
+    return { error: `Falha ao enviar a mensagem no WhatsApp: ${sent.error}` };
   }
 
   const admin = createAdminClient();
@@ -81,17 +81,40 @@ export async function responderLead(formData: FormData): Promise<
     });
   }
 
-  await admin.from("mensagens").insert({
-    organization_id: lead.organization_id,
-    lead_id: lead.id,
-    chatwoot_message_id: sent.id,
-    chatwoot_conversation_id: lead.chatwoot_conversation_id,
-    conteudo: sent.content,
-    tipo: "texto",
-    direcao: "saida",
-    remetente_nome: "Você (painel)",
-    privada: false,
-  });
+  if (sent.id === 0) {
+    // Caminho Evolution: enviarMensagem JÁ persistiu a linha de saída (retorna
+    // id 0 sintético). Inserir de novo duplicava o balão na 1ª resposta e
+    // violava o unique(chatwoot_message_id=0) nas seguintes — só etiqueta o
+    // remetente na linha recém-criada.
+    const { data: ultima } = await admin
+      .from("mensagens")
+      .select("id")
+      .eq("lead_id", lead.id)
+      .eq("direcao", "saida")
+      .eq("conteudo", sent.content)
+      .is("remetente_nome", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (ultima) {
+      await admin
+        .from("mensagens")
+        .update({ remetente_nome: "Você (painel)" })
+        .eq("id", ultima.id);
+    }
+  } else {
+    await admin.from("mensagens").insert({
+      organization_id: lead.organization_id,
+      lead_id: lead.id,
+      chatwoot_message_id: sent.id,
+      chatwoot_conversation_id: lead.chatwoot_conversation_id,
+      conteudo: sent.content,
+      tipo: "texto",
+      direcao: "saida",
+      remetente_nome: "Você (painel)",
+      privada: false,
+    });
+  }
 
   // Resposta manual enviada — limpa o flag de "aguardando humano".
   await admin
@@ -367,6 +390,37 @@ export async function mudarStatusLead(formData: FormData): Promise<
     return { error: `Erro ao atualizar: ${updateErr.message}` };
   }
 
+  // Status terminal não pode deixar rastro operacional órfão:
+  // - perdido: cancela pedidos abertos e retiradas futuras (sugerido/agendado)
+  //   — senão a fila de Pedidos e "Retiradas de hoje" cobram ação de um lead
+  //   que saiu do funil.
+  // - fechou: finaliza pedidos abertos (fechou = pedido concluído); retirada
+  //   confirmada continua valendo (o cliente ainda vai buscar).
+  if (statusNovo === "perdido") {
+    await admin
+      .from("pedidos")
+      .update({ status: "cancelado", finalizado_em: new Date().toISOString() })
+      .eq("lead_id", leadId)
+      .in("status", ["captando", "pronto_para_equipe", "em_atendimento"]);
+    await admin
+      .from("agendamentos")
+      .update({ status: "cancelado" })
+      .eq("lead_id", leadId)
+      .in("status", ["sugerido", "agendado"])
+      .gte("data_inicio", new Date().toISOString());
+    revalidatePath("/dashboard/pedidos");
+    revalidatePath("/dashboard/agenda");
+    revalidatePath("/dashboard");
+  } else if (statusNovo === "fechou") {
+    await admin
+      .from("pedidos")
+      .update({ status: "finalizado", finalizado_em: new Date().toISOString() })
+      .eq("lead_id", leadId)
+      .in("status", ["captando", "pronto_para_equipe", "em_atendimento"]);
+    revalidatePath("/dashboard/pedidos");
+    revalidatePath("/dashboard");
+  }
+
   // Sincroniza Chatwoot — só se tiver conversa vinculada
   if (lead.chatwoot_conversation_id) {
     if (ehTerminal) {
@@ -419,10 +473,25 @@ export async function deletarLead(formData: FormData): Promise<
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.from("leads").delete().eq("id", leadId);
+  // .select() detecta delete de 0 linhas (RLS/perfil sem org) — senão o botão
+  // reporta sucesso e o contato continua na lista.
+  const { data: deletados, error } = await supabase
+    .from("leads")
+    .delete()
+    .eq("id", leadId)
+    .select("id");
   if (error) return { error: error.message };
+  if (!deletados || deletados.length === 0) {
+    return { error: "Contato não encontrado (ou sem permissão pra deletar)." };
+  }
 
+  // O cascade do banco leva mensagens, pedidos, agendamentos e eventos — as
+  // telas que listavam esse contato precisam revalidar.
   revalidatePath("/dashboard/leads");
+  revalidatePath("/dashboard/contatos");
+  revalidatePath("/dashboard/pedidos");
+  revalidatePath("/dashboard/agenda");
+  revalidatePath("/dashboard");
   return { ok: true };
 }
 
@@ -467,6 +536,16 @@ export async function gerarSugestaoResposta(formData: FormData): Promise<
     return { error: "leadId ausente" };
   }
 
+  // Checa acesso via RLS antes da função admin (gerarRespostaCaio bypassa
+  // RLS) — sem isso qualquer usuário autenticado leria conversa de outra org.
+  const supabase = await createClient();
+  const { error: leadErr } = await supabase
+    .from("leads")
+    .select("id")
+    .eq("id", leadId)
+    .single();
+  if (leadErr) return { error: "Lead não encontrado" };
+
   const result = await gerarRespostaCaio({ leadId });
   if ("error" in result) return { error: result.error };
   return { ok: true, sugestao: result.resposta };
@@ -500,13 +579,13 @@ export async function aprovarShadow(formData: FormData): Promise<
     return { error: "Sem conversa do Chatwoot vinculada" };
   }
 
-  // 1. Envia via Chatwoot API
+  // 1. Envia (Evolution por baixo; Chatwoot é legado)
   const sent = await enviarMensagem({
     conversationId: msg.chatwoot_conversation_id,
     content: msg.conteudo,
   });
   if ("error" in sent) {
-    return { error: `Falha ao enviar pro Chatwoot: ${sent.error}` };
+    return { error: `Falha ao enviar a mensagem no WhatsApp: ${sent.error}` };
   }
 
   // 2. Aplica agente-off (o agente do n8n para de responder)
@@ -520,14 +599,42 @@ export async function aprovarShadow(formData: FormData): Promise<
 
   // 3. Converte shadow em mensagem real
   const admin = createAdminClient();
-  await admin
-    .from("mensagens")
-    .update({
-      shadow: false,
-      chatwoot_message_id: sent.id,
-      remetente_nome: "Você (aprovou sugestão da IA)",
-    })
-    .eq("id", mensagemId);
+  if (sent.id === 0) {
+    // Caminho Evolution: o envio JÁ inseriu o balão real de saída. Gravar
+    // chatwoot_message_id=0 na shadow violava o unique e o update falhava em
+    // silêncio — a sugestão continuava na tela com o botão Aprovar, e o
+    // segundo clique mandava a MESMA mensagem de novo pro cliente. Deleta a
+    // shadow (o balão real já está na timeline) e etiqueta o remetente.
+    await admin.from("mensagens").delete().eq("id", mensagemId);
+    const { data: ultima } = await admin
+      .from("mensagens")
+      .select("id")
+      .eq("lead_id", msg.lead_id)
+      .eq("direcao", "saida")
+      .eq("conteudo", msg.conteudo)
+      .is("remetente_nome", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (ultima) {
+      await admin
+        .from("mensagens")
+        .update({ remetente_nome: "Você (aprovou sugestão da IA)" })
+        .eq("id", ultima.id);
+    }
+  } else {
+    const { error: convErr } = await admin
+      .from("mensagens")
+      .update({
+        shadow: false,
+        chatwoot_message_id: sent.id,
+        remetente_nome: "Você (aprovou sugestão da IA)",
+      })
+      .eq("id", mensagemId);
+    if (convErr) {
+      console.warn("[painel:aprovar-shadow] conversão falhou:", convErr.message);
+    }
+  }
 
   // 4. Atualiza caio_ativo no lead
   await admin
@@ -655,10 +762,18 @@ export async function resolverHandoff(formData: FormData): Promise<
   if (error || !lead) return { error: "Lead não encontrado" };
 
   const admin = createAdminClient();
-  await admin
+  // precisa_humano=false é o que tira o lead do sino/pendências — sem isso a
+  // notificação ficava presa pra sempre (o sino filtra por esse boolean).
+  const { error: updErr } = await admin
     .from("leads")
-    .update({ precisa_humano_motivo: null, precisa_humano_em: null })
+    .update({
+      precisa_humano: false,
+      precisa_humano_motivo: null,
+      precisa_humano_em: null,
+      precisa_resposta_humana: false,
+    })
     .eq("id", leadId);
+  if (updErr) return { error: updErr.message };
   revalidatePath("/dashboard");
   revalidatePath(`/dashboard/contatos/${leadId}`);
   return { ok: true };
@@ -678,6 +793,29 @@ export async function toggleFollowupAtivo(formData: FormData): Promise<
     return { error: "leadId ausente" };
   }
   const ativo = ativoStr === "true";
+
+  // Checa acesso via RLS antes de escrever com o admin client (isolamento
+  // multi-tenant) e pega o status pra barrar religada indevida.
+  const supabase = await createClient();
+  const { data: leadAcesso, error: leadErr } = await supabase
+    .from("leads")
+    .select("id, status")
+    .eq("id", leadId)
+    .single();
+  if (leadErr || !leadAcesso) return { error: "Lead não encontrado" };
+
+  // Religar follow-up em lead que já combinou retirada / fechou / saiu do
+  // funil dispararia "quer fechar seu pedido?" pra quem já fechou — o worker
+  // não filtra status, então o bloqueio é aqui.
+  if (
+    ativo &&
+    ["reuniao_agendada", "fechou", "perdido"].includes(leadAcesso.status)
+  ) {
+    return {
+      error:
+        "Esse contato já combinou a retirada (ou saiu do funil) — o follow-up foi desligado automaticamente e religar mandaria mensagem indevida. Se o caso mudou, troque o status do contato primeiro.",
+    };
+  }
 
   const admin = createAdminClient();
   const update: Record<string, unknown> = { followup_ativo: ativo };
@@ -738,7 +876,6 @@ export async function toggleFollowupAtivo(formData: FormData): Promise<
     .select("organization_id")
     .eq("id", leadId)
     .single();
-  const supabase = await createClient();
   const {
     data: { user: userFollow },
   } = await supabase.auth.getUser();

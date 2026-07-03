@@ -105,28 +105,47 @@ export function PedidoCard({
 
   const aberto = ABERTOS.includes(pedido.status);
 
+  // updated_at que o painel viu quando a edição abriu — vai como CAS pro save
+  const [updatedAtEdicao, setUpdatedAtEdicao] = useState(pedido.updated_at);
+
   function run(fn: () => Promise<{ ok?: true; error?: string }>) {
     setErro(null);
     startTransition(async () => {
-      const r = await fn();
-      if (r && "error" in r && r.error) {
-        setErro(r.error);
-        return;
+      try {
+        const r = await fn();
+        if (r && "error" in r && r.error) {
+          setErro(r.error);
+          return;
+        }
+        setEditando(false);
+        router.refresh();
+      } catch {
+        // Rejeição de rede/exception: sem isso o clique falha em silêncio e o
+        // atendente não sabe se salvou.
+        setErro("Falha de conexão — tente de novo.");
       }
-      setEditando(false);
-      router.refresh();
     });
   }
 
   function salvarEdicao() {
     const limpos = itens.filter((i) => i.produto.trim());
+    if (limpos.length === 0) {
+      setErro(
+        "O pedido precisa de ao menos 1 item — pra descartar, use Cancelar pedido.",
+      );
+      return;
+    }
     run(() =>
-      atualizarPedido(pedido.id, {
-        itens: limpos,
-        modalidade: (modalidade || null) as "retirada" | "entrega" | null,
-        endereco: endereco || null,
-        obs: obs || null,
-      }),
+      atualizarPedido(
+        pedido.id,
+        {
+          itens: limpos,
+          modalidade: (modalidade || null) as "retirada" | "entrega" | null,
+          endereco: endereco || null,
+          obs: obs || null,
+        },
+        updatedAtEdicao,
+      ),
     );
   }
 
@@ -160,6 +179,7 @@ export function PedidoCard({
                 setModalidade(pedido.modalidade ?? "");
                 setEndereco(pedido.endereco ?? "");
                 setObs(pedido.obs ?? "");
+                setUpdatedAtEdicao(pedido.updated_at);
                 setEditando(true);
               }}
               disabled={pending}
@@ -354,7 +374,12 @@ export function PedidoCard({
           )}
           <button
             type="button"
-            onClick={() => run(() => finalizarPedido(pedido.id, { marcarLeadFechou: true }))}
+            onClick={() => {
+              // Ação terminal sem "reabrir" — merece confirmação (o Cancelar
+              // já tem o prompt de motivo).
+              if (!window.confirm("Finalizar este pedido? Ele sai da fila e o contato é marcado como Pedido concluído.")) return;
+              run(() => finalizarPedido(pedido.id, { marcarLeadFechou: true }));
+            }}
             disabled={pending}
             className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-heading font-semibold disabled:opacity-50"
           >
@@ -428,6 +453,9 @@ function ProdutoAutocomplete({
           buscar(e.target.value);
         }}
         onBlur={() => {
+          // Cancela busca pendente — senão o debounce (250ms) reabre o
+          // dropdown DEPOIS do blur, por cima dos campos vizinhos.
+          if (timer.current) clearTimeout(timer.current);
           // dá tempo do clique na sugestão disparar antes de fechar
           setTimeout(() => {
             if (!escolhendo.current) setAberto(false);

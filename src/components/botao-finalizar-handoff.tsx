@@ -19,8 +19,17 @@ export function BotaoFinalizarHandoff({ leadId }: { leadId: string }) {
     const form = new FormData();
     form.set("leadId", leadId);
     startTransition(async () => {
-      await resolverHandoff(form);
-      router.refresh();
+      try {
+        const r = await resolverHandoff(form);
+        if ("error" in r) {
+          console.error("[handoff:finalizar]", r.error);
+          window.alert(`Não consegui finalizar: ${r.error}`);
+          return;
+        }
+        router.refresh();
+      } catch {
+        window.alert("Falha de conexão — tente de novo.");
+      }
     });
   }
 

@@ -40,7 +40,9 @@ export default async function PedidosPage({
         : ["pronto_para_equipe", "em_atendimento", "captando"],
     )
     .order("updated_at", { ascending: false })
-    .limit(100);
+    // Limite folgado: com limite curto, o churn do extrator em pedidos
+    // "captando" empurraria prontos antigos (os mais importantes) pra fora.
+    .limit(300);
 
   const pedidos = (data ?? []) as unknown as PedidoComLead[];
 

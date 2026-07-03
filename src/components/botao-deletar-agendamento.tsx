@@ -48,7 +48,7 @@ export function BotaoDeletarAgendamento({
         type="button"
         onClick={() => setConfirmando(true)}
         className="text-xs text-red-600 hover:text-red-700 font-heading font-semibold transition"
-        title="Deletar agendamento (libera o slot)"
+        title="Deletar agendamento"
       >
         🗑️
       </button>
@@ -71,8 +71,8 @@ export function BotaoDeletarAgendamento({
               {dataFormatada}
             </p>
             <p className="text-xs text-cinza-medio mb-4">
-              Esta ação é <strong>irreversível</strong>. O slot fica disponível
-              novamente pra outros leads agendarem.
+              Esta ação é <strong>irreversível</strong>. Se houver pedido
+              vinculado, ele perde esse horário (a conversa não é afetada).
             </p>
 
             {erro && (

@@ -7,6 +7,7 @@ import { CalendarioAgenda } from "@/components/calendario-agenda";
 import { StatusAgendamentoSelector } from "@/components/status-agendamento-selector";
 import { BotaoNovoAgendamento } from "@/components/botao-novo-agendamento";
 import { BotaoDeletarAgendamento } from "@/components/botao-deletar-agendamento";
+import { AgendaViewToggle } from "@/components/agenda-view-toggle";
 import { getAgendaConfigDaOrg } from "@/app/dashboard/agenda/actions";
 
 type View = "lista" | "calendario";
@@ -114,6 +115,9 @@ export default async function AgendaPage({
         .select(
           "id, data_inicio, data_fim, status, meet_link, lead_id, leads(nome, telefone)",
         )
+        // Só o que precisa de ação/vai acontecer — cancelado e no_show futuros
+        // não são "próximas retiradas" (seguem visíveis no calendário)
+        .in("status", ["sugerido", "agendado"])
         .gte("data_inicio", agora.toISOString())
         .order("data_inicio", { ascending: true })
         .limit(50),
@@ -135,7 +139,19 @@ export default async function AgendaPage({
           titulo="Retiradas"
           descricao="Horários sugeridos pelos clientes — confirme e acompanhe aqui"
         />
-        <ViewToggle viewAtual={view} />
+        {/* Mesmas ações da view calendário — criar/configurar não pode ficar
+            escondido atrás do toggle */}
+        <div className="flex items-center gap-3">
+          <ViewToggle viewAtual={view} />
+          <Link
+            href="/dashboard/agenda/config"
+            className="px-3 py-2 rounded-lg border border-cinza-claro bg-white text-cinza-medio hover:text-preto hover:border-preto font-heading font-semibold text-sm transition"
+            title="Configurar dias e horário de funcionamento"
+          >
+            ⚙️
+          </Link>
+          <BotaoNovoAgendamento duracoesConfig={agendaConfig.duracoes} />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -182,30 +198,7 @@ export default async function AgendaPage({
 }
 
 function ViewToggle({ viewAtual }: { viewAtual: View }) {
-  return (
-    <div className="inline-flex rounded-lg border border-cinza-claro overflow-hidden">
-      <Link
-        href="/dashboard/agenda?view=lista"
-        className={`px-3 py-2 text-sm font-heading font-semibold transition border-r border-cinza-claro flex items-center gap-1.5 ${
-          viewAtual === "lista"
-            ? "bg-preto text-white"
-            : "bg-white text-cinza-medio hover:text-preto"
-        }`}
-      >
-        Lista
-      </Link>
-      <Link
-        href="/dashboard/agenda?view=calendario"
-        className={`px-3 py-2 text-sm font-heading font-semibold transition flex items-center gap-1.5 ${
-          viewAtual === "calendario"
-            ? "bg-preto text-white"
-            : "bg-white text-cinza-medio hover:text-preto"
-        }`}
-      >
-        Calendário
-      </Link>
-    </div>
-  );
+  return <AgendaViewToggle viewAtual={viewAtual} />;
 }
 
 function AgendamentoCard({

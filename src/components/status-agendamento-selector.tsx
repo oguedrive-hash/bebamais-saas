@@ -39,6 +39,7 @@ export function StatusAgendamentoSelector({
   statusAtual: string;
 }) {
   const [aberto, setAberto] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>(
     (statusAtual as Status) ?? "agendado",
   );
@@ -60,16 +61,34 @@ export function StatusAgendamentoSelector({
       setAberto(false);
       return;
     }
+    // Cancelar tem efeito colateral destrutivo (desvincula o pedido) — pede
+    // confirmação; os outros status são reversíveis pelo próprio dropdown.
+    if (
+      novo === "cancelado" &&
+      !window.confirm(
+        "Cancelar esse horário? Ele sai do pedido vinculado (se houver).",
+      )
+    ) {
+      setAberto(false);
+      return;
+    }
+    const anterior = status; // último status confirmado (não a prop inicial)
     setStatus(novo);
     setAberto(false);
+    setErro(null);
     startTransition(async () => {
-      const fd = new FormData();
-      fd.set("agendamentoId", agendamentoId);
-      fd.set("status", novo);
-      const result = await mudarStatusAgendamento(fd);
-      if ("error" in result) {
-        console.error("[status:agendamento]", result.error);
-        setStatus((statusAtual as Status) ?? "agendado"); // reverte
+      try {
+        const fd = new FormData();
+        fd.set("agendamentoId", agendamentoId);
+        fd.set("status", novo);
+        const result = await mudarStatusAgendamento(fd);
+        if ("error" in result) {
+          setErro(result.error);
+          setStatus(anterior); // reverte pro último status que deu certo
+        }
+      } catch {
+        setErro("Falha de conexão — tente de novo.");
+        setStatus(anterior);
       }
     });
   }
@@ -120,6 +139,11 @@ export function StatusAgendamentoSelector({
             </button>
           ))}
         </div>
+      )}
+      {erro && (
+        <p className="absolute right-0 top-full mt-1 z-20 w-56 text-[11px] text-red-700 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5 shadow-sm">
+          {erro}
+        </p>
       )}
     </div>
   );

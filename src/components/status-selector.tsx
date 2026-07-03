@@ -138,8 +138,9 @@ export function StatusSelector({
               Marcar como &ldquo;{STATUS_CONFIG[confirmando].label}&rdquo;?
             </h3>
             <p className="text-sm text-cinza-medio mb-4">
-              A IA vai parar de responder esse lead automaticamente e a
-              conversa vai ser resolvida no Chatwoot.
+              A IA vai parar de responder esse contato automaticamente e a
+              conversa é encerrada. Pedido aberto e retirada pendente são
+              encerrados junto.
             </p>
             <label className="block text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-2">
               Razão (opcional)

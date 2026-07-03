@@ -20,6 +20,8 @@ async function carregarPedido(pedidoId: string): Promise<
         lead_id: string;
         status: string;
         itens: ItemPedido[];
+        agendamento_id: string | null;
+        updated_at: string;
       };
       usuarioNome: string | null;
     }
@@ -33,7 +35,7 @@ async function carregarPedido(pedidoId: string): Promise<
 
   const { data: pedido, error } = await supabase
     .from("pedidos")
-    .select("id, organization_id, lead_id, status, itens")
+    .select("id, organization_id, lead_id, status, itens, agendamento_id, updated_at")
     .eq("id", pedidoId)
     .single();
   if (error || !pedido) return { error: "Pedido não encontrado (ou sem acesso)" };
@@ -101,10 +103,15 @@ export async function finalizarPedido(
   if (!linha) return { error: "Esse pedido já foi encerrado — atualiza a página." };
 
   if (opts?.marcarLeadFechou) {
-    await admin
+    const { error: leadErr } = await admin
       .from("leads")
       .update({ status: "fechou" })
       .eq("id", ctx.pedido.lead_id);
+    if (leadErr) {
+      // Pedido já finalizou — não desfaz, mas não engole: o operador vê que
+      // o status do lead não acompanhou.
+      console.warn("[pedidos:finalizar] lead não atualizado:", leadErr.message);
+    }
   }
 
   await logarEvento({
@@ -141,6 +148,18 @@ export async function cancelarPedido(
   if (error) return { error: error.message };
   if (!linha) return { error: "Esse pedido já foi encerrado — atualiza a página." };
 
+  // Cancela junto a retirada/entrega vinculada (se ainda ativa) — senão ela
+  // fica órfã em "Retiradas de hoje" e ainda é herdada por um pedido futuro
+  // do mesmo lead via reconciliação do extrator.
+  if (ctx.pedido.agendamento_id) {
+    await admin
+      .from("agendamentos")
+      .update({ status: "cancelado" })
+      .eq("id", ctx.pedido.agendamento_id)
+      .in("status", ["sugerido", "agendado"]);
+    revalidatePath("/dashboard/agenda");
+  }
+
   await logarEvento({
     leadId: ctx.pedido.lead_id,
     organizationId: ctx.pedido.organization_id,
@@ -162,6 +181,10 @@ export async function atualizarPedido(
     nome_cliente?: string | null;
     obs?: string | null;
   },
+  // CAS: updated_at que o painel viu ao abrir a edição. Se o pedido mudou
+  // nesse meio tempo (extrator gravou item novo do cliente), o save falha
+  // com aviso em vez de sobrescrever silenciosamente.
+  updatedAtEsperado?: string,
 ): Promise<{ ok: true } | { error: string }> {
   const ctx = await carregarPedido(pedidoId);
   if ("error" in ctx) return ctx;
@@ -170,6 +193,11 @@ export async function atualizarPedido(
   // indo verbatim pro jsonb; ref inválido quebraria a fila e a notificação).
   let itensLimpos: ItemPedido[] | undefined;
   if (patch.itens) {
+    if (patch.itens.length === 0)
+      return {
+        error:
+          "O pedido precisa de ao menos 1 item — pra descartar, use Cancelar pedido.",
+      };
     if (patch.itens.length > 30) return { error: "Máximo de 30 itens" };
     itensLimpos = [];
     for (const i of patch.itens) {
@@ -202,7 +230,7 @@ export async function atualizarPedido(
   }
 
   const admin = createAdminClient();
-  const { data: linha, error } = await admin
+  let query = admin
     .from("pedidos")
     .update({
       ...(itensLimpos !== undefined ? { itens: itensLimpos } : {}),
@@ -213,13 +241,23 @@ export async function atualizarPedido(
         : {}),
       ...(patch.obs !== undefined ? { obs: patch.obs?.trim() || null } : {}),
       editado_pelo_painel: true, // extrator para de sobrescrever
+      updated_at: new Date().toISOString(),
     })
     .eq("id", pedidoId)
-    .in("status", ["captando", "pronto_para_equipe", "em_atendimento"])
-    .select("id")
-    .maybeSingle();
+    .in("status", ["captando", "pronto_para_equipe", "em_atendimento"]);
+  if (updatedAtEsperado) query = query.eq("updated_at", updatedAtEsperado);
+  const { data: linha, error } = await query.select("id").maybeSingle();
   if (error) return { error: error.message };
-  if (!linha) return { error: "Esse pedido já foi encerrado — atualiza a página." };
+  if (!linha) {
+    // Distingue CAS perdido de pedido encerrado pra mensagem certa
+    if (updatedAtEsperado && ctx.pedido.updated_at !== updatedAtEsperado) {
+      return {
+        error:
+          "O pedido mudou enquanto você editava (o cliente pode ter acrescentado algo). Feche a edição, revise e salve de novo.",
+      };
+    }
+    return { error: "Esse pedido já foi encerrado — atualiza a página." };
+  }
 
   await logarEvento({
     leadId: ctx.pedido.lead_id,

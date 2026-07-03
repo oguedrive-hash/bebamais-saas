@@ -75,7 +75,8 @@ export function BotaoNovoAgendamento({
     setResultados([]);
     setLeadEscolhido(null);
     setDataHora("");
-    setDuracao(30);
+    // Reset pra 1ª duração da config — 30 fixo podia nem existir nos chips
+    setDuracao(duracoesConfig[0] ?? 30);
     setPersonalizado(false);
     setObservacoes("");
     setErro(null);

@@ -47,13 +47,17 @@ export default async function LeadDetalhePage({
       .select("id, data_inicio, data_fim, status, meet_link, observacoes")
       .eq("lead_id", id)
       .order("data_inicio", { ascending: false }),
+    // Últimas 300 mensagens (cliente recorrente acumula milhares — sem limit,
+    // cada render/realtime re-baixava a conversa inteira). Busca desc + limit
+    // e reverte pra ordem cronológica.
     supabase
       .from("mensagens")
       .select(
         "id, conteudo, tipo, attachment_url, direcao, remetente_nome, shadow, created_at",
       )
       .eq("lead_id", id)
-      .order("created_at", { ascending: true }),
+      .order("created_at", { ascending: false })
+      .limit(300),
     // Lista de IDs ordenada (mesma ordem da lista) pra navegação anterior/próximo.
     // Se o user veio da pagina de prospeccao, navega apenas entre leads
     // outbound — senao navega entre todos os inbound.
@@ -194,7 +198,7 @@ export default async function LeadDetalhePage({
           {/* Histórico de mensagens + caixa de resposta */}
           <Card titulo="Conversa">
             <TimelineMensagens
-              mensagens={mensagens ?? []}
+              mensagens={[...(mensagens ?? [])].reverse()}
               caioProcessingSince={lead.caio_processing_since ?? null}
             />
             <CaixaResposta

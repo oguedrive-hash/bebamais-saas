@@ -129,17 +129,24 @@ export async function processarLembretesPendentes(): Promise<{
   let enviadosCount = 0;
   let errosCount = 0;
 
+  // Cache da config por org — sem isso é 1 SELECT por agendamento (N+1 num
+  // universo de até 200 agendamentos da mesma org).
+  const configCache = new Map<string, LembreteConfig | null>();
+
   for (const ag of agendamentos as unknown as AgendamentoProcess[]) {
     if (!ag.lead?.chatwoot_conversation_id) continue;
 
-    // Le config da org
-    const { data: org } = await supabase
-      .from("organizations")
-      .select("lembrete_reuniao_config")
-      .eq("id", ag.organization_id)
-      .single();
-    const config = (org?.lembrete_reuniao_config ??
-      null) as LembreteConfig | null;
+    // Le config da org (com cache)
+    let config = configCache.get(ag.organization_id);
+    if (config === undefined) {
+      const { data: org } = await supabase
+        .from("organizations")
+        .select("lembrete_reuniao_config")
+        .eq("id", ag.organization_id)
+        .single();
+      config = (org?.lembrete_reuniao_config ?? null) as LembreteConfig | null;
+      configCache.set(ag.organization_id, config);
+    }
     if (!config?.regras) continue;
 
     const dataInicio = new Date(ag.data_inicio);
@@ -159,16 +166,16 @@ export async function processarLembretesPendentes(): Promise<{
       if (instante > agora) continue; // Ainda nao chegou a hora
 
       // Lembrete "antes" cujo instante ja era passado quando o agendamento
-      // foi criado, OU que ja venceu ha mais de 1h (ex: sugestao do cliente
-      // confirmada pela equipe dias depois — sem isso todos os "antes"
-      // vencidos disparariam em rajada na confirmacao). Marca como enviado
-      // pra nao reprocessar e segue.
+      // foi criado, OU qualquer lembrete (antes/depois) que ja venceu ha mais
+      // de 1h (ex: sugestao do cliente confirmada pela equipe dias depois —
+      // sem isso os vencidos disparariam em rajada na confirmacao). Marca
+      // como enviado pra nao reprocessar e segue.
       const atrasoMs = agora.getTime() - instante.getTime();
-      if (
+      const atrasoVencido = atrasoMs > 60 * 60 * 1000;
+      const nasceuVencido =
         regra.quando === "antes" &&
-        (instante.getTime() < createdAt.getTime() - margemMs ||
-          atrasoMs > 60 * 60 * 1000)
-      ) {
+        instante.getTime() < createdAt.getTime() - margemMs;
+      if (nasceuVencido || atrasoVencido) {
         const novosEnviados = [...(ag.lembretes_enviados ?? []), regra.nivel];
         await supabase
           .from("agendamentos")
