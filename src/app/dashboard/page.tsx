@@ -176,7 +176,7 @@ export default async function DashboardPage() {
     prontos.length + pendentesHumano.length + retiradas.length;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-heading font-bold text-preto">
           Visão geral
@@ -188,74 +188,88 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      {/* ===== PENDÊNCIAS — o que precisa de ação AGORA ===== */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <PendenciaCard
-          titulo="Pedidos prontos pra finalizar"
-          count={prontos.length}
-          href="/dashboard/pedidos"
-          cor="laranja"
-        >
-          {prontos.slice(0, 4).map((p) => {
-            const lead = um(p.lead);
-            return (
-              <PendenciaItem
-                key={p.id}
-                href={lead ? `/dashboard/contatos/${lead.id}` : "/dashboard/pedidos"}
-                principal={lead?.nome ?? "Sem nome"}
-                secundario={resumirItens(p.itens)}
-              />
-            );
-          })}
-        </PendenciaCard>
+      {/* ===== PENDÊNCIAS — o que precisa de ação AGORA =====
+          Só aparecem cards com pendência de verdade; tudo zerado, a fileira
+          some (o subtítulo já comemora o "tudo em dia"). */}
+      {totalPendencias > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {prontos.length > 0 && (
+            <PendenciaCard
+              titulo="Pedidos prontos pra finalizar"
+              count={prontos.length}
+              href="/dashboard/pedidos"
+              cor="laranja"
+            >
+              {prontos.slice(0, 4).map((p) => {
+                const lead = um(p.lead);
+                return (
+                  <PendenciaItem
+                    key={p.id}
+                    href={lead ? `/dashboard/contatos/${lead.id}` : "/dashboard/pedidos"}
+                    principal={lead?.nome ?? "Sem nome"}
+                    secundario={resumirItens(p.itens)}
+                  />
+                );
+              })}
+            </PendenciaCard>
+          )}
 
-        <PendenciaCard
-          titulo="Precisam de você"
-          count={pendentesHumano.length}
-          href="/dashboard/contatos"
-          cor="vermelho"
-        >
-          {pendentesHumano.slice(0, 4).map((l) => (
-            <PendenciaItem
-              key={l.id}
-              href={`/dashboard/contatos/${l.id}`}
-              principal={l.nome ?? l.telefone}
-              secundario={
-                l.precisa_humano
-                  ? labelMotivoHandoff(l.precisa_humano_motivo)
-                  : "Mandou mensagem com a IA desligada"
-              }
-            />
-          ))}
-        </PendenciaCard>
+          {pendentesHumano.length > 0 && (
+            <PendenciaCard
+              titulo="Precisam de você"
+              count={pendentesHumano.length}
+              href="/dashboard/contatos"
+              cor="vermelho"
+            >
+              {pendentesHumano.slice(0, 4).map((l) => (
+                <PendenciaItem
+                  key={l.id}
+                  href={`/dashboard/contatos/${l.id}`}
+                  principal={l.nome ?? l.telefone}
+                  secundario={
+                    l.precisa_humano
+                      ? labelMotivoHandoff(l.precisa_humano_motivo)
+                      : "Mandou mensagem com a IA desligada"
+                  }
+                />
+              ))}
+            </PendenciaCard>
+          )}
 
-        <PendenciaCard
-          titulo="Retiradas de hoje"
-          count={retiradas.length}
-          href="/dashboard/agenda"
-          cor="verde"
-        >
-          {retiradas.slice(0, 4).map((r) => {
-            const lead = um(r.lead);
-            return (
-              <PendenciaItem
-                key={r.id}
-                href={lead ? `/dashboard/contatos/${lead.id}` : "/dashboard/agenda"}
-                principal={lead?.nome ?? lead?.telefone ?? "—"}
-                secundario={new Date(r.data_inicio).toLocaleTimeString("pt-BR", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  timeZone: "America/Sao_Paulo",
-                })}
-              />
-            );
-          })}
-        </PendenciaCard>
-      </div>
+          {retiradas.length > 0 && (
+            <PendenciaCard
+              titulo="Retiradas de hoje"
+              count={retiradas.length}
+              href="/dashboard/agenda"
+              cor="verde"
+            >
+              {retiradas.slice(0, 4).map((r) => {
+                const lead = um(r.lead);
+                return (
+                  <PendenciaItem
+                    key={r.id}
+                    href={lead ? `/dashboard/contatos/${lead.id}` : "/dashboard/agenda"}
+                    principal={lead?.nome ?? lead?.telefone ?? "—"}
+                    secundario={new Date(r.data_inicio).toLocaleTimeString("pt-BR", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      timeZone: "America/Sao_Paulo",
+                    })}
+                  />
+                );
+              })}
+            </PendenciaCard>
+          )}
+        </div>
+      )}
 
       {/* ===== KPIs do dia / semana ===== */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard titulo="Pedidos hoje" valor={pedidosHoje} destaque />
+        <MetricCard
+          titulo="Pedidos hoje"
+          valor={pedidosHoje}
+          destaque={pedidosHoje > 0}
+        />
         <MetricCard
           titulo="Pedidos na semana"
           valor={pedidosSemana}
@@ -265,7 +279,7 @@ export default async function DashboardPage() {
         <MetricCard
           titulo="Em conversa agora"
           valor={emConversa}
-          descricao={`${captandoCount} com pedido sendo anotado · ${emAtendimentoCount} com atendente`}
+          descricao={subtextoConversas(captandoCount, emAtendimentoCount)}
         />
         <MetricCard
           titulo="Resposta da IA"
@@ -467,6 +481,18 @@ function countNaJanela(
   );
 }
 
+// Só menciona as partes que existem — "0 com pedido · 0 com atendente" é ruído.
+function subtextoConversas(
+  captando: number,
+  emAtendimento: number,
+): string | undefined {
+  const partes = [
+    captando > 0 ? `${captando} com pedido sendo anotado` : null,
+    emAtendimento > 0 ? `${emAtendimento} com atendente` : null,
+  ].filter(Boolean);
+  return partes.length > 0 ? partes.join(" · ") : undefined;
+}
+
 function pctDelta(atual: number, anterior: number): number | null {
   if (anterior === 0) return atual > 0 ? 100 : null;
   return ((atual - anterior) / anterior) * 100;
@@ -500,11 +526,14 @@ function calcularTempoResposta(mensagens: MsgAggregate[]): {
     });
   });
 
-  if (gaps.length === 0) return { valor: 0, unidade: "s" };
-  const media = gaps.reduce((a, b) => a + b, 0) / gaps.length;
-  if (media < 60) return { valor: Math.round(media), unidade: "s" };
-  if (media < 3600) return { valor: Math.round(media / 60), unidade: "min" };
-  return { valor: Math.round(media / 3600), unidade: "h" };
+  // Mediana em vez de média, e só pares respondidos em até 1h — intervalo
+  // maior não é "tempo de resposta da IA", é conversa que parou (handoff,
+  // IA desligada, madrugada) e detonaria o número com outliers.
+  const validos = gaps.filter((g) => g <= 3600).sort((a, b) => a - b);
+  if (validos.length === 0) return { valor: 0, unidade: "s" };
+  const mediana = validos[Math.floor(validos.length / 2)];
+  if (mediana < 60) return { valor: Math.round(mediana), unidade: "s" };
+  return { valor: Math.round(mediana / 60), unidade: "min" };
 }
 
 function MetricCard({
@@ -526,7 +555,7 @@ function MetricCard({
     sufixo === "%" ? valor.toFixed(1) : Math.round(valor).toString();
   return (
     <div
-      className={`bg-white rounded-2xl border p-5 ${
+      className={`bg-white rounded-2xl border p-4 ${
         destaque
           ? "border-laranja shadow-sm shadow-laranja/10"
           : "border-cinza-claro"
@@ -535,7 +564,7 @@ function MetricCard({
       <p className="text-xs font-heading font-medium text-cinza-medio uppercase tracking-wider">
         {titulo}
       </p>
-      <div className="flex items-baseline gap-2 mt-2">
+      <div className="flex items-baseline gap-2 mt-1.5">
         <p
           className={`text-3xl font-heading font-bold ${
             destaque ? "text-laranja" : "text-preto"
