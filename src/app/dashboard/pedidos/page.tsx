@@ -56,7 +56,7 @@ export default async function PedidosPage({
 
   return (
     <div>
-      <div className="flex items-center justify-between gap-3 mb-6">
+      <div className="flex items-center justify-between gap-3 mb-4">
         <PageHeader
           titulo="Pedidos"
           descricao="O que a IA anotou nas conversas — a equipe finaliza valores e pagamento"
@@ -93,7 +93,7 @@ export default async function PedidosPage({
             descricao="Quando a IA anotar um pedido numa conversa, ele aparece aqui."
           />
         ) : (
-          <div className="space-y-8">
+          <div className="space-y-5">
             <Secao
               titulo={`Prontos pra finalizar (${prontos.length})`}
               destaque

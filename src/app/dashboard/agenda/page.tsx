@@ -84,7 +84,7 @@ export default async function AgendaPage({
 
     return (
       <div>
-        <div className="flex items-center justify-between gap-3 mb-6">
+        <div className="flex items-center justify-between gap-3 mb-4">
           <PageHeader
             titulo="Retiradas"
             descricao="Pedidos com retirada agendada pela IA"
@@ -130,17 +130,17 @@ export default async function AgendaPage({
 
   return (
     <div>
-      <div className="flex items-center justify-between gap-3 mb-6">
+      <div className="flex items-center justify-between gap-3 mb-4">
         <PageHeader
-          titulo="Agenda"
+          titulo="Retiradas"
           descricao="Retiradas agendadas pela IA"
         />
         <ViewToggle viewAtual={view} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2">
-          <h2 className="text-lg font-heading font-bold text-preto mb-4">
+          <h2 className="text-lg font-heading font-bold text-preto mb-3">
             Próximas retiradas
           </h2>
           {!proximosAgendamentos || proximosAgendamentos.length === 0 ? (
@@ -159,7 +159,7 @@ export default async function AgendaPage({
         </div>
 
         <div>
-          <h2 className="text-lg font-heading font-bold text-preto mb-4">
+          <h2 className="text-lg font-heading font-bold text-preto mb-3">
             Últimos 30 dias
           </h2>
           {!agendamentosPassados || agendamentosPassados.length === 0 ? (

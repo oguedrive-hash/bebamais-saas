@@ -64,7 +64,7 @@ export default async function ProdutosPage({
 
   return (
     <div>
-      <div className="flex items-start justify-between gap-4 mb-6">
+      <div className="flex items-start justify-between gap-4 mb-4">
         <div>
           <h1 className="text-2xl font-heading font-bold text-preto">
             Produtos
@@ -78,7 +78,7 @@ export default async function ProdutosPage({
         <BotaoNovoProduto />
       </div>
 
-      <form method="get" className="mb-6 flex gap-3 max-w-xl">
+      <form method="get" className="mb-4 flex gap-3 max-w-xl">
         <input
           name="busca"
           defaultValue={termo}

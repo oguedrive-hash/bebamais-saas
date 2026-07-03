@@ -8,16 +8,16 @@ export default async function AgendaConfigPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between gap-3 mb-6">
+      <div className="flex items-center justify-between gap-3 mb-4">
         <PageHeader
-          titulo="Configuração da Agenda"
+          titulo="Configuração das Retiradas"
           descricao="Dias e horários que a operação trabalha — usado pra propor horários de retirada"
         />
         <Link
           href="/dashboard/agenda"
           className="text-sm text-cinza-medio hover:text-preto font-heading font-semibold transition"
         >
-          ← Voltar pra agenda
+          ← Voltar pra Retiradas
         </Link>
       </div>
 

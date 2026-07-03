@@ -8,9 +8,9 @@ export function PageHeader({
   acao?: React.ReactNode;
 }) {
   return (
-    <div className="mb-8 flex items-start justify-between gap-4">
+    <div className="flex items-start justify-between gap-4">
       <div>
-        <h1 className="text-4xl font-heading font-bold text-preto">{titulo}</h1>
+        <h1 className="text-2xl font-heading font-bold text-preto">{titulo}</h1>
         {descricao && (
           <p className="text-sm text-cinza-medio mt-1">{descricao}</p>
         )}
