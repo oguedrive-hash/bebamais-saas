@@ -120,7 +120,7 @@ export default async function LeadDetalhePage({
       <RealtimeLeadUpdates leadId={lead.id} />
 
       {/* Breadcrumb + navegação anterior/próximo */}
-      <div className="flex items-center justify-between gap-3 mb-4">
+      <div className="flex items-center justify-between gap-3 mb-3">
         <Link
           href="/dashboard/contatos"
           className="inline-flex items-center text-sm text-cinza-medio hover:text-laranja font-heading font-medium transition"
@@ -137,19 +137,24 @@ export default async function LeadDetalhePage({
         )}
       </div>
 
-      {/* Header */}
-      <div className="bg-white rounded-2xl border border-cinza-claro p-8 mb-6">
-        <div className="flex items-start justify-between gap-4 mb-6">
+      {/* Header compacto: nome + telefone + status numa altura só */}
+      <div className="bg-white rounded-2xl border border-cinza-claro p-5 mb-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-heading font-bold text-preto mb-1">
+            <h1 className="text-2xl font-heading font-bold text-preto">
               {lead.nome ?? "Sem nome"}
+              <span className="text-sm text-cinza-medio font-mono font-normal ml-3">
+                {lead.telefone}
+              </span>
             </h1>
-            <p className="text-sm text-cinza-medio font-mono mb-2">
-              {lead.telefone}
-            </p>
             {/* Badge de origem escondido — prospecção desligada por enquanto */}
+            <div
+              className={`inline-block px-3 py-1 rounded-lg text-xs mt-2 ${statusConfig.bg} ${statusConfig.cor} border ${statusConfig.border}`}
+            >
+              {statusConfig.descricao}
+            </div>
           </div>
-          <div className="flex flex-col items-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <StatusSelector
               leadId={lead.id}
               statusAtual={lead.status as StatusLead}
@@ -171,16 +176,9 @@ export default async function LeadDetalhePage({
           </div>
         </div>
 
-        {/* Status descrição */}
-        <div
-          className={`inline-block px-3 py-1.5 rounded-lg text-xs ${statusConfig.bg} ${statusConfig.cor} border ${statusConfig.border}`}
-        >
-          {statusConfig.descricao}
-        </div>
-
         {/* Razão (se houver) */}
         {lead.razao && (
-          <div className="mt-4 p-4 bg-offwhite rounded-lg border border-cinza-claro">
+          <div className="mt-3 p-3 bg-offwhite rounded-lg border border-cinza-claro">
             <p className="text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1">
               Razão / Observação
             </p>
@@ -189,9 +187,9 @@ export default async function LeadDetalhePage({
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Coluna esquerda — Info */}
-        <div className="md:col-span-2 space-y-6">
+        <div className="md:col-span-2 space-y-4">
           {/* Histórico de mensagens + caixa de resposta */}
           <Card titulo="Conversa">
             <TimelineMensagens
@@ -204,15 +202,11 @@ export default async function LeadDetalhePage({
             />
           </Card>
 
-          {/* Agendamentos */}
-          <Card titulo="Agendamentos">
-            {!agendamentos || agendamentos.length === 0 ? (
-              <p className="text-sm text-cinza-medio text-center py-6">
-                Nenhuma retirada agendada ainda.
-              </p>
-            ) : (
+          {/* Retiradas — só aparece quando existe alguma (card vazio é ruído) */}
+          {(agendamentos ?? []).length > 0 && (
+            <Card titulo="Retiradas">
               <ul className="space-y-3">
-                {agendamentos.map((a) => (
+                {(agendamentos ?? []).map((a) => (
                   <li
                     key={a.id}
                     className="p-4 bg-offwhite rounded-lg border border-cinza-claro"
@@ -243,12 +237,12 @@ export default async function LeadDetalhePage({
                   </li>
                 ))}
               </ul>
-            )}
-          </Card>
+            </Card>
+          )}
         </div>
 
         {/* Coluna direita — Metadata */}
-        <div className="space-y-6">
+        <div className="space-y-4">
           {(pedidos ?? []).length > 0 && (
             <Card titulo="Pedido">
               <div className="space-y-3">
@@ -291,13 +285,10 @@ export default async function LeadDetalhePage({
           <Card titulo="Detalhes">
             <dl className="space-y-3">
               <DataRow label="Origem" valor={lead.source} />
-              <DataRow
-                label="Criado em"
-                valor={new Date(lead.created_at).toLocaleString("pt-BR")}
-              />
+              <DataRow label="Criado em" valor={dtCurto(lead.created_at)} />
               <DataRow
                 label="Última atividade"
-                valor={new Date(lead.updated_at).toLocaleString("pt-BR")}
+                valor={dtCurto(lead.updated_at)}
               />
               {lead.numero_followup > 0 && (
                 <DataRow
@@ -308,15 +299,11 @@ export default async function LeadDetalhePage({
               {lead.proximo_followup_em && (
                 <DataRow
                   label="Próximo follow-up"
-                  valor={new Date(lead.proximo_followup_em).toLocaleString("pt-BR")}
+                  valor={dtCurto(lead.proximo_followup_em)}
                 />
               )}
-              {lead.chatwoot_conversation_id && (
-                <DataRow
-                  label="Chatwoot ID"
-                  valor={`#${lead.chatwoot_conversation_id}`}
-                />
-              )}
+              {/* Chatwoot ID removido — Chatwoot foi desativado (fluxo roda
+                  100% na Evolution); o id segue no banco se precisar. */}
             </dl>
           </Card>
 
@@ -336,6 +323,17 @@ export default async function LeadDetalhePage({
   );
 }
 
+// Datas curtas (sem segundos) pros metadados
+function dtCurto(dateStr: string): string {
+  return new Date(dateStr).toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function Card({
   titulo,
   children,
@@ -344,8 +342,8 @@ function Card({
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-white rounded-2xl border border-cinza-claro p-6">
-      <h2 className="text-lg font-heading font-bold text-preto mb-4">
+    <div className="bg-white rounded-2xl border border-cinza-claro p-5">
+      <h2 className="text-lg font-heading font-bold text-preto mb-3">
         {titulo}
       </h2>
       {children}

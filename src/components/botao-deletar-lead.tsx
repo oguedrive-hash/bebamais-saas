@@ -37,7 +37,7 @@ export function BotaoDeletarLead({
         onClick={() => setConfirmando(true)}
         className="text-xs text-red-600 hover:text-red-700 font-heading font-semibold transition"
       >
-        🗑️ Deletar lead
+        🗑️ Deletar contato
       </button>
 
       {confirmando && (
@@ -53,12 +53,12 @@ export function BotaoDeletarLead({
               Deletar &ldquo;{nomeLead}&rdquo;?
             </h3>
             <p className="text-sm text-cinza-medio mb-2">
-              Vai apagar <strong>permanentemente</strong> esse lead e todas as
-              mensagens e agendamentos vinculados.
+              Vai apagar <strong>permanentemente</strong> esse contato e todas
+              as mensagens e retiradas vinculadas.
             </p>
             <p className="text-xs text-cinza-medio mb-4">
-              Se o lead mandar nova mensagem no WhatsApp, ele vai ser recriado
-              automaticamente (não some do Chatwoot).
+              Se o contato mandar nova mensagem no WhatsApp, ele vai ser
+              recriado automaticamente.
             </p>
 
             {erro && (

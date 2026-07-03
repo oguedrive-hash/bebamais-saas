@@ -100,7 +100,7 @@ export function CaixaResposta({
             disabled={pending}
             className="w-4 h-4 accent-laranja"
           />
-          Desligar IA ao enviar (aplica <code>agente-off</code>)
+          Desligar IA ao enviar
         </label>
 
         <button

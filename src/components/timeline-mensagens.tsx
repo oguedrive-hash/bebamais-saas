@@ -36,7 +36,7 @@ export function TimelineMensagens({
   return (
     <ScrollToBottom
       trigger={trigger}
-      className="space-y-3 max-h-[600px] overflow-y-auto pr-2"
+      className="space-y-3 max-h-[calc(100vh-360px)] min-h-[320px] overflow-y-auto pr-2"
     >
       {mensagens.map((m) => (
         <Balao key={m.id} mensagem={m} />

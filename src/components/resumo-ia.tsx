@@ -56,9 +56,6 @@ export function ResumoIA({
         </div>
       ) : (
         <div>
-          <p className="text-xs text-cinza-medio italic mb-3">
-            Resume a conversa em ~3 linhas pra você se situar rápido.
-          </p>
           <button
             type="button"
             onClick={onGerar}
