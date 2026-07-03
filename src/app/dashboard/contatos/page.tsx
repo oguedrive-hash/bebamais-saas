@@ -150,24 +150,9 @@ export default async function ContatosPage({
           active={estado === "todos"}
           href={buildHref({ estado: "todos" })}
         />
-        <span className="text-cinza-claro mx-2">|</span>
-        <FilterChip
-          label="Origem: todas"
-          active={origem === "todos"}
-          href={buildHref({ origem: "todos" })}
-        />
-        <FilterChip
-          label="Inbound"
-          count={contagens.inbound}
-          active={origem === "inbound"}
-          href={buildHref({ origem: "inbound" })}
-        />
-        <FilterChip
-          label="Prospecção"
-          count={contagens.prospeccao}
-          active={origem === "prospeccao"}
-          href={buildHref({ origem: "prospeccao" })}
-        />
+        {/* Chips de origem (Inbound/Prospecção) escondidos — prospecção
+            desligada por enquanto. O filtro ?origem= continua funcionando
+            por URL se precisar. */}
       </div>
 
       {error && (
@@ -184,7 +169,7 @@ export default async function ContatosPage({
           titulo="Nenhum contato encontrado"
           descricao={
             !searchQuery && estado === "ativos" && origem === "todos"
-              ? "Importe contatos pra começar — botão acima ou na tela de prospecção."
+              ? "Importe contatos pra começar — botão '+ Importar contatos' acima."
               : "Nenhum contato com os filtros atuais."
           }
         />

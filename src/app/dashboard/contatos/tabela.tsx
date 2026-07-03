@@ -58,6 +58,11 @@ function csvParaLeads(headers: string[], linhas: string[][]): LeadImport[] {
   });
 }
 
+// Prospecção desligada por enquanto (operação 100% inbound). O mecanismo de
+// seleção/mover entre Inbound e Prospecção continua no código — pra reativar,
+// basta voltar pra true.
+const PROSPECCAO_ATIVA = false;
+
 export function ContatosTabela({ leads }: { leads: Lead[] }) {
   const router = useRouter();
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
@@ -114,35 +119,49 @@ export function ContatosTabela({ leads }: { leads: Lead[] }) {
 
   return (
     <>
-      <Toolbar
-        totalSelecionados={selecionados.size}
-        onMover={mover}
-        onAbrirImportar={() => setModalAberto(true)}
-        onLimpar={() => setSelecionados(new Set())}
-        pending={pendingMover}
-        erro={erroMover}
-        resultado={resultadoMover}
-        onFecharResultado={() => setResultadoMover(null)}
-      />
+      {PROSPECCAO_ATIVA ? (
+        <Toolbar
+          totalSelecionados={selecionados.size}
+          onMover={mover}
+          onAbrirImportar={() => setModalAberto(true)}
+          onLimpar={() => setSelecionados(new Set())}
+          pending={pendingMover}
+          erro={erroMover}
+          resultado={resultadoMover}
+          onFecharResultado={() => setResultadoMover(null)}
+        />
+      ) : (
+        <div className="mb-3 flex justify-end">
+          <button
+            type="button"
+            onClick={() => setModalAberto(true)}
+            className="px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto hover:border-laranja hover:text-laranja font-heading font-semibold text-sm transition"
+          >
+            + Importar contatos
+          </button>
+        </div>
+      )}
 
       <div className="bg-white rounded-2xl border border-cinza-claro">
         <table className="w-full">
           <thead className="bg-offwhite border-b border-cinza-claro">
             <tr>
-              <th className="w-10 px-4 py-3">
-                <input
-                  type="checkbox"
-                  checked={todosMarcados}
-                  ref={(el) => {
-                    if (el) el.indeterminate = algunsMarcados;
-                  }}
-                  onChange={toggleTodos}
-                  className="w-4 h-4 rounded text-laranja focus:ring-laranja cursor-pointer"
-                  aria-label="Selecionar todos"
-                />
-              </th>
+              {PROSPECCAO_ATIVA && (
+                <th className="w-10 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={todosMarcados}
+                    ref={(el) => {
+                      if (el) el.indeterminate = algunsMarcados;
+                    }}
+                    onChange={toggleTodos}
+                    className="w-4 h-4 rounded text-laranja focus:ring-laranja cursor-pointer"
+                    aria-label="Selecionar todos"
+                  />
+                </th>
+              )}
               <Th>Nome / Telefone</Th>
-              <Th>Origem</Th>
+              {PROSPECCAO_ATIVA && <Th>Origem</Th>}
               <Th>Status</Th>
               <Th>Última atividade</Th>
               <Th className="text-right">Ações</Th>
@@ -156,14 +175,16 @@ export function ContatosTabela({ leads }: { leads: Lead[] }) {
                   selecionados.has(lead.id) ? "bg-laranja/5" : ""
                 }`}
               >
-                <td className="w-10 px-4 py-4">
-                  <input
-                    type="checkbox"
-                    checked={selecionados.has(lead.id)}
-                    onChange={() => toggle(lead.id)}
-                    className="w-4 h-4 rounded text-laranja focus:ring-laranja cursor-pointer"
-                  />
-                </td>
+                {PROSPECCAO_ATIVA && (
+                  <td className="w-10 px-4 py-4">
+                    <input
+                      type="checkbox"
+                      checked={selecionados.has(lead.id)}
+                      onChange={() => toggle(lead.id)}
+                      className="w-4 h-4 rounded text-laranja focus:ring-laranja cursor-pointer"
+                    />
+                  </td>
+                )}
                 <Td>
                   <p className="font-heading font-semibold text-preto">
                     {lead.nome ?? "Sem nome"}
@@ -172,9 +193,11 @@ export function ContatosTabela({ leads }: { leads: Lead[] }) {
                     {lead.telefone}
                   </p>
                 </Td>
-                <Td>
-                  <OrigemBadge origem={lead.origem} />
-                </Td>
+                {PROSPECCAO_ATIVA && (
+                  <Td>
+                    <OrigemBadge origem={lead.origem} />
+                  </Td>
+                )}
                 <Td>
                   <StatusBadge status={lead.status} />
                 </Td>
@@ -301,7 +324,10 @@ function ImportarModal({ onFechar }: { onFechar: () => void }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [aba, setAba] = useState<"csv" | "avulso">("csv");
-  const [como, setComo] = useState<ComoOrigem>("prospeccao");
+  // Com prospecção desligada, tudo entra como inbound (contato base).
+  const [como, setComo] = useState<ComoOrigem>(
+    PROSPECCAO_ATIVA ? "prospeccao" : "inbound",
+  );
   const [preview, setPreview] = useState<LeadImport[]>([]);
   const [previewErro, setPreviewErro] = useState<string | null>(null);
   const [relatorio, setRelatorio] = useState<RelatorioImportacao | null>(null);
@@ -433,7 +459,8 @@ function ImportarModal({ onFechar }: { onFechar: () => void }) {
           </button>
         </div>
 
-        {/* Toggle de origem */}
+        {/* Toggle de origem — escondido enquanto prospecção estiver desligada */}
+        {PROSPECCAO_ATIVA && (
         <div className="p-4 border-b border-cinza-claro">
           <p className="text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-2">
             Importar como
@@ -474,6 +501,7 @@ function ImportarModal({ onFechar }: { onFechar: () => void }) {
             </button>
           </div>
         </div>
+        )}
 
         {/* Abas: CSV ou avulso */}
         <div className="flex border-b border-cinza-claro">

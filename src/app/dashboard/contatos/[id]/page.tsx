@@ -4,9 +4,6 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { StatusSelector } from "@/components/status-selector";
 import { AtendenteSelector } from "@/components/atendente-selector";
-import { BotaoEnviarProspeccao } from "./botao-enviar-prospeccao";
-import { BotaoVoltarInbound } from "./botao-voltar-inbound";
-import { OrigemBadge } from "@/components/origem-badge";
 import { TimelineMensagens } from "@/components/timeline-mensagens";
 import { CaixaResposta } from "@/components/caixa-resposta";
 import { RealtimeLeadUpdates } from "@/components/realtime-lead-updates";
@@ -150,7 +147,7 @@ export default async function LeadDetalhePage({
             <p className="text-sm text-cinza-medio font-mono mb-2">
               {lead.telefone}
             </p>
-            <OrigemBadge origem={lead.origem ?? null} size="md" />
+            {/* Badge de origem escondido — prospecção desligada por enquanto */}
           </div>
           <div className="flex flex-col items-end gap-2">
             <StatusSelector
@@ -168,14 +165,9 @@ export default async function LeadDetalhePage({
                 opcoes={poolNumeros}
               />
             )}
-            <BotaoEnviarProspeccao
-              leadId={lead.id}
-              origemAtual={lead.origem ?? null}
-            />
-            <BotaoVoltarInbound
-              leadId={lead.id}
-              origemAtual={lead.origem ?? null}
-            />
+            {/* Botões de mover pra Prospecção / voltar pra Inbound escondidos —
+                prospecção desligada por enquanto. Componentes continuam em
+                ./botao-enviar-prospeccao e ./botao-voltar-inbound. */}
           </div>
         </div>
 
