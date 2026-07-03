@@ -100,6 +100,12 @@ const NOMES_DIAS_LISTA = [
   "domingo",
 ];
 
+// sábado e domingo são masculinos ("no próximo sábado");
+// segunda a sexta, femininos ("na próxima terça")
+function diaEhMasculino(diaSemana: number): boolean {
+  return diaSemana === 6 || diaSemana === 7;
+}
+
 // Nome de dia (com ou sem acento, com ou sem "feira")
 const DIA_REGEX =
   "(?:s[aá]bado|domingo|segunda|ter[cç]a|quarta|quinta|sexta|fim\\s+de\\s+semana|esse[s]?\\s+dia[s]?)";
@@ -322,7 +328,8 @@ export async function gerarLinhaHorariosDoDia(opts: {
   }
 
   if (horariosLivres.length === 0) return null;
-  return `Na ${oc.label} tenho disponível às ${horariosLivres.join(", ")}. Qual horário prefere?`;
+  const artigo = diaEhMasculino(opts.diaSemana) ? "No" : "Na";
+  return `${artigo} ${oc.label} tenho disponível às ${horariosLivres.join(", ")}. Qual horário prefere?`;
 }
 
 export async function tentarResponderDisponibilidade(opts: {
@@ -378,10 +385,14 @@ export async function tentarResponderDisponibilidade(opts: {
               : turno === "tarde"
                 ? "à tarde"
                 : "à noite";
-          return `${saudacao}não tenho horário livre ${labelTurno} na próxima ${NOMES_DIAS_LISTA[diaCitado]}. ${linhaSemTurno}`;
+          const proxima = diaEhMasculino(diaCitado)
+            ? "no próximo"
+            : "na próxima";
+          return `${saudacao}não tenho horário livre ${labelTurno} ${proxima} ${NOMES_DIAS_LISTA[diaCitado]}. ${linhaSemTurno}`;
         }
       }
-      return `${saudacao}atendemos ${NOMES_DIAS_LISTA[diaCitado]}, mas não tenho horário livre na próxima. Pode escolher outro dia? Atendemos ${dias}.`;
+      const proxima = diaEhMasculino(diaCitado) ? "no próximo" : "na próxima";
+      return `${saudacao}atendemos ${NOMES_DIAS_LISTA[diaCitado]}, mas não tenho horário livre ${proxima}. Pode escolher outro dia? Atendemos ${dias}.`;
     }
     return `${saudacao}atendemos sim! ${linha}`;
   }
