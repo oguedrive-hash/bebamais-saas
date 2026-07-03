@@ -29,7 +29,8 @@ export default async function LeadDetalhePage({
 }) {
   const { id } = await params;
   const { from } = await searchParams;
-  // Contexto de origem da navegacao — define pra onde o "Voltar" leva.
+  // Contexto de origem da navegacao — define entre quais leads o
+  // anterior/próximo circula (o "Voltar" leva sempre pra Conversas).
   const veioDeProspeccao = from === "prospeccao";
   const supabase = await createClient();
 
@@ -124,10 +125,10 @@ export default async function LeadDetalhePage({
       {/* Breadcrumb + navegação anterior/próximo */}
       <div className="flex items-center justify-between gap-3 mb-4">
         <Link
-          href={veioDeProspeccao ? "/dashboard/prospeccao" : "/dashboard/leads"}
+          href="/dashboard/contatos"
           className="inline-flex items-center text-sm text-cinza-medio hover:text-laranja font-heading font-medium transition"
         >
-          ← Voltar pra {veioDeProspeccao ? "Prospecção" : "Inbound"}
+          ← Voltar pra Conversas
         </Link>
         {totalNavegavel > 1 && (
           <NavegacaoLeads

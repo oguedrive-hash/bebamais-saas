@@ -26,7 +26,7 @@ export function BotaoDeletarLead({
         setErro(result.error);
         return;
       }
-      router.push("/dashboard/leads");
+      router.push("/dashboard/contatos");
     });
   }
 

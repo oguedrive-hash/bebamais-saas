@@ -180,7 +180,7 @@ export function SinoHandoff({
 
           {(total > leads.length || totalAguardando > leadsAguardando.length) && (
             <Link
-              href="/dashboard/leads?precisa_humano=1"
+              href="/dashboard/contatos"
               onClick={() => setAberto(false)}
               className="block px-4 py-3 text-center text-xs text-laranja hover:text-laranja-escuro font-heading font-semibold border-t border-cinza-claro"
             >
