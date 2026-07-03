@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { EmptyState } from "@/components/empty-state";
+import {
+  STATUS_CONFIG,
+  STATUS_ORDEM,
+  type StatusLead,
+} from "@/lib/status-config";
 import { ContatosTabela } from "./tabela";
 
 type FiltroEstado = "ativos" | "encerrados" | "todos";
@@ -9,6 +14,7 @@ type FiltroOrigem = "todos" | "inbound" | "prospeccao";
 type FilterParams = {
   estado?: FiltroEstado;
   origem?: FiltroOrigem;
+  status?: string;
   q?: string;
   page?: string;
 };
@@ -33,6 +39,11 @@ export default async function ContatosPage({
   const params = await searchParams;
   const estado = (params.estado as FiltroEstado) ?? "ativos";
   const origem = (params.origem as FiltroOrigem) ?? "todos";
+  // Filtro fino por status — quando ativo, sobrepõe o agrupador Ativos/Encerrados
+  // (evita interseção vazia tipo Encerrados + Em conversa).
+  const statusFiltro = STATUS_ORDEM.includes(params.status as StatusLead)
+    ? (params.status as StatusLead)
+    : null;
   const searchQuery = params.q ?? "";
   const page = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
   const offset = (page - 1) * PER_PAGE;
@@ -46,8 +57,9 @@ export default async function ContatosPage({
       { count: "exact" },
     );
 
-  // Filtro de estado (ativo/encerrado/todos)
-  if (estado === "ativos") query = query.in("status", STATUS_ATIVOS);
+  // Filtro de status específico > filtro de estado (ativo/encerrado/todos)
+  if (statusFiltro) query = query.eq("status", statusFiltro);
+  else if (estado === "ativos") query = query.in("status", STATUS_ATIVOS);
   else if (estado === "encerrados")
     query = query.in("status", STATUS_ENCERRADOS);
 
@@ -81,16 +93,24 @@ export default async function ContatosPage({
       contagensRaw?.filter((l) => l.origem === "prospeccao").length ?? 0,
   };
 
+  const contagemPorStatus: Partial<Record<StatusLead, number>> = {};
+  for (const l of contagensRaw ?? []) {
+    const s = l.status as StatusLead;
+    contagemPorStatus[s] = (contagemPorStatus[s] ?? 0) + 1;
+  }
+
   const totalPages = Math.max(1, Math.ceil((count ?? 0) / PER_PAGE));
 
   function buildHref(opts: Partial<FilterParams>): string {
     const sp = new URLSearchParams();
     const e = opts.estado ?? estado;
     const o = opts.origem ?? origem;
+    const st = opts.status ?? statusFiltro ?? "";
     const qq = opts.q ?? searchQuery;
     const pg = opts.page ?? "1";
     if (e !== "ativos") sp.set("estado", e);
     if (o !== "todos") sp.set("origem", o);
+    if (st) sp.set("status", st);
     if (qq) sp.set("q", qq);
     if (pg !== "1") sp.set("page", pg);
     const qs = sp.toString();
@@ -103,7 +123,7 @@ export default async function ContatosPage({
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-baseline gap-3">
           <h1 className="text-4xl font-heading font-bold text-preto">
-            Contatos
+            Conversas
           </h1>
           <span className="text-sm text-cinza-medio">
             {contagens.todos} no total
@@ -120,6 +140,9 @@ export default async function ContatosPage({
           {origem !== "todos" && (
             <input type="hidden" name="origem" value={origem} />
           )}
+          {statusFiltro && (
+            <input type="hidden" name="status" value={statusFiltro} />
+          )}
           <input
             type="text"
             name="q"
@@ -130,26 +153,36 @@ export default async function ContatosPage({
         </form>
       </div>
 
-      {/* Filtros: Estado */}
+      {/* Filtros: agrupadores Ativos/Encerrados + filtro fino por status */}
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <FilterChip
           label="Ativos"
           count={contagens.ativos}
-          active={estado === "ativos"}
-          href={buildHref({ estado: "ativos" })}
+          active={!statusFiltro && estado === "ativos"}
+          href={buildHref({ estado: "ativos", status: "" })}
         />
         <FilterChip
           label="Encerrados"
           count={contagens.encerrados}
-          active={estado === "encerrados"}
-          href={buildHref({ estado: "encerrados" })}
+          active={!statusFiltro && estado === "encerrados"}
+          href={buildHref({ estado: "encerrados", status: "" })}
         />
         <FilterChip
           label="Todos"
           count={contagens.todos}
-          active={estado === "todos"}
-          href={buildHref({ estado: "todos" })}
+          active={!statusFiltro && estado === "todos"}
+          href={buildHref({ estado: "todos", status: "" })}
         />
+        <span className="text-cinza-claro mx-2">|</span>
+        {STATUS_ORDEM.map((s) => (
+          <FilterChip
+            key={s}
+            label={STATUS_CONFIG[s].label}
+            count={contagemPorStatus[s] ?? 0}
+            active={statusFiltro === s}
+            href={buildHref({ status: statusFiltro === s ? "" : s })}
+          />
+        ))}
         {/* Chips de origem (Inbound/Prospecção) escondidos — prospecção
             desligada por enquanto. O filtro ?origem= continua funcionando
             por URL se precisar. */}
@@ -166,11 +199,11 @@ export default async function ContatosPage({
       {!leads || leads.length === 0 ? (
         <EmptyState
           icone="👥"
-          titulo="Nenhum contato encontrado"
+          titulo="Nenhuma conversa encontrada"
           descricao={
-            !searchQuery && estado === "ativos" && origem === "todos"
+            !searchQuery && !statusFiltro && estado === "ativos" && origem === "todos"
               ? "Importe contatos pra começar — botão '+ Importar contatos' acima."
-              : "Nenhum contato com os filtros atuais."
+              : "Nenhuma conversa com os filtros atuais."
           }
         />
       ) : (
