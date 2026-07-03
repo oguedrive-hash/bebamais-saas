@@ -71,7 +71,7 @@ export async function notificarAdminAgendamento(opts: {
     const leadLabel = opts.leadNome ? `${opts.leadNome} (${opts.leadTelefone})` : opts.leadTelefone;
     const resumoBloco = opts.resumoIA?.trim() ? `\n\n*Contexto rapido:*\n${opts.resumoIA.trim()}` : "";
     const quem2 = await nomeAtendente(opts.organizationId);
-    const texto = `🟢 *${quem2} agendou uma retirada*\n\nCliente: ${leadLabel}\nQuando: ${dataStr}${resumoBloco}\n\nConversa: ${APP_BASE_URL}/dashboard/contatos/${opts.leadId}`;
+    const texto = `🟡 *${quem2} anotou um horário sugerido pelo cliente*\n\nCliente: ${leadLabel}\nQuando: ${dataStr}\n⚠️ Confirmar com o cliente pelo painel${resumoBloco}\n\nConversa: ${APP_BASE_URL}/dashboard/contatos/${opts.leadId}`;
     const instance = await instanciaAtendimento(opts.organizationId);
     const sent = await enviarSerializado("org:" + opts.organizationId, () =>
       evoSendText({ instance, telefone: adminNumero, texto }),

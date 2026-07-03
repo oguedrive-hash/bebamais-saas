@@ -53,6 +53,27 @@ export const AGENDA_CONFIG_DEFAULT: AgendaConfig = {
   qtd_opcoes_propor: 3,
 };
 
+/**
+ * Horário de FUNCIONAMENTO da loja derivado dos slots (menor início e maior
+ * fim). No contexto Beba Mais o horário do cliente é SUGESTÃO — a IA só
+ * valida se cai dentro do funcionamento; quem confirma é a equipe.
+ */
+export function janelaFuncionamento(config: AgendaConfig): {
+  abre: string; // "HH:mm"
+  fecha: string; // "HH:mm"
+} {
+  const slots = config.slots.length
+    ? config.slots
+    : AGENDA_CONFIG_DEFAULT.slots;
+  let abre = slots[0].inicio;
+  let fecha = slots[0].fim;
+  for (const s of slots) {
+    if (s.inicio < abre) abre = s.inicio;
+    if (s.fim > fecha) fecha = s.fim;
+  }
+  return { abre, fecha };
+}
+
 const RE_HORARIO = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 
 export function getAgendaConfig(raw: unknown): AgendaConfig {

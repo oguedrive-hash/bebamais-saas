@@ -87,7 +87,7 @@ export default async function AgendaPage({
         <div className="flex items-center justify-between gap-3 mb-4">
           <PageHeader
             titulo="Retiradas"
-            descricao="Pedidos com retirada agendada pela IA"
+            descricao="Horários sugeridos pelos clientes — confirme e acompanhe aqui"
           />
           <div className="flex items-center gap-3">
             <ViewToggle viewAtual={view} />
@@ -133,7 +133,7 @@ export default async function AgendaPage({
       <div className="flex items-center justify-between gap-3 mb-4">
         <PageHeader
           titulo="Retiradas"
-          descricao="Retiradas agendadas pela IA"
+          descricao="Horários sugeridos pelos clientes — confirme e acompanhe aqui"
         />
         <ViewToggle viewAtual={view} />
       </div>
@@ -146,8 +146,8 @@ export default async function AgendaPage({
           {!proximosAgendamentos || proximosAgendamentos.length === 0 ? (
             <EmptyState
               icone="📅"
-              titulo="Nenhuma retirada agendada"
-              descricao="Quando a IA agendar uma retirada, vai aparecer aqui."
+              titulo="Nenhuma retirada por vir"
+              descricao="Quando um cliente sugerir um horário na conversa, ele aparece aqui pra equipe confirmar."
             />
           ) : (
             <div className="space-y-3">

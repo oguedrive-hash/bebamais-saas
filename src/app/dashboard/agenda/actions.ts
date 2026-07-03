@@ -15,7 +15,7 @@ import {
   type SlotLivre,
 } from "@/lib/caio/slots-livres";
 
-const STATUS_VALIDOS = ["agendado", "realizado", "no_show", "cancelado"];
+const STATUS_VALIDOS = ["sugerido", "agendado", "realizado", "no_show", "cancelado"];
 
 const RE_HORARIO = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 
@@ -330,6 +330,17 @@ export async function mudarStatusAgendamento(
     .update({ status: novoStatus })
     .eq("id", agendamentoId);
   if (error) return { error: error.message };
+
+  // Cancelou o horário → desvincula dos pedidos ainda abertos, senão o
+  // pedido fica preso a um agendamento cancelado e um novo horário sugerido
+  // pelo cliente nunca consegue vincular (o vínculo exige agendamento_id null).
+  if (novoStatus === "cancelado") {
+    await createAdminClient()
+      .from("pedidos")
+      .update({ agendamento_id: null })
+      .eq("agendamento_id", agendamentoId)
+      .in("status", ["captando", "pronto_para_equipe", "em_atendimento"]);
+  }
 
   revalidatePath("/dashboard/agenda");
   return { ok: true };

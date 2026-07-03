@@ -28,11 +28,12 @@ import { extrairEAtualizarPedido } from "@/lib/caio/extrator-pedido";
 import { classificarHandoff } from "@/lib/caio/classificador-handoff";
 import { dispararHandoff } from "@/lib/caio/handoff";
 import { tentarAgendar } from "@/lib/caio/tentar-agendar";
-import { calcularSlotsLivres } from "@/lib/caio/slots-livres";
+import { tentarResponderDisponibilidade } from "@/lib/caio/resposta-disponibilidade";
 import {
-  gerarLinhaHorariosDoDia,
-  tentarResponderDisponibilidade,
-} from "@/lib/caio/resposta-disponibilidade";
+  AGENDA_CONFIG_DEFAULT,
+  getAgendaConfig,
+  janelaFuncionamento,
+} from "@/lib/caio/agenda-config";
 
 const NOMES_DIAS_LISTA = [
   "",
@@ -197,7 +198,7 @@ export async function POST(request: NextRequest) {
       .from("agendamentos")
       .select("id")
       .eq("lead_id", lead.id)
-      .eq("status", "agendado")
+      .in("status", ["sugerido", "agendado"])
       .gte("data_inicio", new Date().toISOString())
       .limit(1)
       .maybeSingle();
@@ -235,7 +236,7 @@ export async function POST(request: NextRequest) {
     .from("agendamentos")
     .select("id, data_inicio")
     .eq("lead_id", lead.id)
-    .eq("status", "agendado")
+    .in("status", ["sugerido", "agendado"])
     .gte("data_inicio", new Date().toISOString())
     .order("data_inicio", { ascending: true })
     .limit(1)
@@ -281,7 +282,7 @@ export async function POST(request: NextRequest) {
       const respLLM = await gerarRespostaCaio({
         leadId: lead.id,
         extrasContexto: [
-          `[AGENDAMENTO CRIADO] O cliente acabou de aceitar agendar a retirada e o agendamento JÁ FOI CRIADO pra: ${dataStr}. Confirme curto e natural.`,
+          `[HORÁRIO ANOTADO] O cliente sugeriu um horário pra retirada/entrega e ele JÁ FOI ANOTADO pra equipe: ${dataStr} (fuso de Brasília). Diga de forma natural e curta que você anotou esse horário e que a EQUIPE vai confirmar com ele. Cite data e hora exatas. NÃO diga que está "agendado" ou "confirmado" — é o horário que ele sugeriu e a equipe confirma.`,
         ],
       });
       const texto = "error" in respLLM ? `[erro LLM: ${respLLM.error}]` : respLLM.resposta;
@@ -300,19 +301,11 @@ export async function POST(request: NextRequest) {
         pedido: await pedidoAtual(),
       });
     }
-    // Falha: resposta determinística
-    const horaPedida = new Intl.DateTimeFormat("en-GB", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-      timeZone: "America/Sao_Paulo",
-    }).format(momento);
-    const buscaHora = await calcularSlotsLivres({
-      organizationId: body.orgId,
-      qtdMaxima: 5,
-      filtrarPorHora: horaPedida,
-    });
-    const temMesmaHora = "slots" in buscaHora && buscaHora.slots.length > 0;
+    // Horário não serve — resposta determinística com o FUNCIONAMENTO da loja
+    const func = result.funcionamento;
+    const abreF = func?.abre ?? "08:00";
+    const fechaF = func?.fecha ?? "18:00";
+    const diasTextoF = descreverDiasNatural(func?.diasSemana ?? [1, 2, 3, 4, 5]);
     const primeiroNome = lead.nome?.split(" ")[0] ?? null;
     const sauda = primeiroNome ? `${primeiroNome}, ` : "";
 
@@ -328,24 +321,15 @@ export async function POST(request: NextRequest) {
 
     let respFalha: string;
     if (result.motivo === "dia_nao_atendido") {
-      respFalha = `${sauda}${nomeDiaPedido} a gente não atende. Qual outro dia da semana funciona melhor pra você?`;
+      respFalha = `${sauda}${nomeDiaPedido} a loja não abre. Funcionamos ${diasTextoF}, das ${abreF} às ${fechaF}. Qual dia fica melhor pra você?`;
     } else if (result.motivo === "fora_horizonte") {
-      respFalha = `${sauda}essa data está muito distante. Pode escolher outro dia da semana mais próximo?`;
-    } else if (result.motivo === "antes_antecedencia") {
-      respFalha = `${sauda}preciso de pelo menos algumas horas de antecedência. Qual outro dia funciona pra você?`;
-    } else if (temMesmaHora) {
-      respFalha = `${sauda}esse horário não está disponível na ${nomeDiaPedido}, mas tenho o mesmo horário (${horaPedida}) em outro dia. Qual dia da semana fica melhor pra você?`;
+      respFalha = `${sauda}essa data tá um pouco distante pra eu já deixar anotada. Me diz um dia mais próximo que eu anoto pra equipe — ou me chama de novo mais perto da data, combinado?`;
+    } else if (result.motivo === "no_passado") {
+      respFalha = `${sauda}esse horário já passou. Me diz um dia e horário daqui pra frente? A loja abre ${diasTextoF}, das ${abreF} às ${fechaF}.`;
+    } else if (result.motivo === "fora_funcionamento") {
+      respFalha = `${sauda}nesse horário a loja tá fechada — funcionamos das ${abreF} às ${fechaF}. Me diz outro horário dentro desse período que eu já deixo anotado pra equipe.`;
     } else {
-      const linha =
-        diaPedidoNum > 0
-          ? await gerarLinhaHorariosDoDia({
-              organizationId: body.orgId,
-              diaSemana: diaPedidoNum,
-            })
-          : null;
-      respFalha = linha
-        ? `${sauda}o horário ${horaPedida} não está disponível na ${nomeDiaPedido}. ${linha}`
-        : `${sauda}esse horário não está disponível. Qual outro dia da semana funciona melhor pra você?`;
+      respFalha = `${sauda}tive um probleminha pra anotar aqui. Pode me confirmar de novo o dia e o horário?`;
     }
     await admin.from("mensagens").insert({
       organization_id: body.orgId,
@@ -369,11 +353,14 @@ export async function POST(request: NextRequest) {
       .select("agenda_config")
       .eq("id", body.orgId)
       .single();
-    const cfg = orgInfo?.agenda_config as { dias_semana?: number[] } | null;
-    const diasDesc = descreverDiasNatural(cfg?.dias_semana ?? [1, 2, 3, 4, 5]);
+    const cfg = orgInfo?.agenda_config
+      ? getAgendaConfig(orgInfo.agenda_config)
+      : AGENDA_CONFIG_DEFAULT;
+    const { abre, fecha } = janelaFuncionamento(cfg);
+    const diasDesc = descreverDiasNatural(cfg.dias_semana);
     const primeiroNome = lead.nome?.split(" ")[0] ?? null;
     const nome = primeiroNome ? `, ${primeiroNome}` : "";
-    const texto = `Perfeito${nome}! Que dia fica melhor pra você buscar? A gente atende ${diasDesc}.`;
+    const texto = `Perfeito${nome}! A loja abre ${diasDesc}, das ${abre} às ${fecha}. Me diz o dia e o horário que ficam melhores pra você que eu já deixo anotado pra equipe.`;
     await admin.from("mensagens").insert({
       organization_id: body.orgId,
       lead_id: lead.id,

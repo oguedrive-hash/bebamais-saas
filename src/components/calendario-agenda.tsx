@@ -13,6 +13,7 @@ type Agendamento = {
 };
 
 const STATUS_COR: Record<string, string> = {
+  sugerido: "bg-amber-500",
   agendado: "bg-emerald-500",
   realizado: "bg-blue-500",
   no_show: "bg-red-500",

@@ -159,11 +159,15 @@ export async function processarLembretesPendentes(): Promise<{
       if (instante > agora) continue; // Ainda nao chegou a hora
 
       // Lembrete "antes" cujo instante ja era passado quando o agendamento
-      // foi criado: nao faz sentido disparar (seria imediato apos criar).
-      // Marca como enviado pra nao reprocessar e segue.
+      // foi criado, OU que ja venceu ha mais de 1h (ex: sugestao do cliente
+      // confirmada pela equipe dias depois — sem isso todos os "antes"
+      // vencidos disparariam em rajada na confirmacao). Marca como enviado
+      // pra nao reprocessar e segue.
+      const atrasoMs = agora.getTime() - instante.getTime();
       if (
         regra.quando === "antes" &&
-        instante.getTime() < createdAt.getTime() - margemMs
+        (instante.getTime() < createdAt.getTime() - margemMs ||
+          atrasoMs > 60 * 60 * 1000)
       ) {
         const novosEnviados = [...(ag.lembretes_enviados ?? []), regra.nivel];
         await supabase
@@ -269,10 +273,13 @@ async function processarLembretesAdmin(
       dataInicio.getTime() - regra.horasAntes * 3600 * 1000,
     );
     if (instante > agora) continue;
-    // Se o agendamento foi criado depois da hora do lembrete, pula
-    // (caso lead marcou pra daqui 30min, nao faz sentido mandar lembrete
-    // de 1h antes que ja era passado).
-    if (instante.getTime() < new Date(ag.created_at).getTime() - 5 * 60 * 1000) {
+    // Se o agendamento foi criado depois da hora do lembrete, ou o lembrete
+    // ja venceu ha mais de 1h (sugestao confirmada tardiamente), pula —
+    // senao dispara rajada de lembretes atrasados.
+    if (
+      instante.getTime() < new Date(ag.created_at).getTime() - 5 * 60 * 1000 ||
+      agora.getTime() - instante.getTime() > 60 * 60 * 1000
+    ) {
       const atualiza = [...(ag.lembretes_admin_enviados ?? []), regra.nivel];
       await supabase
         .from("agendamentos")

@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { chatCompletion, type ChatMessage } from "./openai";
-import { getAgendaConfig } from "./agenda-config";
+import { getAgendaConfig, janelaFuncionamento } from "./agenda-config";
 import { personaDoLead } from "./numeros";
 
 const NOMES_DIAS = [
@@ -165,68 +165,39 @@ export async function gerarRespostaCaio(opts: {
     );
   }
 
-  // Disponibilidade da agenda — incluída no fluxo normal pra que a IA responda
+  // Funcionamento da loja — incluído no fluxo normal pra que a IA responda
   // perguntas tipo "atendem sábado?" sem escalar. NÃO entra em follow-up
-  // (promptBaseOverride): o follow-up é re-engajamento, e listar horários empurrava
-  // o modelo pro agendamento — atropelava o break-up do último nível com lead engajado.
+  // (promptBaseOverride): o follow-up é re-engajamento.
+  // Contexto Beba Mais: a loja NÃO tem slots — horário do cliente é SUGESTÃO
+  // que a equipe confirma. O LLM só precisa saber a janela de funcionamento.
   if (!opts.promptBaseOverride && org?.agenda_config) {
     const agenda = getAgendaConfig(org.agenda_config);
     const diasDesc = descreverDias(agenda.dias_semana);
+    const { abre, fecha } = janelaFuncionamento(agenda);
+    const diasPorNome = agenda.dias_semana
+      .map((d) => NOMES_DIAS[d])
+      .filter(Boolean)
+      .join(", ");
+    extras.push(
+      `[Funcionamento da Beba Mais]
+Dias em que a loja ABRE (use EXATAMENTE esta lista; ignore respostas anteriores suas que possam ter sido incompletas): ${diasPorNome}.
+Resumo: ${diasDesc}, das ${abre} às ${fecha} (fuso de Brasília).
 
-    if (agenda.modo === "slot") {
-      // Lista textual dos horários de INÍCIO (que é o que importa pro lead
-      // escolher). Com instrução EXPLÍCITA de não alterar. Sem isso o LLM
-      // tende a "regularizar" pra hora cheia (ex: 13:00 vira 14:00).
-      const inicios = agenda.slots.map((s) => `"${s.inicio}"`).join(", ");
-      const slotsDetalhe = agenda.slots
-        .map(
-          (s, i) =>
-            `${i + 1}) ${s.inicio} (até ${s.fim})`,
-        )
-        .join("\n");
-      const diasPorNome = agenda.dias_semana
-        .map((d) => NOMES_DIAS[d])
-        .filter(Boolean)
-        .join(", ");
-      extras.push(
-        `[Disponibilidade da Beba Mais]
-Dias ATENDIDOS (use EXATAMENTE esta lista; ignore respostas anteriores suas que possam ter sido incompletas): ${diasPorNome}.
-Resumo: ${diasDesc} (fuso de Brasília).
-
-Horários FIXOS de início de retirada (NÃO altere esses números, NÃO arredonde, NÃO invente outros — 13:00 NÃO vira 14:00):
-${slotsDetalhe}
-
-Em texto livre, os únicos horários de início válidos são EXATAMENTE: ${inicios}. NUNCA cite outros números.
+A loja NÃO trabalha com agendamento de horário — o cliente vem retirar (ou recebe a entrega) no horário que preferir dentro do funcionamento. Quando o cliente disser um dia/horário, trate como SUGESTÃO: diga que anotou e que a EQUIPE confirma com ele. NUNCA diga que "agendou" ou que o horário "está confirmado". NUNCA invente lista de horários disponíveis — a única regra é o funcionamento acima. Cite os horários que o cliente disser EXATAMENTE como ele disse (não arredonde).
 
 Regras:
-- Se o lead perguntar quando atendem, cite TODOS os dias acima e os horários acima exatamente. NÃO omita nenhum dia.
-- Se ele perguntar sobre um dia específico que ESTÁ na lista (ex: "atendem terça?"), confirme que sim e ofereça os horários.
-- Se ele pedir um dia FORA da lista (ex: sábado, domingo), explique que não atendemos e ofereça os dias da lista.
+- Se perguntarem quando atendem, cite TODOS os dias acima e a janela ${abre} às ${fecha} exatamente. NÃO omita nenhum dia.
+- Dia fora da lista (ex: domingo): explique que a loja não abre nesse dia e ofereça os dias da lista.
+- Horário fora da janela: informe o funcionamento e peça outro horário.
 - NÃO escale pra humano por causa de horário/dia — só por casos genuinamente complexos.
 
 [POSTURA — VOCÊ CONDUZ]
-Você SEMPRE conduz a conversa pra fechar o pedido e agendar a retirada. NUNCA deixe a decisão de avançar na mão do lead. Em qualquer interação onde ele demonstrou o mínimo de interesse:
-1. Pergunte DIRETAMENTE qual dia da semana é melhor pra ele (entre os dias atendidos)
-2. Depois que ele indicar o dia, oferece os horários daquele dia (isso será tratado automaticamente)
-3. Se ele desviar o assunto, responde a pergunta dele e em seguida volta pra agendar
-4. NUNCA termine uma resposta com "me avisa quando quiser" ou "fica à vontade" — sempre termine com uma pergunta que faz ele avançar (ex: "qual dia da semana funciona melhor pra você?")`,
-      );
-    } else {
-      // Modo duracao: lista as janelas + a duração padrão
-      const janelas = agenda.slots
-        .map((s) => `${s.inicio} às ${s.fim}`)
-        .join(", ");
-      extras.push(
-        `[Disponibilidade da Beba Mais]
-Dias atendidos: ${diasDesc} (fuso de Brasília).
-Janelas de atendimento: ${janelas}.
-Duração padrão da retirada: ${agenda.duracao_padrao} minutos.
-
-Regras:
-- Se o lead pedir dia/horário fora disso, explique e ofereça alternativas dentro das janelas.
-- NÃO escale pra humano por causa de horário/dia — só por casos genuinamente complexos.`,
-      );
-    }
+Você SEMPRE conduz a conversa pra fechar o pedido e combinar a retirada/entrega. NUNCA deixe a decisão de avançar na mão do lead. Em qualquer interação onde ele demonstrou o mínimo de interesse:
+1. Monte o pedido (itens, nome, retirada ou entrega)
+2. Pergunte que dia e horário ficam melhores pra ele (dentro do funcionamento) e diga que deixa anotado pra equipe confirmar
+3. Se ele desviar o assunto, responde a pergunta dele e em seguida volta pro pedido
+4. NUNCA termine uma resposta com "me avisa quando quiser" ou "fica à vontade" — sempre termine com uma pergunta que faz ele avançar`,
+    );
   }
   // Contexto de prospecção: cobre tanto cadência ATIVA (origem=prospeccao)
   // quanto lead que foi prospectado no passado, virou "perdido", e agora
@@ -294,53 +265,10 @@ Regras:
 
   if ("error" in result) return result;
 
-  // Pós-processamento: se a config tem slots, substitui horários inválidos
-  // pelo válido mais próximo. Rede de segurança contra alucinação residual.
-  let resposta = result.content.trim();
-  if (org?.agenda_config) {
-    const agenda = getAgendaConfig(org.agenda_config);
-    if (agenda.modo === "slot") {
-      const permitidos = new Set(agenda.slots.map((s) => s.inicio));
-      // Inclui também os horários de FIM como permitidos (caso a IA cite
-      // a faixa completa "13:00 às 15:30")
-      agenda.slots.forEach((s) => permitidos.add(s.fim));
-      const minutos = (hhmm: string) => {
-        const [h, m] = hhmm.split(":").map(Number);
-        return h * 60 + m;
-      };
-      const validosSorted = Array.from(permitidos).sort(
-        (a, b) => minutos(a) - minutos(b),
-      );
-      resposta = resposta.replace(/\b(\d{1,2}):(\d{2})\b/g, (match, h, m) => {
-        const horaPad = String(h).padStart(2, "0");
-        const candidato = `${horaPad}:${m}`;
-        if (permitidos.has(candidato)) return candidato;
-        // Encontra o mais próximo (distância em minutos)
-        const tgt = minutos(candidato);
-        let melhor = validosSorted[0];
-        let melhorDist = Math.abs(minutos(melhor) - tgt);
-        for (const cand of validosSorted) {
-          const d = Math.abs(minutos(cand) - tgt);
-          if (d < melhorDist) {
-            melhor = cand;
-            melhorDist = d;
-          }
-        }
-        // Só substitui se a distância é razoável (até 90 min); senão deixa
-        // como está (provavelmente é referência a horário do lead, não slot)
-        if (melhorDist <= 90) {
-          console.log(
-            "[caio:fix-horario] substituindo",
-            match,
-            "→",
-            melhor,
-          );
-          return melhor;
-        }
-        return match;
-      });
-    }
-  }
-
-  return { resposta };
+  // (Sem pós-processamento de horário: no modelo de slots existia um "fix"
+  // que trocava qualquer HH:mm da resposta pelo slot mais próximo. Com
+  // horário-como-sugestão isso corrompia a resposta — cliente sugeria 16:30
+  // e ouvia "anotei 15:30". Qualquer horário dentro do funcionamento é
+  // válido; quem valida é o tentarAgendar.)
+  return { resposta: result.content.trim() };
 }

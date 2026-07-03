@@ -83,11 +83,12 @@ export default async function DashboardPage() {
       .or("precisa_humano.eq.true,precisa_resposta_humana.eq.true")
       .order("updated_at", { ascending: false })
       .limit(20),
-    // Retiradas agendadas pra HOJE
+    // Retiradas de HOJE — inclui as sugeridas pelo cliente (pendência de
+    // confirmação da equipe) além das já confirmadas
     supabase
       .from("agendamentos")
       .select("id, data_inicio, status, lead:leads(id, nome, telefone)")
-      .eq("status", "agendado")
+      .in("status", ["sugerido", "agendado"])
       .gte("data_inicio", hoje0.toISOString())
       .lte("data_inicio", hoje24.toISOString())
       .order("data_inicio", { ascending: true }),
@@ -122,6 +123,7 @@ export default async function DashboardPage() {
   const retiradas = (retiradasHoje ?? []) as unknown as {
     id: string;
     data_inicio: string;
+    status: string;
     lead: { id: string; nome: string | null; telefone: string } | { id: string; nome: string | null; telefone: string }[] | null;
   }[];
 
@@ -250,11 +252,16 @@ export default async function DashboardPage() {
                     key={r.id}
                     href={lead ? `/dashboard/contatos/${lead.id}` : "/dashboard/agenda"}
                     principal={lead?.nome ?? lead?.telefone ?? "—"}
-                    secundario={new Date(r.data_inicio).toLocaleTimeString("pt-BR", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      timeZone: "America/Sao_Paulo",
-                    })}
+                    secundario={
+                      new Date(r.data_inicio).toLocaleTimeString("pt-BR", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        timeZone: "America/Sao_Paulo",
+                      }) +
+                      (r.status === "sugerido"
+                        ? " · sugerido pelo cliente — confirmar"
+                        : "")
+                    }
                   />
                 );
               })}

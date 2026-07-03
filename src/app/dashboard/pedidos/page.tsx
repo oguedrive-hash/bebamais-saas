@@ -189,8 +189,12 @@ function PedidoItem({
             {lead?.telefone}
           </span>
         </p>
-        {ag && ag.status === "agendado" && (
-          <span className="text-[11px] text-cinza-medio shrink-0">
+        {ag && ["sugerido", "agendado"].includes(ag.status) && (
+          <span
+            className={`text-[11px] shrink-0 ${
+              ag.status === "sugerido" ? "text-amber-700" : "text-cinza-medio"
+            }`}
+          >
             🕐{" "}
             {new Date(ag.data_inicio).toLocaleString("pt-BR", {
               weekday: "short",
@@ -200,6 +204,7 @@ function PedidoItem({
               minute: "2-digit",
               timeZone: "America/Sao_Paulo",
             })}
+            {ag.status === "sugerido" && " · sugerido — confirmar"}
           </span>
         )}
       </div>

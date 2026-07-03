@@ -3,14 +3,18 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { mudarStatusAgendamento } from "@/app/dashboard/agenda/actions";
 
-type Status = "agendado" | "realizado" | "no_show" | "cancelado";
+type Status = "sugerido" | "agendado" | "realizado" | "no_show" | "cancelado";
 
 const STATUS_CONFIG: Record<
   Status,
   { label: string; cor: string }
 > = {
+  sugerido: {
+    label: "Sugerido pelo cliente",
+    cor: "bg-amber-50 text-amber-700 border-amber-300",
+  },
   agendado: {
-    label: "Agendado",
+    label: "Confirmado",
     cor: "bg-emerald-50 text-emerald-700 border-emerald-200",
   },
   realizado: {

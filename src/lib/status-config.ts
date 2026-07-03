@@ -63,8 +63,8 @@ export const STATUS_CONFIG: Record<
     ordem: 4,
   },
   reuniao_agendada: {
-    label: "Retirada agendada",
-    descricao: "Aguardando retirada",
+    label: "Retirada combinada",
+    descricao: "Horário anotado — equipe confirma e aguarda a retirada/entrega",
     cor: "text-emerald-700",
     bg: "bg-emerald-50",
     border: "border-emerald-200",

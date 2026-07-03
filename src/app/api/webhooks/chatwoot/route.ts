@@ -13,12 +13,16 @@ import { ehOptOut } from "@/lib/caio/guardrails";
 import { dispararHandoff } from "@/lib/caio/handoff";
 import { detectarDesqualificacao } from "@/lib/caio/detector-desqualificacao";
 import { tentarAgendar } from "@/lib/caio/tentar-agendar";
-import { calcularSlotsLivres } from "@/lib/caio/slots-livres";
 import { notificarAdminFalha } from "@/lib/caio/notificar-admin";
 import {
-  gerarLinhaHorariosDoDia,
+  descreverDiasNatural,
   tentarResponderDisponibilidade,
 } from "@/lib/caio/resposta-disponibilidade";
+import {
+  AGENDA_CONFIG_DEFAULT,
+  getAgendaConfig,
+  janelaFuncionamento,
+} from "@/lib/caio/agenda-config";
 import { transcreverAudio } from "@/lib/caio/openai";
 import { gerarAudio } from "@/lib/caio/elevenlabs";
 import { classificarAdiamento } from "@/lib/caio/classificador-adiamento";
@@ -725,7 +729,7 @@ async function tentarTratarHandoff(
       .from("agendamentos")
       .select("id")
       .eq("lead_id", leadId)
-      .eq("status", "agendado")
+      .in("status", ["sugerido", "agendado"])
       .gte("data_inicio", new Date().toISOString())
       .limit(1)
       .maybeSingle();
@@ -771,15 +775,15 @@ async function tentarTratarAceite(
 > {
   if (!ultimaMsg?.trim()) return null;
 
-  // Se o lead JA tem agendamento futuro, nao roda o classificador de aceite.
-  // Caso contrario "Pode sim" (confirmando lembrete) vira tentativa de criar
-  // novo agendamento. Reagendamento eh capturado pelo classificador de
-  // adiamento, nao por aqui.
+  // Se o lead JA tem agendamento futuro (sugerido ou confirmado), nao roda o
+  // classificador de aceite. Caso contrario "Pode sim" (confirmando lembrete)
+  // vira tentativa de criar novo agendamento. Reagendamento eh capturado pelo
+  // classificador de adiamento, nao por aqui.
   const { data: agendamentoExistente } = await supabase
     .from("agendamentos")
     .select("id, data_inicio")
     .eq("lead_id", leadId)
-    .eq("status", "agendado")
+    .in("status", ["sugerido", "agendado"])
     .gte("data_inicio", new Date().toISOString())
     .order("data_inicio", { ascending: true })
     .limit(1)
@@ -842,46 +846,23 @@ async function tentarTratarAceite(
           timeZone: "America/Sao_Paulo",
         },
       );
-      console.log("[caio:aceite]", leadId, "agendou pra", result.agendamento.data_inicio);
+      console.log("[caio:aceite]", leadId, "anotou horário sugerido pra", result.agendamento.data_inicio);
       // Mantém via LLM porque é uma confirmação simples — não tem risco de
       // alucinação inventando horário.
       return {
         tipo: "extras",
         extrasContexto: [
-          `[AGENDAMENTO CRIADO] O cliente acabou de aceitar agendar a retirada e o agendamento JÁ FOI CRIADO pra: ${dataStr} (fuso de Brasília). Confirme com ele de forma natural e curta. Cite data e hora exatas. Avise que ele vai receber um lembrete antes. NÃO repita os horários alternativos.`,
+          `[HORÁRIO ANOTADO] O cliente sugeriu um horário pra retirada/entrega e ele JÁ FOI ANOTADO pra equipe: ${dataStr} (fuso de Brasília). Diga de forma natural e curta que você anotou esse horário e que a EQUIPE vai confirmar com ele. Cite data e hora exatas. NÃO diga que está "agendado" ou "confirmado" — é o horário que ele sugeriu e a equipe confirma.`,
         ],
       };
     }
-    // Falhou criar agendamento — vai pedir outro dia (sem listar horários)
-    const alternativas = result.alternativas ?? [];
-    console.log(
-      "[caio:aceite]",
-      leadId,
-      "nao encaixou:",
-      result.motivo,
-      "alternativas[",
-      alternativas.length,
-      "]:",
-      alternativas.map((s) => s.label).join(" | "),
-    );
-    // Pré-checa se EXISTE o mesmo horário em outro dia atendido. Se sim,
-    // damos isso de dica pra IA (sem listar horários ainda — só pra ela
-    // saber que pode sugerir mesmo horário).
-    const horaPedida = new Intl.DateTimeFormat("en-GB", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-      timeZone: "America/Sao_Paulo",
-    }).format(momento);
-    const buscaHora = await calcularSlotsLivres({
-      organizationId,
-      qtdMaxima: 5,
-      filtrarPorHora: horaPedida,
-    });
-    const slotsMesmaHora =
-      "slots" in buscaHora ? buscaHora.slots : [];
-    // Resposta determinística — sem LLM. Garante que a IA realmente pede
-    // outro dia em vez de listar horários inventados (LLM tendia a desobedecer).
+    // Horário não serve (loja fechada, data distante etc.) — resposta
+    // determinística explicando o FUNCIONAMENTO da loja, sem LLM.
+    console.log("[caio:aceite]", leadId, "horário não serve:", result.motivo);
+    const func = result.funcionamento;
+    const abreF = func?.abre ?? "08:00";
+    const fechaF = func?.fecha ?? "18:00";
+    const diasTextoF = descreverDiasNatural(func?.diasSemana ?? [1, 2, 3, 4, 5]);
     const { data: leadInfo } = await supabase
       .from("leads")
       .select("nome")
@@ -889,9 +870,8 @@ async function tentarTratarAceite(
       .single();
     const primeiroNome = leadInfo?.nome?.split(" ")[0] ?? null;
     const sauda = primeiroNome ? `${primeiroNome}, ` : "";
-    const temMesmaHora = slotsMesmaHora.length > 0;
 
-    // Pega o dia da semana pedido (em SP) pra usar nas respostas
+    // Dia da semana pedido (em SP) pra usar nas respostas
     const wdPedido = new Intl.DateTimeFormat("en-US", {
       weekday: "short",
       timeZone: "America/Sao_Paulo",
@@ -905,58 +885,33 @@ async function tentarTratarAceite(
 
     let texto: string;
     if (result.motivo === "dia_nao_atendido") {
-      texto = `${sauda}${nomeDiaPedido} a gente não atende. Qual outro dia da semana funciona melhor pra você?`;
+      texto = `${sauda}${nomeDiaPedido} a loja não abre. Funcionamos ${diasTextoF}, das ${abreF} às ${fechaF}. Qual dia fica melhor pra você?`;
     } else if (result.motivo === "fora_horizonte") {
-      texto = `${sauda}essa data está muito distante. Pode escolher outro dia da semana mais próximo?`;
-    } else if (result.motivo === "antes_antecedencia") {
-      texto = `${sauda}preciso de pelo menos algumas horas de antecedência. Qual outro dia funciona pra você?`;
-    } else if (temMesmaHora) {
-      // fora_slot/conflito + mesmo horário existe em outro dia
-      texto = `${sauda}esse horário não está disponível na ${nomeDiaPedido}, mas tenho o mesmo horário (${horaPedida}) em outro dia. Qual dia da semana fica melhor pra você?`;
+      texto = `${sauda}essa data tá um pouco distante pra eu já deixar anotada. Me diz um dia mais próximo que eu anoto pra equipe — ou me chama de novo mais perto da data, combinado?`;
+    } else if (result.motivo === "no_passado") {
+      texto = `${sauda}esse horário já passou. Me diz um dia e horário daqui pra frente? A loja abre ${diasTextoF}, das ${abreF} às ${fechaF}.`;
+    } else if (result.motivo === "fora_funcionamento") {
+      texto = `${sauda}nesse horário a loja tá fechada — funcionamos das ${abreF} às ${fechaF}. Me diz outro horário dentro desse período que eu já deixo anotado pra equipe.`;
     } else {
-      // Sem mesmo horário em outro dia — lista os horários disponíveis NO
-      // dia que o lead pediu (ele já manifestou preferência por esse dia)
-      const linha =
-        diaPedidoNum > 0
-          ? await gerarLinhaHorariosDoDia({
-              organizationId,
-              diaSemana: diaPedidoNum,
-            })
-          : null;
-      if (linha) {
-        texto = `${sauda}o horário ${horaPedida} não está disponível na ${nomeDiaPedido}. ${linha}`;
-      } else {
-        texto = `${sauda}esse horário não está disponível. Qual outro dia da semana funciona melhor pra você?`;
-      }
+      texto = `${sauda}tive um probleminha pra anotar aqui. Pode me confirmar de novo o dia e o horário?`;
     }
     return { tipo: "resposta_direta", texto };
   }
 
   if (classif.intencao === "aceita_sem_horario") {
-    // Fluxo: primeiro pergunta qual dia (sem listar horários ainda).
-    // Quando o lead disser o dia, o atalho de disponibilidade detecta e
-    // responde com os horários daquele dia específico.
+    // Informa o funcionamento da loja e convida o cliente a dizer dia+horário.
+    // O horário dele vira SUGESTÃO anotada — a equipe confirma depois.
     const { data: orgInfo } = await supabase
       .from("organizations")
       .select("agenda_config")
       .eq("id", organizationId)
       .single();
-    const nomesDias = ["", "segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"];
-    const cfg = orgInfo?.agenda_config as
-      | { dias_semana?: number[] }
-      | null;
-    const dias = (cfg?.dias_semana ?? [1, 2, 3, 4, 5])
-      .map((d) => nomesDias[d])
-      .filter(Boolean);
-    const diasDesc =
-      dias.length === 5 && dias.every((d, i) => d === nomesDias[i + 1])
-        ? "de segunda a sexta"
-        : dias.length === 1
-          ? dias[0]
-          : dias.length === 2
-            ? dias.join(" e ")
-            : dias.slice(0, -1).join(", ") + " e " + dias[dias.length - 1];
-    console.log("[caio:aceite]", leadId, "aceitou sem horario — perguntando dia (determinístico)");
+    const cfg = orgInfo?.agenda_config
+      ? getAgendaConfig(orgInfo.agenda_config)
+      : AGENDA_CONFIG_DEFAULT;
+    const { abre, fecha } = janelaFuncionamento(cfg);
+    const diasDesc = descreverDiasNatural(cfg.dias_semana);
+    console.log("[caio:aceite]", leadId, "aceitou sem horario — informando funcionamento (determinístico)");
     const { data: leadInfo2 } = await supabase
       .from("leads")
       .select("nome")
@@ -966,7 +921,7 @@ async function tentarTratarAceite(
     const nome2 = primeiroNome2 ? `, ${primeiroNome2}` : "";
     return {
       tipo: "resposta_direta",
-      texto: `Perfeito${nome2}! Que dia fica melhor pra você buscar? A gente atende ${diasDesc}.`,
+      texto: `Perfeito${nome2}! A loja abre ${diasDesc}, das ${abre} às ${fecha}. Me diz o dia e o horário que ficam melhores pra você que eu já deixo anotado pra equipe.`,
     };
   }
 

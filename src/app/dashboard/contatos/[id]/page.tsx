@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { StatusSelector } from "@/components/status-selector";
+import { StatusAgendamentoSelector } from "@/components/status-agendamento-selector";
 import { AtendenteSelector } from "@/components/atendente-selector";
 import { TimelineMensagens } from "@/components/timeline-mensagens";
 import { CaixaResposta } from "@/components/caixa-resposta";
@@ -211,13 +212,17 @@ export default async function LeadDetalhePage({
                     key={a.id}
                     className="p-4 bg-offwhite rounded-lg border border-cinza-claro"
                   >
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center justify-between mb-2 gap-3">
                       <p className="font-heading font-semibold text-preto">
-                        {new Date(a.data_inicio).toLocaleString("pt-BR")}
+                        {dtCurto(a.data_inicio)}
                       </p>
-                      <span className="text-xs font-heading font-semibold text-cinza-medio uppercase">
-                        {a.status}
-                      </span>
+                      {/* Dropdown de status: é AQUI que a equipe confirma o
+                          horário sugerido (a notificação do admin linka pra
+                          esta página) */}
+                      <StatusAgendamentoSelector
+                        agendamentoId={a.id}
+                        statusAtual={a.status}
+                      />
                     </div>
                     {a.meet_link && (
                       <a

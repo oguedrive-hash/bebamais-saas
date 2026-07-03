@@ -13,6 +13,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   AGENDA_CONFIG_DEFAULT,
   getAgendaConfig,
+  janelaFuncionamento,
 } from "@/lib/caio/agenda-config";
 
 const FUSO = "America/Sao_Paulo";
@@ -165,7 +166,7 @@ function ehPerguntaSobreDisponibilidade(msg: string | null): boolean {
   return PADROES_DISPONIBILIDADE.some((p) => p.test(msg));
 }
 
-function descreverDiasNatural(dias: number[]): string {
+export function descreverDiasNatural(dias: number[]): string {
   if (dias.length === 7) return "todos os dias da semana";
   if (
     dias.length === 5 &&
@@ -239,22 +240,35 @@ export function turnoMencionado(msg: string | null): TurnoDia | null {
   return null;
 }
 
-function horarioEhDoTurno(hhmm: string, turno: TurnoDia): boolean {
-  const [h] = hhmm.split(":").map(Number);
-  if (turno === "manha") return h < 12;
-  if (turno === "tarde") return h >= 12 && h < 18;
-  return h >= 18; // noite
+// Turno tem interseção com a janela de funcionamento da loja?
+// (manhã = até 12h, tarde = 12h-18h, noite = 18h em diante)
+function turnoDentroDoFuncionamento(
+  turno: TurnoDia,
+  abre: string,
+  fecha: string,
+): boolean {
+  const min = (hhmm: string) => {
+    const [h, m] = hhmm.split(":").map(Number);
+    return h * 60 + m;
+  };
+  const janelas: Record<TurnoDia, [number, number]> = {
+    manha: [0, 720],
+    tarde: [720, 1080],
+    noite: [1080, 1440],
+  };
+  const [tIni, tFim] = janelas[turno];
+  return min(abre) < tFim && min(fecha) > tIni;
 }
 
 /**
- * Gera só a linha de horários disponíveis pra um dia da semana específico,
- * sem saudação nem prefixo de "atendemos sim". Reutilizada em outros lugares
- * (ex: quando o lead pediu horário fora dos slots mas o dia é atendido).
+ * Linha de funcionamento pra um dia da semana específico, sem saudação.
  *
- * Se `turno` for fornecido, filtra horários pelo turno (manhã < 12h,
- * tarde 12h-18h, noite ≥ 18h).
+ * Contexto Beba Mais: loja não tem slots de agendamento — o horário do
+ * cliente é SUGESTÃO. A gente informa a janela de funcionamento e convida
+ * o cliente a dizer o horário dele (a equipe confirma depois).
  *
- * Retorna null se não houver horário livre.
+ * Se `turno` for fornecido e a loja não abre naquele turno, retorna null
+ * (o caller explica que naquele turno tá fechado e dá a janela completa).
  */
 export async function gerarLinhaHorariosDoDia(opts: {
   organizationId: string;
@@ -271,65 +285,16 @@ export async function gerarLinhaHorariosDoDia(opts: {
     ? getAgendaConfig(org.agenda_config)
     : AGENDA_CONFIG_DEFAULT;
 
-  const agora = new Date();
-  const limiteAntecedencia = new Date(
-    agora.getTime() + agenda.antecedencia_minima_horas * 3600 * 1000,
-  );
-
-  // Horários livres de UMA ocorrência concreta (dia específico). Lê os slots
-  // reais da agenda + agendamentos ocupados — determinístico, sem alucinar.
-  const slotsDaOcorrencia = async (oc: {
-    ano: number;
-    mes: number;
-    dia: number;
-    inicioDia: Date;
-    fimDia: Date;
-    label: string;
-  }): Promise<string[]> => {
-    const { data: ocupados } = await admin
-      .from("agendamentos")
-      .select("data_inicio, data_fim")
-      .eq("organization_id", opts.organizationId)
-      .eq("status", "agendado")
-      .gte("data_inicio", oc.inicioDia.toISOString())
-      .lt("data_inicio", oc.fimDia.toISOString());
-    const livres: string[] = [];
-    for (const slot of agenda.slots) {
-      const slotInicio = montarHorarioEmDataSP(oc.ano, oc.mes, oc.dia, slot.inicio);
-      const slotFim = montarHorarioEmDataSP(oc.ano, oc.mes, oc.dia, slot.fim);
-      if (slotInicio.getTime() < limiteAntecedencia.getTime()) continue;
-      const conflita = (ocupados ?? []).some((o) => {
-        const oIni = new Date(o.data_inicio).getTime();
-        const oFim = new Date(o.data_fim).getTime();
-        return slotInicio.getTime() < oFim && slotFim.getTime() > oIni;
-      });
-      if (conflita) continue;
-      if (opts.turno && !horarioEhDoTurno(slot.inicio, opts.turno)) continue;
-      livres.push(slot.inicio);
-    }
-    return livres;
-  };
-
-  // 1ª ocorrência (pode ser HOJE). Se hoje já esgotou (todos os slots caíram
-  // dentro da antecedência), rola pra próxima semana daquele dia em vez de só
-  // pedir "qual outro dia" — assim a IA sempre oferece horário concreto.
-  let oc = encontrarProximaOcorrencia(agora, opts.diaSemana);
+  const oc = encontrarProximaOcorrencia(new Date(), opts.diaSemana);
   if (!oc) return null;
-  let horariosLivres = await slotsDaOcorrencia(oc);
-  if (horariosLivres.length === 0) {
-    const seguinte = encontrarProximaOcorrencia(oc.fimDia, opts.diaSemana);
-    if (seguinte) {
-      const livres2 = await slotsDaOcorrencia(seguinte);
-      if (livres2.length > 0) {
-        oc = seguinte;
-        horariosLivres = livres2;
-      }
-    }
+
+  const { abre, fecha } = janelaFuncionamento(agenda);
+  if (opts.turno && !turnoDentroDoFuncionamento(opts.turno, abre, fecha)) {
+    return null;
   }
 
-  if (horariosLivres.length === 0) return null;
   const artigo = diaEhMasculino(opts.diaSemana) ? "No" : "Na";
-  return `${artigo} ${oc.label} tenho disponível às ${horariosLivres.join(", ")}. Qual horário prefere?`;
+  return `${artigo} ${oc.label} a loja fica aberta das ${abre} às ${fecha} — me diz que horas fica melhor pra você que eu já deixo anotado pra equipe.`;
 }
 
 export async function tentarResponderDisponibilidade(opts: {
@@ -354,16 +319,16 @@ export async function tentarResponderDisponibilidade(opts: {
   const diaCitado = diaMencionado(opts.conteudoLead ?? "");
   const dias = descreverDiasNatural(agenda.dias_semana);
 
-  // Caso 1: lead mencionou dia NÃO atendido (ex: sábado, domingo)
-  // Explica + pergunta qual dia ele prefere dentro dos atendidos
+  const { abre, fecha } = janelaFuncionamento(agenda);
+
+  // Caso 1: lead mencionou dia em que a loja NÃO abre (ex: domingo)
   if (diaCitado !== null && !agenda.dias_semana.includes(diaCitado)) {
     const nomeDia = NOMES_DIAS_LISTA[diaCitado];
-    return `${saudacao}${nomeDia} a gente não atende. Atendemos ${dias}. Qual desses dias funciona melhor pra você?`;
+    return `${saudacao}${nomeDia} a loja não abre. Funcionamos ${dias}, das ${abre} às ${fecha}. Qual dia fica melhor pra você?`;
   }
 
-  // Caso 2: lead mencionou dia ATENDIDO — lista os horários daquele dia
-  // direto da config (sem passar pelo calcularSlotsLivres que diversifica).
-  // Se citou turno (manhã/tarde/noite), filtra os horários por aquele turno.
+  // Caso 2: dia ATENDIDO — informa a janela de funcionamento (a loja não tem
+  // slots; o cliente vem/recebe no horário que preferir e a equipe confirma).
   if (diaCitado !== null && agenda.dias_semana.includes(diaCitado)) {
     const turno = turnoMencionado(opts.conteudoLead ?? null);
     const linha = await gerarLinhaHorariosDoDia({
@@ -371,32 +336,27 @@ export async function tentarResponderDisponibilidade(opts: {
       diaSemana: diaCitado,
       turno: turno ?? undefined,
     });
-    if (!linha) {
-      // Se filtrou por turno e não tem nada, tenta sem o filtro
-      if (turno) {
-        const linhaSemTurno = await gerarLinhaHorariosDoDia({
-          organizationId: opts.organizationId,
-          diaSemana: diaCitado,
-        });
-        if (linhaSemTurno) {
-          const labelTurno =
-            turno === "manha"
-              ? "de manhã"
-              : turno === "tarde"
-                ? "à tarde"
-                : "à noite";
-          const proxima = diaEhMasculino(diaCitado)
-            ? "no próximo"
-            : "na próxima";
-          return `${saudacao}não tenho horário livre ${labelTurno} ${proxima} ${NOMES_DIAS_LISTA[diaCitado]}. ${linhaSemTurno}`;
-        }
+    if (linha) return `${saudacao}atendemos sim! ${linha}`;
+
+    // Turno fora do funcionamento (ex: "sábado à noite") → explica e dá a janela
+    if (turno) {
+      const linhaSemTurno = await gerarLinhaHorariosDoDia({
+        organizationId: opts.organizationId,
+        diaSemana: diaCitado,
+      });
+      if (linhaSemTurno) {
+        const labelTurno =
+          turno === "manha"
+            ? "De manhã"
+            : turno === "tarde"
+              ? "À tarde"
+              : "À noite";
+        return `${saudacao}${labelTurno.toLowerCase()} a loja não tá aberta. ${linhaSemTurno}`;
       }
-      const proxima = diaEhMasculino(diaCitado) ? "no próximo" : "na próxima";
-      return `${saudacao}atendemos ${NOMES_DIAS_LISTA[diaCitado]}, mas não tenho horário livre ${proxima}. Pode escolher outro dia? Atendemos ${dias}.`;
     }
-    return `${saudacao}atendemos sim! ${linha}`;
+    return `${saudacao}a loja abre ${dias}, das ${abre} às ${fecha}. Qual dia e horário ficam melhores pra você?`;
   }
 
-  // Caso 3: pergunta geral sem dia citado — SEMPRE pergunta qual dia primeiro
-  return `${saudacao}qual dia funciona melhor pra você? Atendemos ${dias}.`;
+  // Caso 3: pergunta geral sem dia citado — dá o funcionamento e pergunta o dia
+  return `${saudacao}a loja abre ${dias}, das ${abre} às ${fecha}. Qual dia fica melhor pra você?`;
 }

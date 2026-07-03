@@ -1,29 +1,25 @@
 /**
- * Tenta criar um agendamento pro lead num momento específico.
+ * Registra o horário que o CLIENTE sugeriu pra retirada/entrega do pedido.
  *
- * Valida contra `agenda_config` da org:
- *  - dia da semana permitido
- *  - horário cabe num slot/janela
- *  - respeita antecedência mínima
- *  - respeita horizonte máximo
- *  - não conflita com agendamento existente
+ * Contexto Beba Mais (03/07/2026): a loja não trabalha com slots de
+ * agendamento — o horário do cliente é uma SUGESTÃO. A IA só valida que o
+ * momento cai dentro do funcionamento da loja (dia atendido + janela
+ * abre/fecha) e grava o agendamento com status "sugerido". Quem confirma com
+ * o cliente é a equipe, pelo painel (status → "agendado"). Sem checagem de
+ * conflito: a loja atende N clientes ao mesmo tempo.
  *
  * Retorna:
- *  - { ok, agendamento } se criou
- *  - { error, alternativas? } se não pôde — alternativas são slots livres
- *    próximos do momento pedido, pra IA reoferecer ao lead
+ *  - { ok, agendamento } se anotou
+ *  - { error, motivo, funcionamento } se o momento não serve — o caller usa
+ *    `funcionamento` pra explicar a janela da loja ao cliente
  */
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   AGENDA_CONFIG_DEFAULT,
   getAgendaConfig,
-  type AgendaConfig,
+  janelaFuncionamento,
 } from "@/lib/caio/agenda-config";
-import {
-  calcularSlotsLivres,
-  type SlotLivre,
-} from "@/lib/caio/slots-livres";
 import { notificarAdminAgendamento } from "@/lib/caio/notificar-admin";
 import { gerarResumoLead } from "@/lib/caio/resumo-ia";
 
@@ -79,63 +75,11 @@ function parseHHmm(s: string): { h: number; m: number } {
   return { h, m };
 }
 
-/**
- * Verifica se o momento desejado encaixa em algum slot/janela da config.
- * Retorna a duração do agendamento (em min) se encaixar, ou null.
- *
- * - Modo "slot": precisa começar exatamente no início de um slot. Duração =
- *   tamanho do slot.
- * - Modo "duracao": precisa cair dentro de uma janela e ter espaço pra
- *   duracao_padrao a partir do momento. Duração = duracao_padrao.
- */
-function encaixaNaConfig(
-  momento: Date,
-  config: AgendaConfig,
-): { duracaoMin: number } | null {
-  const { ano, mes, dia, hora, min } = partesEmSP(momento);
-
-  for (const slot of config.slots) {
-    const ini = parseHHmm(slot.inicio);
-    const fim = parseHHmm(slot.fim);
-    const slotInicio = montarUtcDeSP(ano, mes, dia, ini.h, ini.m);
-    const slotFim = montarUtcDeSP(ano, mes, dia, fim.h, fim.m);
-
-    if (config.modo === "slot") {
-      // Precisa começar exatamente no inicio do slot (tolerância de 1 min)
-      const diffMs = Math.abs(momento.getTime() - slotInicio.getTime());
-      if (diffMs <= 60 * 1000) {
-        const duracaoMin = Math.round(
-          (slotFim.getTime() - slotInicio.getTime()) / 60000,
-        );
-        return { duracaoMin };
-      }
-    } else {
-      // duracao: precisa caber inteiro dentro da janela
-      const fimMomento = new Date(
-        momento.getTime() + config.duracao_padrao * 60 * 1000,
-      );
-      if (
-        momento.getTime() >= slotInicio.getTime() &&
-        fimMomento.getTime() <= slotFim.getTime()
-      ) {
-        // valida também que cai num "tick" da grade de duração
-        // (ex: janela 8h-12h + duracao 60 → 8:00, 9:00, 10:00, 11:00)
-        const minutosDesdeInicio = Math.round(
-          (momento.getTime() - slotInicio.getTime()) / 60000,
-        );
-        if (minutosDesdeInicio % config.duracao_padrao === 0) {
-          return { duracaoMin: config.duracao_padrao };
-        }
-      }
-    }
-
-    // Ignorou o horario, mas o dia/horario pediu pode ser inválido — segue
-    // tentando os outros slots. Variáveis acima só usadas no escopo desse loop.
-    void hora;
-    void min;
-  }
-  return null;
-}
+export type FuncionamentoInfo = {
+  abre: string; // "HH:mm"
+  fecha: string; // "HH:mm"
+  diasSemana: number[]; // 1=seg ... 7=dom
+};
 
 export type ResultadoAgendar =
   | {
@@ -146,7 +90,16 @@ export type ResultadoAgendar =
         data_fim: string;
       };
     }
-  | { error: string; motivo: "antes_antecedencia" | "fora_horizonte" | "dia_nao_atendido" | "fora_slot" | "conflito" | "falha_db"; alternativas?: SlotLivre[] };
+  | {
+      error: string;
+      motivo:
+        | "no_passado"
+        | "fora_horizonte"
+        | "dia_nao_atendido"
+        | "fora_funcionamento"
+        | "falha_db";
+      funcionamento?: FuncionamentoInfo;
+    };
 
 export async function tentarAgendar(opts: {
   organizationId: string;
@@ -155,7 +108,7 @@ export async function tentarAgendar(opts: {
 }): Promise<ResultadoAgendar> {
   const admin = createAdminClient();
 
-  // 1. Carrega config
+  // 1. Carrega config (dias + janela de funcionamento)
   const { data: org } = await admin
     .from("organizations")
     .select("agenda_config")
@@ -164,92 +117,74 @@ export async function tentarAgendar(opts: {
   const config = org?.agenda_config
     ? getAgendaConfig(org.agenda_config)
     : AGENDA_CONFIG_DEFAULT;
+  const { abre, fecha } = janelaFuncionamento(config);
+  const funcionamento: FuncionamentoInfo = {
+    abre,
+    fecha,
+    diasSemana: config.dias_semana,
+  };
 
   const agora = new Date();
 
-  // 2. Validações temporais
-  const limiteAntecedencia = new Date(
-    agora.getTime() + config.antecedencia_minima_horas * 3600 * 1000,
-  );
+  // 2. Momento no passado não serve (o classificador já degrada casos assim,
+  // mas fica a rede de segurança)
+  if (opts.momento.getTime() < agora.getTime()) {
+    return {
+      error: "horário já passou",
+      motivo: "no_passado",
+      funcionamento,
+    };
+  }
+
+  // 3. Horizonte — sugestão muito longe é melhor a equipe combinar perto da data
   const limiteHorizonte = new Date(
     agora.getTime() + config.horizonte_dias * 86400 * 1000,
   );
-  if (opts.momento.getTime() < limiteAntecedencia.getTime()) {
-    const alt = await calcularSlotsLivres({
-      organizationId: opts.organizationId,
-      qtdMaxima: config.qtd_opcoes_propor,
-    });
-    return {
-      error: `precisa ser ao menos ${config.antecedencia_minima_horas}h no futuro`,
-      motivo: "antes_antecedencia",
-      alternativas: "slots" in alt ? alt.slots : undefined,
-    };
-  }
   if (opts.momento.getTime() > limiteHorizonte.getTime()) {
     return {
-      error: `só agendamos nos próximos ${config.horizonte_dias} dias`,
+      error: `só anotamos horários pros próximos ${config.horizonte_dias} dias`,
       motivo: "fora_horizonte",
+      funcionamento,
     };
   }
 
-  // 3. Dia da semana permitido?
+  // 4. Dia em que a loja abre?
   const ds = diaSemanaSP(opts.momento);
   if (!config.dias_semana.includes(ds)) {
-    const alt = await calcularSlotsLivres({
-      organizationId: opts.organizationId,
-      qtdMaxima: config.qtd_opcoes_propor,
-    });
     return {
-      error: "não atendemos nesse dia da semana",
+      error: "a loja não abre nesse dia",
       motivo: "dia_nao_atendido",
-      alternativas: "slots" in alt ? alt.slots : undefined,
+      funcionamento,
     };
   }
 
-  // 4. Encaixa em algum slot/janela?
-  const encaixa = encaixaNaConfig(opts.momento, config);
-  if (!encaixa) {
-    // NÃO passa apartirDe: opts.momento — isso fazia o limite de antecedência
-    // mínima (2h) ser calculado A PARTIR do momento pedido pelo lead, o que
-    // descartava o resto do dia se o lead pedisse no fim. Usa o now() normal.
-    const alt = await calcularSlotsLivres({
-      organizationId: opts.organizationId,
-      qtdMaxima: config.qtd_opcoes_propor,
-    });
+  // 5. Dentro da janela de funcionamento? (inicio >= abre e inicio <= fecha —
+  // buscar no minuto do fechamento é aceitável, é só sugestão)
+  const { ano, mes, dia } = partesEmSP(opts.momento);
+  const a = parseHHmm(abre);
+  const f = parseHHmm(fecha);
+  const abreNoDia = montarUtcDeSP(ano, mes, dia, a.h, a.m);
+  const fechaNoDia = montarUtcDeSP(ano, mes, dia, f.h, f.m);
+  if (
+    opts.momento.getTime() < abreNoDia.getTime() ||
+    opts.momento.getTime() > fechaNoDia.getTime()
+  ) {
     return {
-      error: "horário não cabe nos slots configurados",
-      motivo: "fora_slot",
-      alternativas: "slots" in alt ? alt.slots : undefined,
+      error: "horário fora do funcionamento da loja",
+      motivo: "fora_funcionamento",
+      funcionamento,
     };
   }
 
+  // 6. Anota a sugestão. Duração nominal (só pra exibição no calendário),
+  // aparada pra não passar do fechamento.
   const dataInicio = opts.momento;
-  const dataFim = new Date(dataInicio.getTime() + encaixa.duracaoMin * 60 * 1000);
+  const fimNominal = new Date(
+    dataInicio.getTime() + config.duracao_padrao * 60 * 1000,
+  );
+  const dataFim =
+    fimNominal.getTime() > fechaNoDia.getTime() ? fechaNoDia : fimNominal;
 
-  // 5. Conflito com agendamento existente?
-  const { data: conflitos } = await admin
-    .from("agendamentos")
-    .select("id, data_inicio, data_fim")
-    .eq("organization_id", opts.organizationId)
-    .eq("status", "agendado")
-    .lt("data_inicio", dataFim.toISOString())
-    .gt("data_fim", dataInicio.toISOString());
-  if (conflitos && conflitos.length > 0) {
-    // NÃO passa apartirDe: opts.momento — isso fazia o limite de antecedência
-    // mínima (2h) ser calculado A PARTIR do momento pedido pelo lead, o que
-    // descartava o resto do dia se o lead pedisse no fim. Usa o now() normal.
-    const alt = await calcularSlotsLivres({
-      organizationId: opts.organizationId,
-      qtdMaxima: config.qtd_opcoes_propor,
-    });
-    return {
-      error: "já tem outro agendamento nesse horário",
-      motivo: "conflito",
-      alternativas: "slots" in alt ? alt.slots : undefined,
-    };
-  }
-
-  // 6. Cria
   const { data: novo, error } = await admin
     .from("agendamentos")
     .insert({
@@ -257,22 +192,25 @@ export async function tentarAgendar(opts: {
       lead_id: opts.leadId,
       data_inicio: dataInicio.toISOString(),
       data_fim: dataFim.toISOString(),
-      status: "agendado",
+      status: "sugerido",
     })
     .select("id, data_inicio, data_fim")
     .single();
   if (error || !novo) {
-    return { error: error?.message ?? "falha ao criar", motivo: "falha_db" };
+    return {
+      error: error?.message ?? "falha ao criar",
+      motivo: "falha_db",
+      funcionamento,
+    };
   }
 
-  // Vincula o agendamento ao pedido aberto do lead (contexto Beba Mais:
-  // retirada agendada é a hora de buscar o PEDIDO). Best-effort — se não
-  // há pedido aberto, o extrator reconcilia depois. Guardas de ownership:
-  // não mexe em pedido editado pelo humano, não sobrescreve vínculo
-  // existente, e não toca pedido que o atendente já assumiu.
+  // Vincula ao pedido aberto do lead (a retirada/entrega é do PEDIDO).
+  // Best-effort com guardas de ownership: não mexe em pedido editado pelo
+  // humano, não sobrescreve vínculo, não toca pedido já assumido. A
+  // modalidade fica com o extrator (pode ser entrega!).
   await admin
     .from("pedidos")
-    .update({ agendamento_id: novo.id, modalidade: "retirada" })
+    .update({ agendamento_id: novo.id })
     .eq("lead_id", opts.leadId)
     .eq("editado_pelo_painel", false)
     .is("agendamento_id", null)

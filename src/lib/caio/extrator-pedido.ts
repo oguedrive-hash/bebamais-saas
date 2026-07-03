@@ -313,14 +313,15 @@ export async function extrairEAtualizarPedido(opts: {
       .or("nome.is.null,nome.eq.");
   }
 
-  // Reconciliação: pedido de retirada sem agendamento vinculado + agendamento
-  // futuro existente do lead → linka (cobre agendamento criado antes do pedido)
-  if (extracao.modalidade === "retirada") {
+  // Reconciliação: pedido sem agendamento vinculado + agendamento futuro
+  // existente do lead → linka (cobre horário sugerido ANTES do pedido existir).
+  // Vale pra retirada E entrega — o horário sugerido pode ser dos dois.
+  if (extracao.modalidade === "retirada" || extracao.modalidade === "entrega") {
     const { data: ag } = await admin
       .from("agendamentos")
       .select("id")
       .eq("lead_id", opts.leadId)
-      .eq("status", "agendado")
+      .in("status", ["sugerido", "agendado"])
       .gte("data_inicio", new Date().toISOString())
       .order("data_inicio", { ascending: true })
       .limit(1)
