@@ -80,8 +80,8 @@ export default async function DashboardLayout({
               <NavLink href="/dashboard" exact>
                 Dashboard
               </NavLink>
-              <NavLink href="/dashboard/pedidos">Pedidos</NavLink>
               <NavLink href="/dashboard/contatos">Conversas</NavLink>
+              <NavLink href="/dashboard/pedidos">Pedidos</NavLink>
               <NavLink href="/dashboard/agenda">Retiradas</NavLink>
               <NavLink href="/dashboard/produtos">Produtos</NavLink>
               {/* Inbound (/dashboard/leads) e Prospecção (/dashboard/prospeccao)
