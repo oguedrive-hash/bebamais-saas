@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { chatCompletion, type ChatMessage } from "./openai";
 import { getAgendaConfig, janelaFuncionamento } from "./agenda-config";
+import { extrasCatalogoPorCategoria } from "./consulta-catalogo";
 import { personaDoLead } from "./numeros";
 
 const NOMES_DIAS = [
@@ -163,6 +164,20 @@ export async function gerarRespostaCaio(opts: {
     extras.push(
       `IMPORTANTE: neste atendimento o seu nome é ${nomePersona}. Sempre que se referir a si mesmo ou se apresentar, use ${nomePersona}.`,
     );
+  }
+
+  // Catálogo por categoria: se a última mensagem do lead menciona uma
+  // categoria (cerveja, whisky, refri...), injeta os itens DISPONÍVEIS reais
+  // — a IA cita marcas do catálogo em vez de "não consigo informar" ou chute.
+  if (!opts.promptBaseOverride) {
+    const ultimaDoLead = [...mensagens]
+      .reverse()
+      .find((m) => m.direcao === "entrada");
+    const blocoCatalogo = await extrasCatalogoPorCategoria({
+      organizationId: lead.organization_id,
+      texto: ultimaDoLead?.conteudo ?? null,
+    });
+    if (blocoCatalogo) extras.push(blocoCatalogo);
   }
 
   // Funcionamento da loja — incluído no fluxo normal pra que a IA responda

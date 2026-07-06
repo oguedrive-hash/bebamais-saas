@@ -54,6 +54,19 @@ function tokenizar(s: string): string[] {
 const RE_VOLUME = /^\d+(?:,\d+)?(ml|l)$/;
 
 /**
+ * Categorias genéricas: sozinhas não identificam produto nenhum. Sem essa
+ * guarda, "2 fardos de cerveja" casava com "Cerveja Baden Baden" — o ÚNICO
+ * item do catálogo com "cerveja" no nome curto (as marcas não carregam a
+ * palavra). Item genérico → abstém; o LLM pergunta a variação ao cliente.
+ */
+const CATEGORIAS_GENERICAS = new Set([
+  "cerveja", "breja", "chopp", "chope", "refrigerante", "refri", "agua",
+  "suco", "whisky", "whiskey", "uisque", "vodka", "gin", "cachaca", "pinga",
+  "rum", "tequila", "licor", "conhaque", "vinho", "espumante", "energetico",
+  "isotonico", "cha", "gelo", "carvao", "ice", "bebida", "drink",
+]);
+
+/**
  * Um token do item "cobre" um token do catálogo se:
  *  - for igual; ou
  *  - for número puro prefixando um volume ("600" → "600ml"); ou
@@ -119,6 +132,10 @@ export async function matchCatalogo(
 ): Promise<ProdutoCatalogo | null> {
   const itemToks = tokenizar(produtoTexto);
   if (itemToks.length === 0) return null;
+
+  // Item que é SÓ categoria genérica ("cerveja", "água"...) não identifica
+  // produto — abstém em vez de casar com quem tiver a palavra no nome.
+  if (itemToks.every((t) => CATEGORIAS_GENERICAS.has(t))) return null;
 
   const catalogo = await carregarCatalogo(organizationId);
   if (catalogo.length === 0) return null;

@@ -51,7 +51,8 @@ Retorne APENAS JSON, sem markdown:
 {"itens":[{"produto":"...","quantidade":N,"unidade":"caixa|fardo|pack|unidade|litro ou null"}],"modalidade":"retirada"|"entrega"|null,"endereco":"..."|null,"nome_cliente":"..."|null,"completo":true|false,"confirmado":true|false}
 
 REGRAS:
-- "itens": só o que o cliente PEDIU (não o que só perguntou preço). Nome do produto normalizado como dito (ex: "Skol lata 350ml"). Se ainda não pediu nada: [].
+- "itens": só o que o cliente PEDIU (não o que só perguntou preço). Nome do produto EXATAMENTE como o cliente disse (ex: "Skol lata 350ml"). Se ainda não pediu nada: [].
+- NUNCA acrescente marca, tamanho, volume ou variação que o cliente NÃO falou: "coca" vira "Coca-Cola" (sem 2L/lata), "cerveja" fica "cerveja" (sem marca), "água" fica "água". Só detalhe o item quando o CLIENTE detalhou (ou confirmou uma sugestão do atendente).
 - Se o cliente MUDOU o pedido no meio da conversa, extraia a versão MAIS RECENTE.
 - "modalidade": "retirada" se vai buscar na loja, "entrega" se pediu entrega, null se indefinido.
 - "endereco": só se entrega e o cliente informou (bairro conta); senão null.
