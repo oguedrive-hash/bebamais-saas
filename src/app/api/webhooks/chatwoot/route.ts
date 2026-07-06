@@ -1022,7 +1022,7 @@ async function gerarERespondeCaio(
     const nomeAnt = personaAnt?.persona_nome || "outro atendente do nosso time";
     const nomeAtual = personaAtual?.persona_nome || "o atendente";
     extrasFinal.push(
-      `CONTINUACAO DE OUTRO NUMERO: este lead vinha conversando com ${nomeAnt} em outro numero nosso e agora escreveu aqui (voce e ${nomeAtual} — mesmo time, mesma empresa). Na SUA PROXIMA resposta: (1) reconheca a troca de forma natural e acolhedora, ex: "O Lucas, legal, vamos continuar por aqui"; (2) VALIDE um ponto CONCRETO que ele JA tinha falado no historico, ex: "la com ${nomeAnt} voce disse que tem 5 funcionarios, e isso mesmo?" — use um dado que REALMENTE aparece no historico, NUNCA invente; (3) depois siga a conversa de onde parou. Tudo em 1-2 frases curtas, no maximo UMA pergunta.`,
+      `CONTINUACAO DE OUTRO NUMERO: este lead vinha conversando com ${nomeAnt} em outro numero nosso e agora escreveu aqui (voce e ${nomeAtual} — mesmo time, mesma empresa). Na SUA PROXIMA resposta: (1) reconheca a troca de forma natural e acolhedora (ex: "vamos continuar por aqui"); (2) SE — e somente se — o historico acima tiver um ponto CONCRETO que ELE falou (item de pedido, retirada ou entrega, bairro/endereco), retome esse ponto; se o historico NAO tiver nada concreto, NAO afirme nada sobre ele — so pergunte no que pode ajudar hoje. NUNCA invente dados e NUNCA repita exemplos desta instrucao como se fossem fatos. Tudo em 1-2 frases curtas, no maximo UMA pergunta.`,
     );
     // Consome a flag — a validacao acontece UMA vez por troca.
     await supabase.from("leads").update({ instancia_anterior: null }).eq("id", leadId);
