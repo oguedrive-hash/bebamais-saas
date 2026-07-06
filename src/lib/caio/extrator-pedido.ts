@@ -53,6 +53,7 @@ Retorne APENAS JSON, sem markdown:
 REGRAS:
 - "itens": só o que o cliente PEDIU (não o que só perguntou preço). Nome do produto EXATAMENTE como o cliente disse (ex: "Skol lata 350ml"). Se ainda não pediu nada: [].
 - NUNCA acrescente marca, tamanho, volume ou variação que o cliente NÃO falou: "coca" vira "Coca-Cola" (sem 2L/lata), "cerveja" fica "cerveja" (sem marca), "água" fica "água". Só detalhe o item quando o CLIENTE detalhou (ou confirmou uma sugestão do atendente).
+- Apelidos de tamanho/embalagem ("seiscentos", "litrão", "latão", "longneck", "meiota") fazem parte do NOME do produto — nunca são quantidade nem unidade. "um seiscentos de coca" → {"produto":"coca seiscentos","quantidade":1}; "2 longneck de corona" → {"produto":"corona longneck","quantidade":2}.
 - Se o cliente MUDOU o pedido no meio da conversa, extraia a versão MAIS RECENTE.
 - "modalidade": "retirada" se vai buscar na loja, "entrega" se pediu entrega, null se indefinido.
 - "endereco": só se entrega e o cliente informou (bairro conta); senão null.
@@ -76,20 +77,44 @@ function validarExtracao(raw: unknown): ExtracaoPedido | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
   const itensRaw = Array.isArray(o.itens) ? o.itens : [];
+  // Unidades válidas — qualquer outra coisa que o LLM puser aqui (ex:
+  // "longneck", "seiscentos") é parte do NOME do produto, não unidade.
+  const UNIDADES = new Set([
+    "caixa", "caixas", "fardo", "fardos", "pack", "packs", "unidade",
+    "unidades", "litro", "litros", "garrafa", "garrafas", "lata", "latas",
+    "engradado", "engradados", "saco", "sacos", "pacote", "pacotes",
+  ]);
   const itens: ItemPedido[] = [];
   for (const it of itensRaw.slice(0, 30)) {
     if (!it || typeof it !== "object") continue;
     const i = it as Record<string, unknown>;
-    const produto = typeof i.produto === "string" ? i.produto.trim() : "";
+    let produto = typeof i.produto === "string" ? i.produto.trim() : "";
     const quantidade = Number(i.quantidade);
-    if (!produto || !Number.isFinite(quantidade) || quantidade <= 0) continue;
+    // Quantidade absurda (ex: "um seiscentos de coca" → 600) é erro de
+    // parse do LLM — descarta o item; o próximo ciclo re-extrai.
+    if (
+      !produto ||
+      !Number.isFinite(quantidade) ||
+      quantidade <= 0 ||
+      quantidade > 500
+    )
+      continue;
+    let unidade =
+      typeof i.unidade === "string" && i.unidade.trim()
+        ? i.unidade.trim().slice(0, 30)
+        : null;
+    if (unidade && unidade.toLowerCase() === "null") unidade = null;
+    // Apelido de tamanho/embalagem no campo unidade ("longneck de corona"
+    // virava unidade=longneck + produto=corona, e o matcher casava a
+    // variante errada) → devolve pro nome do produto.
+    if (unidade && !UNIDADES.has(unidade.toLowerCase())) {
+      produto = `${produto} ${unidade}`.trim();
+      unidade = null;
+    }
     itens.push({
       produto: produto.slice(0, 120),
       quantidade,
-      unidade:
-        typeof i.unidade === "string" && i.unidade.trim()
-          ? i.unidade.trim().slice(0, 30)
-          : null,
+      unidade,
     });
   }
   const modalidade =

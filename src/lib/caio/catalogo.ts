@@ -15,7 +15,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export type ProdutoCatalogo = { codigo_ref: string; descricao: string };
 
-type Cache = { itens: (ProdutoCatalogo & { tokens: string[] })[]; em: number };
+type ItemCatalogo = ProdutoCatalogo & {
+  tokens: string[]; // descrição + apelidos (matching)
+  nTokensDesc: number; // só descrição — base da "sobra" no desempate
+};
+type Cache = { itens: ItemCatalogo[]; em: number };
 const cachePorOrg = new Map<string, Cache>();
 const TTL_MS = 5 * 60_000;
 
@@ -88,7 +92,7 @@ function tokenCasa(itemTok: string, catTok: string): boolean {
 
 async function carregarCatalogo(
   organizationId: string,
-): Promise<(ProdutoCatalogo & { tokens: string[] })[]> {
+): Promise<ItemCatalogo[]> {
   const hit = cachePorOrg.get(organizationId);
   if (hit && Date.now() - hit.em < TTL_MS) return hit.itens;
 
@@ -110,13 +114,15 @@ async function carregarCatalogo(
   const itens = (data ?? []).map((p) => {
     // Apelidos populares ("litrão", "seiscentos", "longneck"...) entram como
     // tokens extras — o cliente pede por nome que não está na descrição.
+    const descToks = tokenizar(p.descricao);
     const apelidoToks = ((p.apelidos as string[] | null) ?? []).flatMap((a) =>
       tokenizar(a),
     );
     return {
       codigo_ref: p.codigo_ref as string,
       descricao: p.descricao as string,
-      tokens: [...new Set([...tokenizar(p.descricao), ...apelidoToks])],
+      tokens: [...new Set([...descToks, ...apelidoToks])],
+      nTokensDesc: descToks.length,
     };
   });
   cachePorOrg.set(organizationId, { itens, em: Date.now() });
@@ -170,7 +176,7 @@ export async function matchCatalogo(
 }
 
 function escolherCandidato(
-  catalogo: (ProdutoCatalogo & { tokens: string[] })[],
+  catalogo: ItemCatalogo[],
   itemToks: string[],
   opts?: { recusarSeTemVolumeDiferente?: string[] },
 ): ProdutoCatalogo | null {
@@ -189,10 +195,15 @@ function escolherCandidato(
   if (candidatos.length === 0) return null;
   if (candidatos.length === 1) return candidatos[0];
 
+  // 1 palavra só não desambigua variante: "corona" com 5 Coronas no catálogo
+  // escolhia a de nome mais curto (Corona Lata) — errado. Abstém.
+  if (itemToks.length < 2) return null;
+
   // Vários candidatos: prefere o MAIS específico (menos tokens sobrando).
+  // Sobra conta só os tokens da DESCRIÇÃO (apelido não penaliza o produto).
   // Se houver empate no topo → ambíguo → null.
   const ordenados = candidatos
-    .map((c) => ({ c, sobra: c.tokens.length - itemToks.length }))
+    .map((c) => ({ c, sobra: c.nTokensDesc - itemToks.length }))
     .sort((a, b) => a.sobra - b.sobra);
   const melhor = ordenados[0];
   const segundo = ordenados[1];
