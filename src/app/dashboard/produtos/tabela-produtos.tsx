@@ -19,6 +19,7 @@ export type ProdutoRow = {
   codigo_ref: string;
   descricao: string;
   disponivel: boolean;
+  apelidos?: string[];
 };
 
 type ModalState =
@@ -156,6 +157,14 @@ function LinhaProduto({
         >
           {produto.descricao}
         </span>
+        {(produto.apelidos?.length ?? 0) > 0 && (
+          <span
+            className="ml-2 text-[11px] text-cinza-medio"
+            title="Apelidos — como o cliente costuma pedir"
+          >
+            ({produto.apelidos!.join(", ")})
+          </span>
+        )}
         {!produto.disponivel && (
           <span className="ml-2 inline-flex px-2 py-0.5 rounded-full text-[10px] font-heading font-bold bg-red-50 text-red-700 border border-red-200 uppercase tracking-wider">
             Em falta
@@ -215,6 +224,9 @@ function ProdutoModal({
   const [erro, setErro] = useState<string | null>(null);
   const [codigo, setCodigo] = useState(produto?.codigo_ref ?? "");
   const [descricao, setDescricao] = useState(produto?.descricao ?? "");
+  const [apelidos, setApelidos] = useState(
+    (produto?.apelidos ?? []).join(", "),
+  );
 
   function salvar() {
     if (pending) return; // Enter repetido não dispara double-submit
@@ -222,8 +234,12 @@ function ProdutoModal({
     startTransition(async () => {
       const r =
         modo === "novo"
-          ? await criarProduto({ codigoRef: codigo, descricao })
-          : await atualizarProduto(produto!.id, { codigoRef: codigo, descricao });
+          ? await criarProduto({ codigoRef: codigo, descricao, apelidos })
+          : await atualizarProduto(produto!.id, {
+              codigoRef: codigo,
+              descricao,
+              apelidos,
+            });
       if ("error" in r && r.error) {
         setErro(r.error);
         return;
@@ -266,6 +282,23 @@ function ProdutoModal({
               value={descricao}
               onChange={(e) => setDescricao(e.target.value)}
               placeholder="ex: Lata Coca Cola 350ml"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  salvar();
+                }
+              }}
+              className="w-full px-3 py-2.5 rounded-lg border border-cinza-claro text-sm focus:outline-none focus:border-laranja transition"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1.5">
+              Apelidos (como o cliente pede — separados por vírgula)
+            </label>
+            <input
+              value={apelidos}
+              onChange={(e) => setApelidos(e.target.value)}
+              placeholder="ex: litrão, seiscentos, longneck"
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();

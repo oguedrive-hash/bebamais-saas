@@ -23,7 +23,7 @@ export default async function ProdutosPage({
 
   let query = supabase
     .from("produtos")
-    .select("id, codigo_ref, descricao, disponivel")
+    .select("id, codigo_ref, descricao, disponivel, apelidos")
     .eq("ativo", true)
     .order("descricao", { ascending: true })
     .limit(200);

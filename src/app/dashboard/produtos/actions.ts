@@ -33,9 +33,30 @@ function validar(codigoRef: string, descricao: string): string | null {
   return null;
 }
 
+/** "litrão, seiscentos" → ["litrao","seiscentos"] (minúsculo, sem acento, máx 5) */
+function parseApelidos(raw: string | undefined): string[] {
+  if (!raw?.trim()) return [];
+  return [
+    ...new Set(
+      raw
+        .split(",")
+        .map((a) =>
+          a
+            .trim()
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[̀-ͯ]/g, "")
+            .slice(0, 30),
+        )
+        .filter(Boolean),
+    ),
+  ].slice(0, 5);
+}
+
 export async function criarProduto(input: {
   codigoRef: string;
   descricao: string;
+  apelidos?: string;
 }): Promise<{ ok: true } | { error: string }> {
   const ctx = await orgDoUsuario();
   if ("error" in ctx) return ctx;
@@ -47,6 +68,7 @@ export async function criarProduto(input: {
     organization_id: ctx.orgId,
     codigo_ref: input.codigoRef.trim().toUpperCase(),
     descricao: input.descricao.trim(),
+    apelidos: parseApelidos(input.apelidos),
   });
   if (error) {
     if (error.code === "23505") {
@@ -80,7 +102,7 @@ export async function criarProduto(input: {
 
 export async function atualizarProduto(
   id: string,
-  input: { codigoRef: string; descricao: string },
+  input: { codigoRef: string; descricao: string; apelidos?: string },
 ): Promise<{ ok: true } | { error: string }> {
   const ctx = await orgDoUsuario();
   if ("error" in ctx) return ctx;
@@ -93,6 +115,9 @@ export async function atualizarProduto(
     .update({
       codigo_ref: input.codigoRef.trim().toUpperCase(),
       descricao: input.descricao.trim(),
+      ...(input.apelidos !== undefined
+        ? { apelidos: parseApelidos(input.apelidos) }
+        : {}),
     })
     .eq("id", id)
     .eq("organization_id", ctx.orgId)

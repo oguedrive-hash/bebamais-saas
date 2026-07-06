@@ -95,7 +95,7 @@ async function carregarCatalogo(
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("produtos")
-    .select("codigo_ref, descricao")
+    .select("codigo_ref, descricao, apelidos")
     .eq("organization_id", organizationId)
     .eq("ativo", true)
     .limit(2000);
@@ -107,11 +107,18 @@ async function carregarCatalogo(
     return hit?.itens ?? [];
   }
 
-  const itens = (data ?? []).map((p) => ({
-    codigo_ref: p.codigo_ref as string,
-    descricao: p.descricao as string,
-    tokens: tokenizar(p.descricao),
-  }));
+  const itens = (data ?? []).map((p) => {
+    // Apelidos populares ("litrão", "seiscentos", "longneck"...) entram como
+    // tokens extras — o cliente pede por nome que não está na descrição.
+    const apelidoToks = ((p.apelidos as string[] | null) ?? []).flatMap((a) =>
+      tokenizar(a),
+    );
+    return {
+      codigo_ref: p.codigo_ref as string,
+      descricao: p.descricao as string,
+      tokens: [...new Set([...tokenizar(p.descricao), ...apelidoToks])],
+    };
+  });
   cachePorOrg.set(organizationId, { itens, em: Date.now() });
   return itens;
 }
