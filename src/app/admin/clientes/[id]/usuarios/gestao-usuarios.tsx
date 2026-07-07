@@ -13,15 +13,18 @@ export type UsuarioRow = {
 };
 
 function senhaAleatoria(): string {
-  // Legível pra ditar por telefone: consoante+vogal alternadas + 2 dígitos
+  // Legível pra ditar por telefone (consoante+vogal + 2 dígitos), com fonte
+  // criptográfica — Math.random é previsível demais pra senha.
   const cons = "bcdfghjkmnpqrstvz";
   const vog = "aeiou";
+  const rnd = new Uint32Array(10);
+  crypto.getRandomValues(rnd);
   let s = "";
   for (let i = 0; i < 4; i++) {
-    s += cons[Math.floor(Math.random() * cons.length)];
-    s += vog[Math.floor(Math.random() * vog.length)];
+    s += cons[rnd[i * 2] % cons.length];
+    s += vog[rnd[i * 2 + 1] % vog.length];
   }
-  return s + String(Math.floor(10 + Math.random() * 90));
+  return s + String(10 + (rnd[8] % 90));
 }
 
 export function GestaoUsuarios({

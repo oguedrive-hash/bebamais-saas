@@ -33,6 +33,14 @@ async function exigirAdmin(): Promise<
   return { userId: user.id, orgId: profile.organization_id ?? null };
 }
 
+/** Admin de org só opera na PRÓPRIA org (admin global, sem org, opera em qualquer). */
+function orgPermitida(
+  ctx: { orgId: string | null },
+  organizationId: string,
+): boolean {
+  return ctx.orgId === null || ctx.orgId === organizationId;
+}
+
 export async function criarUsuario(input: {
   nome: string;
   usuario: string;
@@ -42,6 +50,9 @@ export async function criarUsuario(input: {
 }): Promise<{ ok: true; usuario: string } | { error: string }> {
   const ctx = await exigirAdmin();
   if ("error" in ctx) return ctx;
+  if (!orgPermitida(ctx, input.organizationId)) {
+    return { error: "Sem permissão pra essa organização" };
+  }
 
   const nome = input.nome.trim();
   if (!nome) return { error: "Informe o nome" };
@@ -84,12 +95,32 @@ export async function criarUsuario(input: {
   return { ok: true, usuario };
 }
 
+/** O alvo precisa existir e pertencer a uma org que o chamador pode operar. */
+async function validarAlvo(
+  ctx: { userId: string; orgId: string | null },
+  targetUserId: string,
+): Promise<{ ok: true } | { error: string }> {
+  const admin = createAdminClient();
+  const { data: alvo } = await admin
+    .from("profiles")
+    .select("organization_id")
+    .eq("id", targetUserId)
+    .maybeSingle();
+  if (!alvo) return { error: "Usuário não encontrado" };
+  if (ctx.orgId !== null && alvo.organization_id !== ctx.orgId) {
+    return { error: "Sem permissão pra esse usuário" };
+  }
+  return { ok: true };
+}
+
 export async function resetarSenha(input: {
   userId: string;
   novaSenha: string;
 }): Promise<{ ok: true } | { error: string }> {
   const ctx = await exigirAdmin();
   if ("error" in ctx) return ctx;
+  const alvo = await validarAlvo(ctx, input.userId);
+  if ("error" in alvo) return alvo;
   if (input.novaSenha.length < 8) {
     return { error: "Senha muito curta (mínimo 8 caracteres)" };
   }
@@ -110,6 +141,8 @@ export async function removerUsuario(input: {
   if (input.userId === ctx.userId) {
     return { error: "Você não pode remover o próprio usuário" };
   }
+  const alvo = await validarAlvo(ctx, input.userId);
+  if ("error" in alvo) return alvo;
   const admin = createAdminClient();
   // deleteUser derruba auth.users; profiles cai junto (FK on delete cascade)
   const { error } = await admin.auth.admin.deleteUser(input.userId);
