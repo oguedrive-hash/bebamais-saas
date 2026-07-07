@@ -198,10 +198,15 @@ async function processWebhook(webhook: ChatwootWebhook) {
  * detecta. Proporcional puro + jitter +/-35% => cada resposta com tempo unico.
  * Minimo 6s (msg curta tambem nao sai instantanea).
  */
-const MS_POR_CHAR = 400;
+// 150ms/char ≈ digitação rápida de celular (~40 palavras/min). O valor antigo
+// (400ms/char SEM teto) fazia uma resposta de 350 chars levar ~2min20 só de
+// "digitando" — cliente real desiste. Teto de 22s: mantém proporcionalidade
+// e variação (anti-padrão) sem castigar respostas longas.
+const MS_POR_CHAR = 150;
+const TETO_DIGITACAO_MS = 22000;
 function calcularTempoDigitacao(texto: string): number {
   const len = (texto || "").length;
-  const base = Math.max(6000, len * MS_POR_CHAR);
+  const base = Math.max(6000, Math.min(len * MS_POR_CHAR, TETO_DIGITACAO_MS));
   const jitter = 1 + (Math.random() - 0.5) * 0.7; // 0.65x a 1.35x
   return Math.floor(base * jitter);
 }
