@@ -84,10 +84,12 @@ function aplicarTemplate(
   const hora = dataInicio.toLocaleTimeString("pt-BR", {
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: "America/Sao_Paulo",
   });
   const data = dataInicio.toLocaleDateString("pt-BR", {
     day: "2-digit",
     month: "2-digit",
+    timeZone: "America/Sao_Paulo",
   });
   return msg
     .replace(/\{nome\}/g, primeiroNome)
@@ -255,11 +257,93 @@ export async function processarLembretesPendentes(): Promise<{
     await processarLembretesAdmin(supabase, ag, agora);
   }
 
+  // Sugestões de horário paradas sem confirmação da equipe — sem esse aviso,
+  // um "sugerido" esquecido morre em silêncio (o cliente acha que combinou).
+  await processarAvisosSugeridos(supabase, agora);
+
   return {
     total_agendamentos: agendamentos.length,
     enviados: enviadosCount,
     erros: errosCount,
   };
+}
+
+// Nível especial (não colide com os hardcoded 1/2) que marca "aviso de
+// sugerido pendente já enviado" em lembretes_admin_enviados.
+const NIVEL_AVISO_SUGERIDO = 99;
+
+/**
+ * Avisa o admin de agendamentos SUGERIDOS pelo cliente que estão há 30+ min
+ * sem confirmação da equipe. Um aviso por agendamento (dedup nível 99).
+ */
+async function processarAvisosSugeridos(
+  supabase: ReturnType<typeof createAdminClient>,
+  agora: Date,
+): Promise<void> {
+  const adminNumero = process.env.ADMIN_WHATSAPP_NUMBER?.trim();
+  if (!adminNumero) return;
+
+  const meiaHoraAtras = new Date(agora.getTime() - 30 * 60 * 1000);
+  const { data: sugeridos } = await supabase
+    .from("agendamentos")
+    .select(
+      "id, organization_id, lead_id, data_inicio, created_at, lembretes_admin_enviados, lead:leads(id, nome, telefone)",
+    )
+    .eq("status", "sugerido")
+    .gte("data_inicio", agora.toISOString())
+    .lte("created_at", meiaHoraAtras.toISOString())
+    .limit(50);
+
+  for (const ag of (sugeridos ?? []) as unknown as AgendamentoProcess[]) {
+    if ((ag.lembretes_admin_enviados ?? []).includes(NIVEL_AVISO_SUGERIDO))
+      continue;
+    if (!ag.lead) continue;
+    try {
+      const dataStr = new Date(ag.data_inicio).toLocaleString("pt-BR", {
+        weekday: "long",
+        day: "2-digit",
+        month: "long",
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "America/Sao_Paulo",
+      });
+      const leadLabel = ag.lead.nome
+        ? `${ag.lead.nome} (${ag.lead.telefone})`
+        : ag.lead.telefone;
+      const texto = `🟡 *Retirada sugerida aguardando confirmação*
+
+Cliente: ${leadLabel}
+Quando: ${dataStr}
+O cliente sugeriu esse horário e ninguém confirmou ainda.
+
+Confirmar: ${APP_BASE_URL}/dashboard/contatos/${ag.lead.id}`;
+      const instanceAdmin =
+        (await numeroPorPapel(ag.organization_id, "atendimento"))
+          ?.instance_name ?? INSTANCE_NAME;
+      const sent = await enviarSerializado("org:" + ag.organization_id, () =>
+        evoSendText({ instance: instanceAdmin, telefone: adminNumero, texto }),
+      );
+      if ("error" in sent) {
+        console.warn("[lembrete:sugerido]", ag.id, sent.error);
+        continue;
+      }
+      await supabase
+        .from("agendamentos")
+        .update({
+          lembretes_admin_enviados: [
+            ...(ag.lembretes_admin_enviados ?? []),
+            NIVEL_AVISO_SUGERIDO,
+          ],
+        })
+        .eq("id", ag.id);
+      console.log("[lembrete:sugerido]", ag.id, "admin avisado");
+    } catch (err) {
+      console.warn(
+        "[lembrete:sugerido] erro:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
 }
 
 async function processarLembretesAdmin(

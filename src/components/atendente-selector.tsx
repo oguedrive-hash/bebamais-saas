@@ -6,15 +6,20 @@ import { trocarAtendente } from "@/app/dashboard/leads/[id]/actions";
 /**
  * Seletor manual de qual número/persona do pool atende este lead (override).
  * Só aparece quando a org tem 2+ números. A IA on/off é o ToggleCaio (separado).
+ *
+ * Escolher uma persona FIXA a troca (o inbound do cliente não reverte mais);
+ * "Automático" solta a fixação e o lead volta a seguir o número que receber.
  */
 export function AtendenteSelector({
   leadId,
   atual,
   opcoes,
+  fixado = false,
 }: {
   leadId: string;
   atual: string | null;
   opcoes: { instance_name: string; persona_nome: string | null }[];
+  fixado?: boolean;
 }) {
   const [valor, setValor] = useState(atual ?? "");
   const [pending, startTransition] = useTransition();
@@ -51,14 +56,21 @@ export function AtendenteSelector({
           value={valor}
           onChange={handleChange}
           disabled={pending}
+          title={
+            fixado
+              ? "Atendente fixado manualmente — o inbound do cliente não muda mais"
+              : "Seguindo automaticamente o número pelo qual o cliente escreve"
+          }
           className="text-sm font-heading font-medium text-preto bg-white border border-cinza-claro rounded-lg px-2 py-1 focus:outline-none focus:border-laranja transition disabled:opacity-50"
         >
           {!atual && <option value="">— selecione —</option>}
           {opcoes.map((o) => (
             <option key={o.instance_name} value={o.instance_name}>
-              {o.persona_nome ?? o.instance_name}
+              {(o.persona_nome ?? o.instance_name) +
+                (fixado && o.instance_name === atual ? " 📌" : "")}
             </option>
           ))}
+          {fixado && <option value="auto">🔓 Voltar pro automático</option>}
         </select>
       </div>
       {erro && <span className="text-xs text-red-500">{erro}</span>}

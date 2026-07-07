@@ -57,6 +57,7 @@ export async function criarProduto(input: {
   codigoRef: string;
   descricao: string;
   apelidos?: string;
+  categoria?: string;
 }): Promise<{ ok: true } | { error: string }> {
   const ctx = await orgDoUsuario();
   if ("error" in ctx) return ctx;
@@ -69,6 +70,7 @@ export async function criarProduto(input: {
     codigo_ref: input.codigoRef.trim().toUpperCase(),
     descricao: input.descricao.trim(),
     apelidos: parseApelidos(input.apelidos),
+    categoria: input.categoria?.trim() || null,
   });
   if (error) {
     if (error.code === "23505") {
@@ -102,7 +104,12 @@ export async function criarProduto(input: {
 
 export async function atualizarProduto(
   id: string,
-  input: { codigoRef: string; descricao: string; apelidos?: string },
+  input: {
+    codigoRef: string;
+    descricao: string;
+    apelidos?: string;
+    categoria?: string;
+  },
 ): Promise<{ ok: true } | { error: string }> {
   const ctx = await orgDoUsuario();
   if ("error" in ctx) return ctx;
@@ -117,6 +124,9 @@ export async function atualizarProduto(
       descricao: input.descricao.trim(),
       ...(input.apelidos !== undefined
         ? { apelidos: parseApelidos(input.apelidos) }
+        : {}),
+      ...(input.categoria !== undefined
+        ? { categoria: input.categoria.trim() || null }
         : {}),
     })
     .eq("id", id)

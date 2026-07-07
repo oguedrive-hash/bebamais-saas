@@ -13,6 +13,7 @@ import {
   setDisponivel,
   removerProduto,
 } from "./actions";
+import { CATEGORIAS_PRODUTO, labelCategoria } from "@/lib/categorias-produto";
 
 export type ProdutoRow = {
   id: string;
@@ -20,6 +21,7 @@ export type ProdutoRow = {
   descricao: string;
   disponivel: boolean;
   apelidos?: string[];
+  categoria?: string | null;
 };
 
 type ModalState =
@@ -157,6 +159,11 @@ function LinhaProduto({
         >
           {produto.descricao}
         </span>
+        {produto.categoria && (
+          <span className="ml-2 inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-heading font-semibold bg-offwhite text-cinza-medio border border-cinza-claro">
+            {labelCategoria(produto.categoria)}
+          </span>
+        )}
         {(produto.apelidos?.length ?? 0) > 0 && (
           <span
             className="ml-2 text-[11px] text-cinza-medio"
@@ -227,6 +234,7 @@ function ProdutoModal({
   const [apelidos, setApelidos] = useState(
     (produto?.apelidos ?? []).join(", "),
   );
+  const [categoria, setCategoria] = useState(produto?.categoria ?? "");
 
   function salvar() {
     if (pending) return; // Enter repetido não dispara double-submit
@@ -234,11 +242,17 @@ function ProdutoModal({
     startTransition(async () => {
       const r =
         modo === "novo"
-          ? await criarProduto({ codigoRef: codigo, descricao, apelidos })
+          ? await criarProduto({
+              codigoRef: codigo,
+              descricao,
+              apelidos,
+              categoria,
+            })
           : await atualizarProduto(produto!.id, {
               codigoRef: codigo,
               descricao,
               apelidos,
+              categoria,
             });
       if ("error" in r && r.error) {
         setErro(r.error);
@@ -290,6 +304,23 @@ function ProdutoModal({
               }}
               className="w-full px-3 py-2.5 rounded-lg border border-cinza-claro text-sm focus:outline-none focus:border-laranja transition"
             />
+          </div>
+          <div>
+            <label className="block text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1.5">
+              Categoria
+            </label>
+            <select
+              value={categoria}
+              onChange={(e) => setCategoria(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-lg border border-cinza-claro text-sm bg-white focus:outline-none focus:border-laranja transition"
+            >
+              <option value="">(sem categoria)</option>
+              {CATEGORIAS_PRODUTO.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="block text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1.5">

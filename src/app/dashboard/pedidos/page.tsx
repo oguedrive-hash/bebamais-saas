@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
+import { AutoRefresh } from "@/components/auto-refresh";
 import { PedidoCard, type PedidoRow } from "@/components/pedido-card";
 
 type LeadRef = { id: string; nome: string | null; telefone: string } | null;
@@ -29,7 +30,7 @@ export default async function PedidosPage({
     .from("pedidos")
     .select(
       `id, status, itens, modalidade, endereco, nome_cliente, obs,
-       confirmado_em, created_at, updated_at,
+       confirmado_em, created_at, updated_at, assumido_por,
        lead:leads(id, nome, telefone),
        agendamento:agendamentos(id, data_inicio, status)`,
     )
@@ -58,6 +59,7 @@ export default async function PedidosPage({
 
   return (
     <div>
+      <AutoRefresh ms={30000} />
       <div className="flex items-center justify-between gap-3 mb-4">
         <PageHeader
           titulo="Pedidos"
@@ -190,6 +192,11 @@ function PedidoItem({
           <span className="ml-2 text-xs font-body font-normal text-cinza-medio font-mono">
             {lead?.telefone}
           </span>
+          {pedido.status === "em_atendimento" && pedido.assumido_por && (
+            <span className="ml-2 text-xs font-body font-normal text-violet-700">
+              · com {pedido.assumido_por}
+            </span>
+          )}
         </p>
         {ag && ["sugerido", "agendado"].includes(ag.status) && (
           <span

@@ -8,6 +8,7 @@ import { StatusAgendamentoSelector } from "@/components/status-agendamento-selec
 import { BotaoNovoAgendamento } from "@/components/botao-novo-agendamento";
 import { BotaoDeletarAgendamento } from "@/components/botao-deletar-agendamento";
 import { AgendaViewToggle } from "@/components/agenda-view-toggle";
+import { BotaoRemarcarAgendamento } from "@/components/botao-remarcar-agendamento";
 import { getAgendaConfigDaOrg } from "@/app/dashboard/agenda/actions";
 
 type View = "lista" | "calendario";
@@ -269,18 +270,10 @@ function AgendamentoCard({
       </div>
 
       <div className="flex items-center justify-between gap-2">
-        {agendamento.meet_link ? (
-          <a
-            href={agendamento.meet_link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-laranja hover:underline font-heading font-semibold"
-          >
-            Link →
-          </a>
-        ) : (
-          <span className="text-xs text-cinza-medio">Sem link</span>
-        )}
+        <BotaoRemarcarAgendamento
+          agendamentoId={agendamento.id}
+          leadNome={lead?.nome ?? null}
+        />
         <Link
           href={`/dashboard/contatos/${agendamento.lead_id}`}
           className="text-xs text-cinza-medio hover:text-laranja font-heading font-medium"

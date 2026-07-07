@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { CATEGORIAS_PRODUTO } from "@/lib/categorias-produto";
 import {
   TabelaProdutos,
   BotaoNovoProduto,
@@ -15,18 +16,22 @@ import {
 export default async function ProdutosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ busca?: string }>;
+  searchParams: Promise<{ busca?: string; cat?: string }>;
 }) {
   const params = await searchParams;
   const termo = params.busca?.trim() ?? "";
+  const cat = CATEGORIAS_PRODUTO.some((c) => c.value === params.cat)
+    ? params.cat!
+    : "";
   const supabase = await createClient();
 
   let query = supabase
     .from("produtos")
-    .select("id, codigo_ref, descricao, disponivel, apelidos")
+    .select("id, codigo_ref, descricao, disponivel, apelidos, categoria")
     .eq("ativo", true)
     .order("descricao", { ascending: true })
     .limit(200);
+  if (cat) query = query.eq("categoria", cat);
 
   // Sanitiza só WILDCARDS (%_*\) — vírgula/parênteses são dados reais do
   // catálogo ("1,5L") e só são problema dentro do .or() (tree do PostgREST),
@@ -78,7 +83,7 @@ export default async function ProdutosPage({
         <BotaoNovoProduto />
       </div>
 
-      <form method="get" className="mb-4 flex gap-3 max-w-xl">
+      <form method="get" className="mb-4 flex gap-3 max-w-2xl">
         <input
           name="busca"
           defaultValue={termo}
@@ -86,6 +91,18 @@ export default async function ProdutosPage({
           autoFocus
           className="flex-1 px-4 py-2.5 rounded-lg border border-cinza-claro bg-white text-sm focus:outline-none focus:border-laranja transition"
         />
+        <select
+          name="cat"
+          defaultValue={cat}
+          className="px-3 py-2.5 rounded-lg border border-cinza-claro bg-white text-sm focus:outline-none focus:border-laranja transition"
+        >
+          <option value="">Todas as categorias</option>
+          {CATEGORIAS_PRODUTO.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
+        </select>
         <button
           type="submit"
           className="px-4 py-2.5 rounded-lg bg-preto hover:bg-chumbo text-white text-sm font-heading font-semibold transition"

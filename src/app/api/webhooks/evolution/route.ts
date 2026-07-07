@@ -356,14 +356,16 @@ async function processarEvolution(
     const admin = createAdminClient();
     const { data: leads } = await admin
       .from("leads")
-      .select("id, evolution_instance")
+      .select("id, evolution_instance, instancia_fixada")
       .eq("organization_id", ORG_ID)
       .eq("telefone_digitos", telefone)
       .limit(1);
-    const leadExistente = leads?.[0] as { id?: string; evolution_instance?: string | null } | undefined;
+    const leadExistente = leads?.[0] as { id?: string; evolution_instance?: string | null; instancia_fixada?: boolean | null } | undefined;
     let leadId = leadExistente?.id as string | undefined;
     // Instância que servia o lead ANTES desse inbound (pra detectar troca de número).
     const instAntiga = leadExistente?.evolution_instance ?? null;
+    // Troca manual feita no painel "gruda": não re-carimba pelo inbound.
+    const fixada = leadExistente?.instancia_fixada === true;
     if (!leadId) {
       const { data: novo } = await admin
         .from("leads")
@@ -381,14 +383,17 @@ async function processarEvolution(
     // Lead respondeu -> zera cadencias e reengaja (replica o que o webhook do Chatwoot fazia)
     const agora = new Date().toISOString();
     // Fase 1 pool: carimba o número que RECEBEU o inbound como o que serve o lead
-    // (assim a resposta sai pelo mesmo número). Com 1 número, é sempre "facilita".
-    const updReengaja: Record<string, unknown> = { numero_followup: 0, numero_reativacao: 0, numero_prospeccao: 0, proximo_followup_em: null, ultima_msg_lead_em: agora, evolution_instance: instance };
+    // (assim a resposta sai pelo mesmo número). EXCETO quando o operador fixou
+    // o atendente no painel (instancia_fixada) — aí a escolha manual vence.
+    const updReengaja: Record<string, unknown> = { numero_followup: 0, numero_reativacao: 0, numero_prospeccao: 0, proximo_followup_em: null, ultima_msg_lead_em: agora };
+    if (!fixada) updReengaja.evolution_instance = instance;
     if (lidJid) updReengaja.whatsapp_jid = lidJid; // captura/atualiza o @lid em leads que já existiam
     // Troca de atendente/número: o lead vinha servido por OUTRA instância e agora
     // escreveu por esta. Marca a anterior pra a persona nova RECONHECER a continuação
     // ("vamos continuar por aqui, lá com o outro atendente você disse X?") na resposta. A flag é
-    // consumida (limpa) quando a resposta a usa. Só marca em troca real (anterior != atual).
-    if (instAntiga && instAntiga !== instance) updReengaja.instancia_anterior = instAntiga;
+    // consumida (limpa) quando a resposta a usa. Só marca em troca real (anterior != atual)
+    // e quando a troca vai valer (não-fixada).
+    if (!fixada && instAntiga && instAntiga !== instance) updReengaja.instancia_anterior = instAntiga;
     await admin.from("leads").update(updReengaja).eq("id", leadId);
     await admin.from("leads").update({ proximo_contato_em: null, status: "em_conversa", origem: "inbound" }).eq("id", leadId).in("status", ["perdido", "fechou"]);
     await admin.from("leads").update({ proximo_contato_em: null, status: "em_conversa" }).eq("id", leadId).eq("origem", "prospeccao").in("status", ["aguardando_primeiro_contato", "em_prospeccao"]);

@@ -64,7 +64,10 @@ export async function assumirPedido(
   const admin = createAdminClient();
   const { data: linha, error } = await admin
     .from("pedidos")
-    .update({ status: "em_atendimento" })
+    .update({
+      status: "em_atendimento",
+      assumido_por: ctx.usuarioNome ?? "Atendente",
+    })
     .eq("id", pedidoId)
     .in("status", ["captando", "pronto_para_equipe"])
     .select("id")

@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { StatusSelector } from "@/components/status-selector";
 import { StatusAgendamentoSelector } from "@/components/status-agendamento-selector";
+import { BotaoRemarcarAgendamento } from "@/components/botao-remarcar-agendamento";
 import { AtendenteSelector } from "@/components/atendente-selector";
 import { TimelineMensagens } from "@/components/timeline-mensagens";
 import { CaixaResposta } from "@/components/caixa-resposta";
@@ -173,6 +174,7 @@ export default async function LeadDetalhePage({
                 leadId={lead.id}
                 atual={lead.evolution_instance ?? null}
                 opcoes={poolNumeros}
+                fixado={lead.instancia_fixada === true}
               />
             )}
             {/* Botões de mover pra Prospecção / voltar pra Inbound escondidos —
@@ -223,10 +225,16 @@ export default async function LeadDetalhePage({
                       {/* Dropdown de status: é AQUI que a equipe confirma o
                           horário sugerido (a notificação do admin linka pra
                           esta página) */}
-                      <StatusAgendamentoSelector
-                        agendamentoId={a.id}
-                        statusAtual={a.status}
-                      />
+                      <div className="flex items-center gap-3">
+                        <BotaoRemarcarAgendamento
+                          agendamentoId={a.id}
+                          leadNome={lead.nome ?? null}
+                        />
+                        <StatusAgendamentoSelector
+                          agendamentoId={a.id}
+                          statusAtual={a.status}
+                        />
+                      </div>
                     </div>
                     {a.meet_link && (
                       <a

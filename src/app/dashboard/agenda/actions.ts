@@ -318,6 +318,74 @@ export async function buscarLeadsParaAgendamento(
 }
 
 /**
+ * Remarca um agendamento pra outro dia/horário — o caso mais comum da
+ * operação ("não consigo às 16h, pode ser 18h?"). Mantém lead, status e
+ * vínculo com o pedido; zera os lembretes (o horário mudou, os enviados
+ * não valem mais).
+ */
+export async function remarcarAgendamento(
+  formData: FormData,
+): Promise<{ ok: true } | { error: string }> {
+  const agendamentoId = formData.get("agendamentoId");
+  const dataHora = formData.get("dataHora");
+  if (typeof agendamentoId !== "string" || !agendamentoId) {
+    return { error: "agendamentoId ausente" };
+  }
+  if (typeof dataHora !== "string" || !dataHora) {
+    return { error: "Informe a nova data e hora" };
+  }
+  // datetime-local sem offset → wall time de São Paulo (mesma regra do criar)
+  const mParts = dataHora.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!mParts) return { error: "Data/hora inválida" };
+  const novoInicio = new Date(
+    Date.UTC(
+      Number(mParts[1]),
+      Number(mParts[2]) - 1,
+      Number(mParts[3]),
+      Number(mParts[4]) + 3, // SP = UTC-3
+      Number(mParts[5]),
+    ),
+  );
+  if (Number.isNaN(novoInicio.getTime())) return { error: "Data/hora inválida" };
+  if (novoInicio.getTime() < Date.now()) {
+    return { error: "A nova data/hora precisa ser no futuro" };
+  }
+
+  const supabase = await createClient();
+  // Lê o atual (RLS valida acesso) pra preservar a duração
+  const { data: atual, error: readErr } = await supabase
+    .from("agendamentos")
+    .select("id, data_inicio, data_fim, lead_id")
+    .eq("id", agendamentoId)
+    .single();
+  if (readErr || !atual) return { error: "Agendamento não encontrado" };
+
+  const duracaoMs = Math.max(
+    5 * 60 * 1000,
+    new Date(atual.data_fim).getTime() - new Date(atual.data_inicio).getTime(),
+  );
+  const { data: linhas, error } = await supabase
+    .from("agendamentos")
+    .update({
+      data_inicio: novoInicio.toISOString(),
+      data_fim: new Date(novoInicio.getTime() + duracaoMs).toISOString(),
+      lembretes_enviados: [],
+      lembretes_admin_enviados: [],
+    })
+    .eq("id", agendamentoId)
+    .select("id");
+  if (error) return { error: error.message };
+  if (!linhas || linhas.length === 0) {
+    return { error: "Agendamento não encontrado (pode ter sido deletado)." };
+  }
+
+  revalidatePath("/dashboard/agenda");
+  revalidatePath("/dashboard/pedidos");
+  revalidatePath(`/dashboard/contatos/${atual.lead_id}`);
+  return { ok: true };
+}
+
+/**
  * Deleta um agendamento permanentemente. Usado pelo botão "🗑️ Deletar" na
  * agenda. Ação irreversível — UI faz confirmação antes.
  *
@@ -381,6 +449,31 @@ export async function mudarStatusAgendamento(
       .eq("agendamento_id", agendamentoId)
       .in("status", ["captando", "pronto_para_equipe", "em_atendimento"]);
     revalidatePath("/dashboard/pedidos");
+  }
+
+  // Cliente retirou (Realizado) → finaliza o pedido vinculado junto e fecha
+  // o contato — antes era preciso lembrar de ir na fila de Pedidos depois.
+  if (novoStatus === "realizado") {
+    const admin = createAdminClient();
+    const { data: finalizados } = await admin
+      .from("pedidos")
+      .update({
+        status: "finalizado",
+        finalizado_em: new Date().toISOString(),
+      })
+      .eq("agendamento_id", agendamentoId)
+      .in("status", ["captando", "pronto_para_equipe", "em_atendimento"])
+      .select("lead_id");
+    for (const p of finalizados ?? []) {
+      await admin
+        .from("leads")
+        .update({ status: "fechou" })
+        .eq("id", p.lead_id);
+    }
+    if ((finalizados ?? []).length > 0) {
+      revalidatePath("/dashboard/pedidos");
+      revalidatePath("/dashboard");
+    }
   }
 
   revalidatePath("/dashboard/agenda");

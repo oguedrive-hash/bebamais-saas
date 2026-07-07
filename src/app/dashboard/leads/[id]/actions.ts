@@ -225,20 +225,41 @@ export async function trocarAtendente(formData: FormData): Promise<
   if (error || !lead) return { error: "Lead não encontrado" };
 
   const admin = createAdminClient();
-  // Valida que a instância pertence ao pool DESTA org (não deixa apontar p/ outra org).
+
+  // Valor especial "auto": solta a fixação — o lead volta a seguir o número
+  // pelo qual o cliente escrever (comportamento padrão do pool).
+  if (instance === "auto") {
+    const { error: upErr } = await admin
+      .from("leads")
+      .update({ instancia_fixada: false })
+      .eq("id", leadId);
+    if (upErr) return { error: upErr.message };
+    revalidatePath(`/dashboard/contatos/${leadId}`);
+    return { ok: true };
+  }
+
+  // Valida que a instância pertence ao pool DESTA org (não deixa apontar p/
+  // outra org) e que está saudável — rotear pra número travado/inativo
+  // condenaria toda resposta a ~12s de tentativa + failover.
   const { data: num } = await admin
     .from("org_numeros")
-    .select("instance_name, persona_nome")
+    .select("instance_name, persona_nome, ativo, envio_falhando")
     .eq("organization_id", lead.organization_id)
     .eq("instance_name", instance)
     .maybeSingle();
   if (!num) return { error: "Número não está no pool da organização" };
+  if (!num.ativo) return { error: "Esse número está desativado no pool" };
+  if (num.envio_falhando)
+    return { error: "Esse número está com envio falhando — escolha outro" };
 
   const antiga = (lead as { evolution_instance?: string | null }).evolution_instance ?? null;
-  if (antiga === instance) return { ok: true }; // já é esse atendente, nada a fazer
-
-  const updates: Record<string, unknown> = { evolution_instance: instance };
-  if (antiga) updates.instancia_anterior = antiga; // próxima resposta reconhece a troca
+  // Fixa SEMPRE que a escolha é manual — sem isso o próximo inbound do
+  // cliente (que chega pelo número antigo) revertia a troca sozinho.
+  const updates: Record<string, unknown> = {
+    evolution_instance: instance,
+    instancia_fixada: true,
+  };
+  if (antiga && antiga !== instance) updates.instancia_anterior = antiga; // próxima resposta reconhece a troca
   const { error: upErr } = await admin.from("leads").update(updates).eq("id", leadId);
   if (upErr) return { error: upErr.message };
 

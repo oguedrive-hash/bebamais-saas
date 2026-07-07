@@ -30,6 +30,7 @@ export type PedidoRow = {
   confirmado_em?: string | null;
   created_at: string;
   updated_at: string;
+  assumido_por?: string | null;
 };
 
 const STATUS_PEDIDO: Record<
