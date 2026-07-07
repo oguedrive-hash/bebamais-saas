@@ -163,7 +163,7 @@ export async function resolverLidPorNumero(
  * - "OK": SERVER_ACK ou além — o WhatsApp aceitou (entrega quando o destino voltar).
  * - "PENDING": ainda na fila (status não assentou).
  */
-async function statusMensagem(
+export async function statusMensagem(
   instance: string,
   msgId: string,
 ): Promise<"ERROR" | "OK" | "PENDING" | null> {

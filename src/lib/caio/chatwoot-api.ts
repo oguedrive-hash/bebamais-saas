@@ -12,6 +12,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { instanciaDoLead } from "./numeros";
 import { enviarSerializado } from "./fila-envio";
 import { evoSendText, evoSendAudio, evoSendMedia, evoSendPresence, resolverLidPorNumero, aguardarAceite, evoConnectionState } from "./evolution-api";
+import { agendarRecheckEnvio } from "./reconciliacao-envio";
 import { salvarAudioBase64 } from "./storage-audio";
 import { notificarAdminNumeroSemEnvio } from "./notificar-admin";
 
@@ -583,7 +584,7 @@ async function tentarInstancia(
   leadId: string | null,
   whatsappJid: string | null,
   enviarUm: (instance: string, dest: string) => Promise<{ id: string } | { error: string }>,
-): Promise<{ ok: true; destinoOk: string } | { error: string }> {
+): Promise<{ ok: true; destinoOk: string; msgId: string } | { error: string }> {
   let ultimoErro = "nenhum destino disponível";
   console.log(`[T:envio] instance=${instance} destinos=[${destinos.join(", ")}]`);
   for (const dest of destinos) {
@@ -599,7 +600,7 @@ async function tentarInstancia(
       if (leadId && dest !== whatsappJid) {
         try { await createAdminClient().from("leads").update({ whatsapp_jid: dest }).eq("id", leadId); } catch { /* best-effort */ }
       }
-      return { ok: true, destinoOk: dest };
+      return { ok: true, destinoOk: dest, msgId: env.id };
     }
     ultimoErro = `status ERROR no destino ${dest}`;
     console.warn(`[T:envio] ✗ ${instance} -> ${dest} deu ERROR — próximo destino`);
@@ -670,7 +671,7 @@ async function marcarEnvioFalhando(instance: string, viaInstance: string | null,
 async function enviarComFailover(
   d: { instance: string | null; destinos: string[]; leadId: string | null; whatsappJid: string | null; orgId: string | null },
   enviarUm: (instance: string, dest: string) => Promise<{ id: string } | { error: string }>,
-): Promise<{ ok: true; destinoOk: string; instanceOk: string } | { error: string }> {
+): Promise<{ ok: true; destinoOk: string; instanceOk: string; msgId: string } | { error: string }> {
   if (!d.instance) return { error: "sem instância" };
   // 1) tenta o primário
   const prim = await tentarInstancia(d.instance, d.destinos, d.leadId, d.whatsappJid, enviarUm);
@@ -725,7 +726,26 @@ export async function enviarMensagem(opts: {
         return res; // propaga o erro real em vez do fallback morto do Chatwoot
       }
       if (process.env.EVOLUTION_RECEBE === "1" && d.leadId) {
-        try { const orgId = d.chave.startsWith("org:") ? d.chave.slice(4) : null; await createAdminClient().from("mensagens").insert({ organization_id: orgId, lead_id: d.leadId, direcao: "saida", tipo: "texto", conteudo: opts.content }); } catch (e) { console.error("[evo] persist outgoing falhou:", e); }
+        try {
+          const orgId = d.chave.startsWith("org:") ? d.chave.slice(4) : null;
+          const { data: linha } = await createAdminClient()
+            .from("mensagens")
+            .insert({ organization_id: orgId, lead_id: d.leadId, direcao: "saida", tipo: "texto", conteudo: opts.content, whatsapp_msg_id: res.msgId })
+            .select("id")
+            .maybeSingle();
+          // Recheck tardio: se a Meta rejeitar DEPOIS do aceite de 6s (caso
+          // lock 463), marca a falha, reacende o alerta e avisa o admin.
+          if (orgId) {
+            agendarRecheckEnvio({
+              instance: res.instanceOk,
+              msgId: res.msgId,
+              mensagemRowId: linha?.id ?? null,
+              leadId: d.leadId,
+              organizationId: orgId,
+              conteudo: opts.content,
+            });
+          }
+        } catch (e) { console.error("[evo] persist outgoing falhou:", e); }
       }
       return { id: 0, content: opts.content };
     }

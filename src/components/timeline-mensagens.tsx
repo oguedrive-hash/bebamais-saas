@@ -12,6 +12,7 @@ type Mensagem = {
   remetente_nome: string | null;
   created_at: string;
   shadow?: boolean;
+  falha_envio?: boolean;
 };
 
 export function TimelineMensagens({
@@ -50,11 +51,16 @@ function Balao({ mensagem }: { mensagem: Mensagem }) {
   const entrada = mensagem.direcao === "entrada";
   const isShadow = mensagem.shadow === true;
 
+  const falhou = mensagem.falha_envio === true;
+
   let bubbleClasses: string;
   if (isShadow) {
     // Shadow: cinza/tracejado, fica claro que NÃO foi enviado
     bubbleClasses =
       "bg-white border-2 border-dashed border-cinza-medio text-preto";
+  } else if (falhou) {
+    // Rejeitada pelo WhatsApp após o envio (reconciliação) — o cliente NÃO recebeu
+    bubbleClasses = "bg-red-50 border-2 border-red-300 text-preto";
   } else if (entrada) {
     bubbleClasses = "bg-offwhite border border-cinza-claro text-preto";
   } else {
@@ -67,6 +73,11 @@ function Balao({ mensagem }: { mensagem: Mensagem }) {
         {isShadow && (
           <p className="text-[10px] font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1">
             Sugestão da IA (não enviada)
+          </p>
+        )}
+        {falhou && (
+          <p className="text-[10px] font-heading font-bold text-red-700 uppercase tracking-wider mb-1">
+            ⚠ Não entregue — o cliente não recebeu
           </p>
         )}
         <ConteudoMensagem mensagem={mensagem} />

@@ -54,7 +54,7 @@ export default async function LeadDetalhePage({
     supabase
       .from("mensagens")
       .select(
-        "id, conteudo, tipo, attachment_url, direcao, remetente_nome, shadow, created_at",
+        "id, conteudo, tipo, attachment_url, direcao, remetente_nome, shadow, falha_envio, created_at",
       )
       .eq("lead_id", id)
       .order("created_at", { ascending: false })
