@@ -25,16 +25,16 @@ export function LoginForm() {
           htmlFor="email"
           className="block text-sm font-heading font-semibold text-preto mb-1.5"
         >
-          E-mail
+          Usuário
         </label>
         <input
           id="email"
           name="email"
-          type="email"
+          type="text"
           required
-          autoComplete="email"
+          autoComplete="username"
           className="w-full px-4 py-3 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:ring-2 focus:ring-laranja focus:border-transparent transition"
-          placeholder="seu@email.com"
+          placeholder="seu.usuario"
         />
       </div>
 

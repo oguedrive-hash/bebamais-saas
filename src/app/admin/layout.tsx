@@ -58,6 +58,7 @@ export default async function AdminLayout({
               <NavLink href={cfg("caio")}>Atendente</NavLink>
               <NavLink href={cfg("followup")}>Follow-up</NavLink>
               <NavLink href={cfg("numeros")}>Números</NavLink>
+              <NavLink href={cfg("usuarios")}>Usuários</NavLink>
               <NavLink href={cfg("editar")}>Empresa</NavLink>
               <Link
                 href="/dashboard"
