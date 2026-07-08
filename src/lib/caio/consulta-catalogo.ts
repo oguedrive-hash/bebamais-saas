@@ -108,11 +108,35 @@ export async function avisoItensEmFalta(opts: {
   });
   if (suspeitos.length === 0) return null;
 
+  // Alternativas REAIS: itens disponíveis das mesmas categorias dos em falta
+  // — sem isso o LLM sugeria marcas da cabeça dele (que podem nem existir
+  // no catálogo).
+  const catsDosFaltantes = [
+    ...new Set(suspeitos.map((p) => p.categoria).filter(Boolean)),
+  ].slice(0, 3) as string[];
+  let blocoAlternativas = "";
+  if (catsDosFaltantes.length > 0) {
+    const { data: alts } = await admin
+      .from("produtos")
+      .select("descricao")
+      .eq("organization_id", opts.organizationId)
+      .eq("ativo", true)
+      .eq("disponivel", true)
+      .in("categoria", catsDosFaltantes)
+      .order("descricao")
+      .limit(40);
+    if (alts && alts.length > 0) {
+      blocoAlternativas = `\n\nAlternativas DISPONÍVEIS (sugira SOMENTE destas): ${alts
+        .map((a) => a.descricao)
+        .join("; ")}`;
+    }
+  }
+
   return `[ESTOQUE — ITENS EM FALTA]
 Estes itens do catálogo estão MARCADOS COMO EM FALTA e o cliente pode estar pedindo um deles:
-${suspeitos.map((p) => `- ${p.descricao}`).join("\n")}
+${suspeitos.map((p) => `- ${p.descricao}`).join("\n")}${blocoAlternativas}
 
-Se o cliente pediu um desses, avise com jeito que está em falta no momento e ofereça alternativa parecida (se a lista da categoria estiver no seu contexto, sugira 2-3 opções disponíveis). Se ele pediu OUTRA variação que não está nessa lista, ignore este aviso. NUNCA anote no pedido item em falta sem avisar o cliente.`;
+Se o cliente pediu um desses, avise com jeito que está em falta no momento e ofereça 2-3 alternativas parecidas DA LISTA DE DISPONÍVEIS acima (nunca invente marca fora dela). Se ele pediu OUTRA variação que não está na lista de em falta, ignore este aviso. NUNCA anote no pedido item em falta sem avisar o cliente.`;
 }
 
 /**
