@@ -11,6 +11,7 @@ import {
   criarProduto,
   atualizarProduto,
   setDisponivel,
+  setDisponivelLote,
   removerProduto,
 } from "./actions";
 import { CATEGORIAS_PRODUTO, labelCategoria } from "@/lib/categorias-produto";
@@ -53,14 +54,97 @@ export function BotaoNovoProduto() {
 }
 
 export function TabelaProdutos({ produtos }: { produtos: ProdutoRow[] }) {
+  const router = useRouter();
   const [modal, setModal] = useState<ModalState>({ aberto: false });
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [loteErro, setLoteErro] = useState<string | null>(null);
+  const [lotePending, startLote] = useTransition();
+
+  const todosMarcados = produtos.length > 0 && sel.size === produtos.length;
+
+  function toggle(id: string) {
+    setSel((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  }
+
+  function lote(disponivel: boolean) {
+    setLoteErro(null);
+    const ids = Array.from(sel);
+    startLote(async () => {
+      try {
+        const r = await setDisponivelLote(ids, disponivel);
+        if ("error" in r && r.error) {
+          setLoteErro(r.error);
+          return;
+        }
+        setSel(new Set());
+        router.refresh();
+      } catch {
+        setLoteErro("Falha de conexão — tente de novo.");
+      }
+    });
+  }
 
   return (
     <>
+      {sel.size > 0 && (
+        <div className="sticky top-[72px] z-10 mb-3 p-3 rounded-lg bg-laranja/5 border border-laranja/20 flex items-center justify-between gap-3 max-w-4xl">
+          <span className="text-sm text-preto">
+            <strong>{sel.size}</strong> selecionado{sel.size > 1 ? "s" : ""}
+            <button
+              type="button"
+              onClick={() => setSel(new Set())}
+              className="ml-2 text-xs text-cinza-medio hover:text-preto underline"
+            >
+              limpar
+            </button>
+            {loteErro && (
+              <span className="ml-3 text-xs text-red-700">{loteErro}</span>
+            )}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => lote(false)}
+              disabled={lotePending}
+              className="px-3 py-2 rounded-lg border border-red-300 bg-white text-red-700 hover:bg-red-50 font-heading font-semibold text-sm transition disabled:opacity-50"
+            >
+              {lotePending ? "..." : "Marcar em falta"}
+            </button>
+            <button
+              type="button"
+              onClick={() => lote(true)}
+              disabled={lotePending}
+              className="px-3 py-2 rounded-lg border border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-50 font-heading font-semibold text-sm transition disabled:opacity-50"
+            >
+              {lotePending ? "..." : "Marcar disponível"}
+            </button>
+          </div>
+        </div>
+      )}
       <div className="bg-white rounded-2xl border border-cinza-claro overflow-hidden max-w-4xl">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-offwhite border-b border-cinza-claro text-left text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider">
+              <th className="px-3 py-3 w-10">
+                <input
+                  type="checkbox"
+                  checked={todosMarcados}
+                  onChange={() =>
+                    setSel(
+                      todosMarcados
+                        ? new Set()
+                        : new Set(produtos.map((p) => p.id)),
+                    )
+                  }
+                  className="w-4 h-4 rounded accent-laranja cursor-pointer"
+                  aria-label="Selecionar todos"
+                />
+              </th>
               <th className="px-4 py-3 w-28">Código</th>
               <th className="px-4 py-3">Descrição</th>
               <th className="px-4 py-3 w-56 text-right">Ações</th>
@@ -71,6 +155,8 @@ export function TabelaProdutos({ produtos }: { produtos: ProdutoRow[] }) {
               <LinhaProduto
                 key={p.id}
                 produto={p}
+                selecionado={sel.has(p.id)}
+                onToggle={() => toggle(p.id)}
                 onEditar={() =>
                   setModal({ aberto: true, modo: "editar", produto: p })
                 }
@@ -93,9 +179,13 @@ export function TabelaProdutos({ produtos }: { produtos: ProdutoRow[] }) {
 function LinhaProduto({
   produto,
   onEditar,
+  selecionado = false,
+  onToggle,
 }: {
   produto: ProdutoRow;
   onEditar: () => void;
+  selecionado?: boolean;
+  onToggle?: () => void;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -135,8 +225,16 @@ function LinhaProduto({
     <tr
       className={`border-b border-cinza-claro/60 last:border-0 hover:bg-offwhite/60 ${
         !produto.disponivel ? "opacity-60" : ""
-      }`}
+      } ${selecionado ? "bg-laranja/5" : ""}`}
     >
+      <td className="px-3 py-2.5">
+        <input
+          type="checkbox"
+          checked={selecionado}
+          onChange={onToggle}
+          className="w-4 h-4 rounded accent-laranja cursor-pointer"
+        />
+      </td>
       <td className="px-4 py-2.5">
         <button
           type="button"

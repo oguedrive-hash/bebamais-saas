@@ -5,6 +5,7 @@ import {
   BotaoNovoProduto,
   type ProdutoRow,
 } from "./tabela-produtos";
+import { BotaoImportarPlanilha } from "./importar-planilha";
 
 /**
  * Catálogo de produtos — consulta rápida do atendente ("temos isso?").
@@ -13,24 +14,30 @@ import {
  * Busca multi-palavra: "coca 2l retor" acha "Coca Cola 2L - Retornavel".
  */
 
+const PER_PAGE = 100;
+
 export default async function ProdutosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ busca?: string; cat?: string }>;
+  searchParams: Promise<{ busca?: string; cat?: string; page?: string }>;
 }) {
   const params = await searchParams;
   const termo = params.busca?.trim() ?? "";
   const cat = CATEGORIAS_PRODUTO.some((c) => c.value === params.cat)
     ? params.cat!
     : "";
+  const page = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
+  const offset = (page - 1) * PER_PAGE;
   const supabase = await createClient();
 
   let query = supabase
     .from("produtos")
-    .select("id, codigo_ref, descricao, disponivel, apelidos, categoria")
+    .select("id, codigo_ref, descricao, disponivel, apelidos, categoria", {
+      count: "exact",
+    })
     .eq("ativo", true)
     .order("descricao", { ascending: true })
-    .limit(200);
+    .range(offset, offset + PER_PAGE - 1);
   if (cat) query = query.eq("categoria", cat);
 
   // Sanitiza só WILDCARDS (%_*\) — vírgula/parênteses são dados reais do
@@ -54,8 +61,9 @@ export default async function ProdutosPage({
     }
   }
 
-  const { data } = await query;
+  const { data, count: totalFiltro } = await query;
   const produtos = (data ?? []) as ProdutoRow[];
+  const totalPages = Math.max(1, Math.ceil((totalFiltro ?? 0) / PER_PAGE));
 
   const { count: total } = await supabase
     .from("produtos")
@@ -80,7 +88,10 @@ export default async function ProdutosPage({
             código pra copiar. Preços e cotação: com a equipe.
           </p>
         </div>
-        <BotaoNovoProduto />
+        <div className="flex items-center gap-2">
+          <BotaoImportarPlanilha />
+          <BotaoNovoProduto />
+        </div>
       </div>
 
       <form method="get" className="mb-4 flex gap-3 max-w-2xl">
@@ -128,13 +139,55 @@ export default async function ProdutosPage({
       ) : (
         <>
           <TabelaProdutos produtos={produtos} />
-          {produtos.length === 200 && (
-            <p className="mt-2 text-xs text-cinza-medio max-w-4xl">
-              Mostrando os primeiros 200 — refina a busca pra achar mais rápido.
-            </p>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-3 max-w-4xl px-1">
+              <p className="text-xs text-cinza-medio">
+                Mostrando <strong>{offset + 1}</strong>–
+                <strong>{offset + produtos.length}</strong> de{" "}
+                <strong>{totalFiltro}</strong>
+              </p>
+              <div className="flex items-center gap-1">
+                {page > 1 ? (
+                  <a
+                    href={hrefPagina(termo, cat, page - 1)}
+                    className="px-3 py-1.5 text-xs rounded-lg bg-white border border-cinza-claro hover:border-laranja hover:text-laranja transition"
+                  >
+                    ‹ Anterior
+                  </a>
+                ) : (
+                  <span className="px-3 py-1.5 text-xs text-cinza-medio rounded-lg bg-offwhite border border-cinza-claro opacity-50">
+                    ‹ Anterior
+                  </span>
+                )}
+                <span className="px-3 text-xs text-cinza-medio">
+                  Página {page} de {totalPages}
+                </span>
+                {page < totalPages ? (
+                  <a
+                    href={hrefPagina(termo, cat, page + 1)}
+                    className="px-3 py-1.5 text-xs rounded-lg bg-white border border-cinza-claro hover:border-laranja hover:text-laranja transition"
+                  >
+                    Próxima ›
+                  </a>
+                ) : (
+                  <span className="px-3 py-1.5 text-xs text-cinza-medio rounded-lg bg-offwhite border border-cinza-claro opacity-50">
+                    Próxima ›
+                  </span>
+                )}
+              </div>
+            </div>
           )}
         </>
       )}
     </div>
   );
+}
+
+function hrefPagina(busca: string, cat: string, page: number): string {
+  const sp = new URLSearchParams();
+  if (busca) sp.set("busca", busca);
+  if (cat) sp.set("cat", cat);
+  if (page > 1) sp.set("page", String(page));
+  const qs = sp.toString();
+  return qs ? `/dashboard/produtos?${qs}` : "/dashboard/produtos";
 }

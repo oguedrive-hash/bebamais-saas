@@ -64,6 +64,57 @@ export function categoriasMencionadas(texto: string | null): string[] {
   return achadas;
 }
 
+// Palavras que não identificam produto (pra não casar "lata" da mensagem
+// com qualquer produto em falta que tenha "Lata" no nome)
+const TOKENS_FRACOS = new Set([
+  "lata", "latas", "long", "neck", "garrafa", "gf", "litro", "litros",
+  "caixa", "fardo", "pack", "zero", "mini", "retornavel", "pet", "copo",
+  "cerveja", "agua", "suco", "refrigerante", "energetico", "whisky", "vinho",
+]);
+
+/**
+ * Se a mensagem do cliente menciona produto marcado EM FALTA, gera um aviso
+ * pro LLM — sem isso a IA anotava o pedido normalmente e ninguém avisava
+ * que não tem. A lista de indisponíveis é pequena (equipe marca na tela de
+ * Produtos), então o custo é 1 query leve por resposta.
+ */
+export async function avisoItensEmFalta(opts: {
+  organizationId: string;
+  texto: string | null;
+}): Promise<string | null> {
+  if (!opts.texto?.trim()) return null;
+  const admin = createAdminClient();
+  const { data: indisponiveis } = await admin
+    .from("produtos")
+    .select("descricao, apelidos, categoria")
+    .eq("organization_id", opts.organizationId)
+    .eq("ativo", true)
+    .eq("disponivel", false)
+    .limit(50);
+  if (!indisponiveis || indisponiveis.length === 0) return null;
+
+  const msgTokens = new Set(normalizar(opts.texto).split(/\s+/).filter(Boolean));
+  const suspeitos = indisponiveis.filter((p) => {
+    const toks = [
+      ...normalizar(p.descricao).split(/\s+/),
+      ...((p.apelidos as string[] | null) ?? []).flatMap((a) =>
+        normalizar(a).split(/\s+/),
+      ),
+    ];
+    // Token forte (≥4 chars, não-genérico) do produto presente na mensagem
+    return toks.some(
+      (t) => t.length >= 4 && !TOKENS_FRACOS.has(t) && msgTokens.has(t),
+    );
+  });
+  if (suspeitos.length === 0) return null;
+
+  return `[ESTOQUE — ITENS EM FALTA]
+Estes itens do catálogo estão MARCADOS COMO EM FALTA e o cliente pode estar pedindo um deles:
+${suspeitos.map((p) => `- ${p.descricao}`).join("\n")}
+
+Se o cliente pediu um desses, avise com jeito que está em falta no momento e ofereça alternativa parecida (se a lista da categoria estiver no seu contexto, sugira 2-3 opções disponíveis). Se ele pediu OUTRA variação que não está nessa lista, ignore este aviso. NUNCA anote no pedido item em falta sem avisar o cliente.`;
+}
+
 /**
  * Monta o bloco de contexto com os itens disponíveis das categorias
  * mencionadas na mensagem. Retorna null se nada foi mencionado ou se o

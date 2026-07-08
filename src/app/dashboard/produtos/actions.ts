@@ -190,7 +190,7 @@ export async function buscarProdutosAtivos(
     .eq("ativo", true)
     .eq("disponivel", true)
     .order("descricao")
-    .limit(8);
+    .limit(20);
   if (palavras.length === 1 && !/[,()]/.test(palavras[0])) {
     query = query.or(
       `descricao.ilike.%${palavras[0]}%,codigo_ref.ilike.%${palavras[0]}%`,
@@ -199,7 +199,130 @@ export async function buscarProdutosAtivos(
     for (const w of palavras) query = query.ilike("descricao", `%${w}%`);
   }
   const { data } = await query;
-  return data ?? [];
+  // Quem COMEÇA com o termo vem primeiro ("bra" → Brahma antes de "Cobra")
+  const t = palavras[0].toLowerCase();
+  return (data ?? [])
+    .sort((a, b) => {
+      const pa = a.descricao.toLowerCase().startsWith(t) ? 0 : 1;
+      const pb = b.descricao.toLowerCase().startsWith(t) ? 0 : 1;
+      return pa - pb || a.descricao.localeCompare(b.descricao);
+    })
+    .slice(0, 8);
+}
+
+/** Marca vários produtos como em falta/disponível de uma vez (seleção em lote). */
+export async function setDisponivelLote(
+  ids: string[],
+  disponivel: boolean,
+): Promise<{ ok: true; alterados: number } | { error: string }> {
+  const ctx = await orgDoUsuario();
+  if ("error" in ctx) return ctx;
+  if (!Array.isArray(ids) || ids.length === 0) return { error: "Nada selecionado" };
+  if (ids.length > 200) return { error: "Máximo de 200 por vez" };
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("produtos")
+    .update({ disponivel })
+    .in("id", ids)
+    .eq("organization_id", ctx.orgId)
+    .eq("ativo", true)
+    .select("id");
+  if (error) return { error: error.message };
+  invalidarCatalogo(ctx.orgId);
+  revalidatePath("/dashboard/produtos");
+  return { ok: true, alterados: (data ?? []).length };
+}
+
+/**
+ * Importa/atualiza o catálogo a partir de planilha (parse é no browser; aqui
+ * chegam linhas {codigo, descricao} já extraídas). Upsert por código:
+ * existente atualiza a descrição (e reativa se estava removido), novo insere.
+ * `marcarAusentesEmFalta`: produto ativo que NÃO está na planilha vira
+ * "em falta" (não remove — histórico/pedidos antigos continuam válidos).
+ */
+export async function importarProdutosPlanilha(
+  linhas: { codigo: string; descricao: string }[],
+  opts?: { marcarAusentesEmFalta?: boolean },
+): Promise<
+  | {
+      ok: true;
+      inseridos: number;
+      atualizados: number;
+      invalidos: number;
+      marcadosEmFalta: number;
+    }
+  | { error: string }
+> {
+  const ctx = await orgDoUsuario();
+  if ("error" in ctx) return ctx;
+  if (!Array.isArray(linhas) || linhas.length === 0) {
+    return { error: "Planilha vazia" };
+  }
+  if (linhas.length > 3000) return { error: "Máximo de 3000 linhas por importação" };
+
+  const admin = createAdminClient();
+  const { data: existentes } = await admin
+    .from("produtos")
+    .select("id, codigo_ref, ativo")
+    .eq("organization_id", ctx.orgId)
+    .limit(5000);
+  const porCodigo = new Map(
+    (existentes ?? []).map((p) => [p.codigo_ref as string, p]),
+  );
+
+  let inseridos = 0;
+  let atualizados = 0;
+  let invalidos = 0;
+  const codigosPlanilha = new Set<string>();
+
+  for (const l of linhas) {
+    const codigo = String(l.codigo ?? "").trim().toUpperCase().slice(0, 20);
+    const descricao = String(l.descricao ?? "").trim().slice(0, 200);
+    if (!codigo || !descricao) {
+      invalidos++;
+      continue;
+    }
+    // Dedup dentro da própria planilha (última ocorrência vence)
+    codigosPlanilha.add(codigo);
+    const exist = porCodigo.get(codigo);
+    if (exist) {
+      const { error } = await admin
+        .from("produtos")
+        .update({ descricao, ativo: true, disponivel: true })
+        .eq("id", exist.id);
+      if (!error) atualizados++;
+      else invalidos++;
+    } else {
+      const { error } = await admin.from("produtos").insert({
+        organization_id: ctx.orgId,
+        codigo_ref: codigo,
+        descricao,
+      });
+      if (!error) inseridos++;
+      else invalidos++;
+    }
+  }
+
+  let marcadosEmFalta = 0;
+  if (opts?.marcarAusentesEmFalta) {
+    const ausentes = (existentes ?? [])
+      .filter((p) => p.ativo && !codigosPlanilha.has(p.codigo_ref as string))
+      .map((p) => p.id as string);
+    for (let i = 0; i < ausentes.length; i += 100) {
+      const chunk = ausentes.slice(i, i + 100);
+      const { data } = await admin
+        .from("produtos")
+        .update({ disponivel: false })
+        .in("id", chunk)
+        .eq("organization_id", ctx.orgId)
+        .select("id");
+      marcadosEmFalta += (data ?? []).length;
+    }
+  }
+
+  invalidarCatalogo(ctx.orgId);
+  revalidatePath("/dashboard/produtos");
+  return { ok: true, inseridos, atualizados, invalidos, marcadosEmFalta };
 }
 
 export async function removerProduto(

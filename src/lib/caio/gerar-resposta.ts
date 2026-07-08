@@ -1,7 +1,10 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { chatCompletion, type ChatMessage } from "./openai";
 import { getAgendaConfig, janelaFuncionamento } from "./agenda-config";
-import { extrasCatalogoPorCategoria } from "./consulta-catalogo";
+import {
+  extrasCatalogoPorCategoria,
+  avisoItensEmFalta,
+} from "./consulta-catalogo";
 import { personaDoLead } from "./numeros";
 
 const NOMES_DIAS = [
@@ -173,11 +176,18 @@ export async function gerarRespostaCaio(opts: {
     const ultimaDoLead = [...mensagens]
       .reverse()
       .find((m) => m.direcao === "entrada");
-    const blocoCatalogo = await extrasCatalogoPorCategoria({
-      organizationId: lead.organization_id,
-      texto: ultimaDoLead?.conteudo ?? null,
-    });
+    const [blocoCatalogo, blocoEmFalta] = await Promise.all([
+      extrasCatalogoPorCategoria({
+        organizationId: lead.organization_id,
+        texto: ultimaDoLead?.conteudo ?? null,
+      }),
+      avisoItensEmFalta({
+        organizationId: lead.organization_id,
+        texto: ultimaDoLead?.conteudo ?? null,
+      }),
+    ]);
     if (blocoCatalogo) extras.push(blocoCatalogo);
+    if (blocoEmFalta) extras.push(blocoEmFalta);
   }
 
   // Funcionamento da loja — incluído no fluxo normal pra que a IA responda
