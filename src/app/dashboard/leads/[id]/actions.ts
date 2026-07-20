@@ -50,6 +50,18 @@ export async function responderLead(formData: FormData): Promise<
   if (error || !lead) {
     return { error: "Lead não encontrado (ou sem acesso)" };
   }
+
+  // Nome do atendente que está respondendo (item 7 da reunião: identificar quem
+  // fala, estilo ZapCenter). Vem do próprio profile (RLS permite ler o próprio).
+  const {
+    data: { user: userResp },
+  } = await supabase.auth.getUser();
+  const { data: profileResp } = userResp
+    ? await supabase.from("profiles").select("nome").eq("id", userResp.id).maybeSingle()
+    : { data: null };
+  const remetenteNome = profileResp?.nome?.trim()
+    ? profileResp.nome.trim()
+    : "Você (painel)";
   if (!lead.chatwoot_conversation_id) {
     return {
       error:
@@ -99,7 +111,7 @@ export async function responderLead(formData: FormData): Promise<
     if (ultima) {
       await admin
         .from("mensagens")
-        .update({ remetente_nome: "Você (painel)" })
+        .update({ remetente_nome: remetenteNome })
         .eq("id", ultima.id);
     }
   } else {
@@ -111,7 +123,7 @@ export async function responderLead(formData: FormData): Promise<
       conteudo: sent.content,
       tipo: "texto",
       direcao: "saida",
-      remetente_nome: "Você (painel)",
+      remetente_nome: remetenteNome,
       privada: false,
     });
   }
@@ -600,6 +612,17 @@ export async function aprovarShadow(formData: FormData): Promise<
     return { error: "Sem conversa do Chatwoot vinculada" };
   }
 
+  // Nome do atendente que aprovou (item 7 da reunião — identificar quem falou).
+  const {
+    data: { user: userAprov },
+  } = await supabase.auth.getUser();
+  const { data: profileAprov } = userAprov
+    ? await supabase.from("profiles").select("nome").eq("id", userAprov.id).maybeSingle()
+    : { data: null };
+  const remetenteAprov = profileAprov?.nome?.trim()
+    ? `${profileAprov.nome.trim()} (aprovou sugestão da IA)`
+    : "Você (aprovou sugestão da IA)";
+
   // 1. Envia (Evolution por baixo; Chatwoot é legado)
   const sent = await enviarMensagem({
     conversationId: msg.chatwoot_conversation_id,
@@ -640,7 +663,7 @@ export async function aprovarShadow(formData: FormData): Promise<
     if (ultima) {
       await admin
         .from("mensagens")
-        .update({ remetente_nome: "Você (aprovou sugestão da IA)" })
+        .update({ remetente_nome: remetenteAprov })
         .eq("id", ultima.id);
     }
   } else {
@@ -649,7 +672,7 @@ export async function aprovarShadow(formData: FormData): Promise<
       .update({
         shadow: false,
         chatwoot_message_id: sent.id,
-        remetente_nome: "Você (aprovou sugestão da IA)",
+        remetente_nome: remetenteAprov,
       })
       .eq("id", mensagemId);
     if (convErr) {

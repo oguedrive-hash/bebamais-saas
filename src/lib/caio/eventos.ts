@@ -23,7 +23,9 @@ export type TipoEvento =
   | "pedido_pronto"
   | "pedido_alterado"
   | "pedido_finalizado"
-  | "pedido_cancelado";
+  | "pedido_cancelado"
+  | "conversa_atribuida"
+  | "conversa_liberada";
 
 export async function logarEvento(opts: {
   leadId: string;

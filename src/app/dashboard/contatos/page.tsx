@@ -10,10 +10,12 @@ import { ContatosTabela, BotaoImportarContatos } from "./tabela";
 
 type FiltroEstado = "ativos" | "encerrados" | "todos";
 type FiltroOrigem = "todos" | "inbound" | "prospeccao";
+type FiltroAtrib = "todas" | "minhas" | "livres";
 
 type FilterParams = {
   estado?: FiltroEstado;
   origem?: FiltroOrigem;
+  atrib?: FiltroAtrib;
   status?: string;
   q?: string;
   page?: string;
@@ -39,6 +41,7 @@ export default async function ContatosPage({
   const params = await searchParams;
   const estado = (params.estado as FiltroEstado) ?? "ativos";
   const origem = (params.origem as FiltroOrigem) ?? "todos";
+  const atrib = (params.atrib as FiltroAtrib) ?? "todas";
   // Filtro fino por status — quando ativo, sobrepõe o agrupador Ativos/Encerrados
   // (evita interseção vazia tipo Encerrados + Em conversa).
   const statusFiltro = STATUS_ORDEM.includes(params.status as StatusLead)
@@ -50,10 +53,16 @@ export default async function ContatosPage({
 
   const supabase = await createClient();
 
+  // Usuário logado — pra filtro "Minhas" e destaque na lista (item 8).
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const meuUserId = user?.id ?? null;
+
   let query = supabase
     .from("leads")
     .select(
-      "id, nome, telefone, status, origem, updated_at, created_at",
+      "id, nome, telefone, status, origem, updated_at, created_at, atribuido_a, atribuido_nome",
       { count: "exact" },
     );
 
@@ -67,6 +76,10 @@ export default async function ContatosPage({
   if (origem === "inbound") query = query.eq("origem", "inbound");
   else if (origem === "prospeccao") query = query.eq("origem", "prospeccao");
 
+  // Filtro de atribuição: "minhas" = atribuídas a mim, "livres" = não atribuídas
+  if (atrib === "minhas" && meuUserId) query = query.eq("atribuido_a", meuUserId);
+  else if (atrib === "livres") query = query.is("atribuido_a", null);
+
   // Busca por nome/telefone
   if (searchQuery.trim()) {
     const q = searchQuery.trim().replace(/[%_]/g, "");
@@ -78,7 +91,7 @@ export default async function ContatosPage({
       query
         .order("updated_at", { ascending: false })
         .range(offset, offset + PER_PAGE - 1),
-      supabase.from("leads").select("status, origem"),
+      supabase.from("leads").select("status, origem, atribuido_a"),
     ]);
 
   const contagens = {
@@ -91,6 +104,10 @@ export default async function ContatosPage({
     inbound: contagensRaw?.filter((l) => l.origem === "inbound").length ?? 0,
     prospeccao:
       contagensRaw?.filter((l) => l.origem === "prospeccao").length ?? 0,
+    minhas:
+      contagensRaw?.filter((l) => meuUserId && l.atribuido_a === meuUserId)
+        .length ?? 0,
+    livres: contagensRaw?.filter((l) => !l.atribuido_a).length ?? 0,
   };
 
   const contagemPorStatus: Partial<Record<StatusLead, number>> = {};
@@ -109,11 +126,13 @@ export default async function ContatosPage({
     const sp = new URLSearchParams();
     const e = opts.estado ?? estado;
     const o = opts.origem ?? origem;
+    const at = opts.atrib ?? atrib;
     const st = opts.status ?? statusFiltro ?? "";
     const qq = opts.q ?? searchQuery;
     const pg = opts.page ?? "1";
     if (e !== "ativos") sp.set("estado", e);
     if (o !== "todos") sp.set("origem", o);
+    if (at !== "todas") sp.set("atrib", at);
     if (st) sp.set("status", st);
     if (qq) sp.set("q", qq);
     if (pg !== "1") sp.set("page", pg);
@@ -147,6 +166,9 @@ export default async function ContatosPage({
             )}
             {statusFiltro && (
               <input type="hidden" name="status" value={statusFiltro} />
+            )}
+            {atrib !== "todas" && (
+              <input type="hidden" name="atrib" value={atrib} />
             )}
             <input
               type="text"
@@ -197,6 +219,28 @@ export default async function ContatosPage({
         {/* Chips de origem (Inbound/Prospecção) escondidos — prospecção
             desligada por enquanto. O filtro ?origem= continua funcionando
             por URL se precisar. */}
+
+        {/* Atribuição (item 8): Minhas / Não atribuídas / Todas — cada
+            atendente foca nas suas conversas e nas que estão livres. */}
+        <span className="text-cinza-claro mx-1">|</span>
+        <FilterChip
+          label="Todas"
+          count={contagens.todos}
+          active={atrib === "todas"}
+          href={buildHref({ atrib: "todas" })}
+        />
+        <FilterChip
+          label="Minhas"
+          count={contagens.minhas}
+          active={atrib === "minhas"}
+          href={buildHref({ atrib: "minhas" })}
+        />
+        <FilterChip
+          label="Não atribuídas"
+          count={contagens.livres}
+          active={atrib === "livres"}
+          href={buildHref({ atrib: "livres" })}
+        />
       </div>
 
       {error && (
@@ -220,6 +264,7 @@ export default async function ContatosPage({
       ) : (
         <>
           <ContatosTabela
+            meuUserId={meuUserId}
             leads={leads.map((l) => ({
               id: l.id,
               nome: l.nome,
@@ -228,6 +273,8 @@ export default async function ContatosPage({
               origem: l.origem ?? "inbound",
               updated_at: l.updated_at,
               created_at: l.created_at,
+              atribuido_a: l.atribuido_a ?? null,
+              atribuido_nome: l.atribuido_nome ?? null,
             }))}
           />
           <Paginator

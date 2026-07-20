@@ -55,7 +55,8 @@ REGRAS:
 - NUNCA acrescente marca, tamanho, volume ou variação que o cliente NÃO falou: "coca" vira "Coca-Cola" (sem 2L/lata), "cerveja" fica "cerveja" (sem marca), "água" fica "água". Só detalhe o item quando o CLIENTE detalhou (ou confirmou uma sugestão do atendente).
 - Apelidos de tamanho/embalagem ("seiscentos", "litrão", "latão", "longneck", "meiota") fazem parte do NOME do produto — nunca são quantidade nem unidade. "um seiscentos de coca" → {"produto":"coca seiscentos","quantidade":1}; "2 longneck de corona" → {"produto":"corona longneck","quantidade":2}.
 - Se o cliente MUDOU o pedido no meio da conversa, extraia a versão MAIS RECENTE.
-- "modalidade": "retirada" se vai buscar na loja, "entrega" se pediu entrega, null se indefinido.
+- DUPLICIDADE: se o cliente citar o MESMO produto duas vezes com quantidades DIFERENTES (ex: "24 coca zero lata" e depois "12 coca zero lata") e ainda NÃO tiver esclarecido qual é a correta, mantenha as DUAS linhas separadas (NÃO some as quantidades nem escolha uma) e devolva "confirmado":false — a divergência precisa ser resolvida com o cliente antes de fechar. Só unifique numa linha se o cliente disser explicitamente a quantidade final.
+- "modalidade": "retirada" se o cliente disse que vai BUSCAR na loja, "entrega" se pediu para ENTREGAR, null se indefinido. Extraia a modalidade do PEDIDO ATUAL — se a conversa recente indica retirada, use "retirada" mesmo que um pedido anterior tenha sido entrega. Nunca herde a modalidade de um pedido antigo.
 - "endereco": só se entrega e o cliente informou (bairro conta); senão null.
 - "nome_cliente": nome que o cliente DISSE na conversa; null se não disse.
 - "completo": true se tem itens E modalidade definida E (endereco quando entrega) E nome_cliente.

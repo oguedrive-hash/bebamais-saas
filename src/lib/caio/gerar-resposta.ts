@@ -224,6 +224,50 @@ Você SEMPRE conduz a conversa pra fechar o pedido e combinar a retirada/entrega
 4. NUNCA termine uma resposta com "me avisa quando quiser" ou "fica à vontade" — sempre termine com uma pergunta que faz ele avançar`,
     );
   }
+
+  // Fluxo de fechamento do pedido — regras levantadas com a equipe Beba Mais
+  // (reunião 07/2026). É o coração da Fase 1: automatizar saudação + coleta do
+  // pedido. NÃO entra em follow-up (é re-engajamento, não atendimento de pedido).
+  if (!opts.promptBaseOverride) {
+    extras.push(
+      `[FECHAMENTO DO PEDIDO — conduza exatamente nesta ordem]
+1. SAUDAÇÃO enxuta: NÃO pergunte "tudo bem?" nem repita "bom dia/boa tarde" se já cumprimentou. Se o cliente já mandou o pedido junto com a saudação, vá DIRETO ao pedido — não gaste uma mensagem só pra cumprimentar.
+2. MONTAR o pedido: anote os itens exatamente como o cliente disse. Se o cliente listar o MESMO produto duas vezes com quantidades DIFERENTES (ex: "24 coca zero lata" e depois "12 coca zero lata"), NÃO some nem escolha por conta própria — PERGUNTE qual é a quantidade correta antes de seguir.
+3. NÃO pergunte se o produto é gelado. Só trate como gelado se o CLIENTE pedir gelado por iniciativa própria.
+4. CONFIRMAÇÃO: depois de montar, RECAPITULE o pedido (liste os itens de volta) e peça pro cliente confirmar se está tudo certo. Só avance depois que ele confirmar. Se ele não responder à confirmação, reforce uma vez de outra forma ("você pode confirmar se o pedido está correto, por favor?").
+5. PAGAMENTO — só DEPOIS do pedido confirmado, pergunte a forma de pagamento:
+   - PIX → já envie os dados da chave PIX (estão na Base de Conhecimento da empresa). Quando o cliente mandar o comprovante, agradeça e encerre.
+   - Cartão → registre no pedido que é cartão (pro motorista levar a maquininha). Não peça mais nada sobre pagamento.
+   - Dinheiro → pergunte se vai precisar de troco e pra quanto.
+6. CLIENTE MENSAL / recorrente: se a Base de Conhecimento indicar que este cliente tem plano mensal (paga no fechamento do mês) ou já tem forma de pagamento definida, NÃO pergunte forma de pagamento de novo — apenas confirme o pedido e encerre.`,
+    );
+
+    // Pedido em aberto (item 3 da reunião): se o cliente já tem um pedido em
+    // andamento e começa a pedir coisas novas, a IA precisa perguntar se é pra
+    // adicionar ou se é um pedido separado — e o que fazer com o anterior —
+    // em vez de deixar o extrator mesclar por cima silenciosamente (era o que
+    // gerava "agendou/anotou mas confundiu com o pedido antigo").
+    const { data: pedidoAberto } = await supabase
+      .from("pedidos")
+      .select("itens, modalidade")
+      .eq("lead_id", opts.leadId)
+      .in("status", ["captando", "pronto_para_equipe", "em_atendimento"])
+      .maybeSingle<{
+        itens: { produto: string; quantidade: number; unidade?: string | null }[];
+        modalidade: string | null;
+      }>();
+    if (pedidoAberto && (pedidoAberto.itens?.length ?? 0) > 0) {
+      const resumoItens = pedidoAberto.itens
+        .map((i) => `${i.quantidade}${i.unidade ? ` ${i.unidade}` : "x"} ${i.produto}`)
+        .join(", ");
+      const modalidadeTxt = pedidoAberto.modalidade
+        ? ` (${pedidoAberto.modalidade})`
+        : "";
+      extras.push(
+        `[PEDIDO EM ABERTO] Este cliente JÁ TEM um pedido em andamento anotado: ${resumoItens}${modalidadeTxt}. Se o cliente começar a pedir itens NOVOS, NÃO crie um pedido novo nem substitua o atual por conta própria — primeiro PERGUNTE se é pra ADICIONAR a esse pedido ou se é um pedido separado, e se o pedido anterior deve ser mantido, alterado ou cancelado. Só siga depois da resposta dele.`,
+      );
+    }
+  }
   // Contexto de prospecção: cobre tanto cadência ATIVA (origem=prospeccao)
   // quanto lead que foi prospectado no passado, virou "perdido", e agora
   // respondeu (origem virou "inbound" mas origem_inicial continua "prospeccao").

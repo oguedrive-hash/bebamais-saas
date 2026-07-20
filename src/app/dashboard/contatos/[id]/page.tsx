@@ -6,6 +6,7 @@ import { StatusSelector } from "@/components/status-selector";
 import { StatusAgendamentoSelector } from "@/components/status-agendamento-selector";
 import { BotaoRemarcarAgendamento } from "@/components/botao-remarcar-agendamento";
 import { AtendenteSelector } from "@/components/atendente-selector";
+import { AtribuirConversa } from "@/components/atribuir-conversa";
 import { TimelineMensagens } from "@/components/timeline-mensagens";
 import { CaixaResposta } from "@/components/caixa-resposta";
 import { RealtimeLeadUpdates } from "@/components/realtime-lead-updates";
@@ -97,6 +98,11 @@ export default async function LeadDetalhePage({
     notFound();
   }
 
+  // Usuário logado — pra saber se a conversa está atribuída a ELE (item 8).
+  const {
+    data: { user: usuarioAtual },
+  } = await supabase.auth.getUser();
+
   // Números do pool da org (pra trocar manualmente quem atende o lead). Via admin
   // client porque org_numeros não tem policy de leitura pro client do usuário.
   const { data: poolNumeros } = await createAdminClient()
@@ -161,6 +167,13 @@ export default async function LeadDetalhePage({
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
+            <AtribuirConversa
+              leadId={lead.id}
+              atribuidoNome={lead.atribuido_nome ?? null}
+              ehMinha={
+                Boolean(usuarioAtual) && lead.atribuido_a === usuarioAtual?.id
+              }
+            />
             <StatusSelector
               leadId={lead.id}
               statusAtual={lead.status as StatusLead}

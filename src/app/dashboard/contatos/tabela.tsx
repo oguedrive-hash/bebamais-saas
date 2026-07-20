@@ -12,6 +12,7 @@ import {
   type LeadImport,
   type RelatorioImportacao,
 } from "./actions";
+import { atribuirConversa } from "./atribuicao-actions";
 
 type Lead = {
   id: string;
@@ -21,6 +22,8 @@ type Lead = {
   origem: string;
   updated_at: string;
   created_at: string;
+  atribuido_a: string | null;
+  atribuido_nome: string | null;
 };
 
 const CSV_TEMPLATE =
@@ -62,7 +65,13 @@ function csvParaLeads(headers: string[], linhas: string[][]): LeadImport[] {
 // basta voltar pra true.
 const PROSPECCAO_ATIVA = false;
 
-export function ContatosTabela({ leads }: { leads: Lead[] }) {
+export function ContatosTabela({
+  leads,
+  meuUserId,
+}: {
+  leads: Lead[];
+  meuUserId: string | null;
+}) {
   const router = useRouter();
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [pendingMover, startMover] = useTransition();
@@ -153,6 +162,7 @@ export function ContatosTabela({ leads }: { leads: Lead[] }) {
               )}
               <Th>Nome / Telefone</Th>
               {PROSPECCAO_ATIVA && <Th>Origem</Th>}
+              <Th>Atendente</Th>
               <Th>Status</Th>
               <Th>Última atividade</Th>
             </tr>
@@ -192,6 +202,17 @@ export function ContatosTabela({ leads }: { leads: Lead[] }) {
                     <OrigemBadge origem={lead.origem} />
                   </Td>
                 )}
+                <Td className="whitespace-nowrap">
+                  <AtendenteCell
+                    leadId={lead.id}
+                    atribuidoNome={lead.atribuido_nome}
+                    ehMinha={
+                      lead.atribuido_a != null &&
+                      lead.atribuido_a === meuUserId
+                    }
+                    onAtribuido={() => router.refresh()}
+                  />
+                </Td>
                 <Td>
                   <StatusBadge status={lead.status} />
                 </Td>
@@ -743,6 +764,60 @@ function Td({
   className?: string;
 }) {
   return <td className={`px-6 py-2.5 ${className}`}>{children}</td>;
+}
+
+// Célula de atendente na lista de Conversas (item 8): mostra quem está com a
+// conversa ou um botão "Pegar" quando está livre. stopPropagation no clique pra
+// não abrir o lead ao pegar. onAtribuido revalida a lista.
+function AtendenteCell({
+  leadId,
+  atribuidoNome,
+  ehMinha,
+  onAtribuido,
+}: {
+  leadId: string;
+  atribuidoNome: string | null;
+  ehMinha: boolean;
+  onAtribuido: () => void;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [erro, setErro] = useState<string | null>(null);
+
+  if (atribuidoNome) {
+    return (
+      <span
+        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-heading font-semibold border ${
+          ehMinha
+            ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+            : "bg-cinza-claro/40 text-cinza-medio border-cinza-claro"
+        }`}
+        title={ehMinha ? "Você está atendendo" : `${atribuidoNome} está atendendo`}
+      >
+        {ehMinha ? "Você" : atribuidoNome}
+      </span>
+    );
+  }
+
+  return (
+    <span onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        onClick={() => {
+          setErro(null);
+          startTransition(async () => {
+            const r = await atribuirConversa(leadId);
+            if ("error" in r) setErro(r.error);
+            else onAtribuido();
+          });
+        }}
+        disabled={pending}
+        className="px-2 py-0.5 rounded-full text-[11px] font-heading font-semibold border border-laranja text-laranja hover:bg-laranja hover:text-white transition disabled:opacity-50"
+      >
+        {pending ? "..." : "✋ Pegar"}
+      </button>
+      {erro && <span className="block text-[10px] text-red-500 mt-0.5">{erro}</span>}
+    </span>
+  );
 }
 
 function OrigemBadge({ origem }: { origem: string }) {
