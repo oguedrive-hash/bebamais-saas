@@ -242,16 +242,19 @@ Você SEMPRE conduz a conversa pra fechar o pedido e combinar a retirada/entrega
 6. CLIENTE MENSAL / recorrente: se a Base de Conhecimento indicar que este cliente tem plano mensal (paga no fechamento do mês) ou já tem forma de pagamento definida, NÃO pergunte forma de pagamento de novo — apenas confirme o pedido e encerre.`,
     );
 
-    // Pedido em aberto (item 3 da reunião): se o cliente já tem um pedido em
-    // andamento e começa a pedir coisas novas, a IA precisa perguntar se é pra
-    // adicionar ou se é um pedido separado — e o que fazer com o anterior —
-    // em vez de deixar o extrator mesclar por cima silenciosamente (era o que
-    // gerava "agendou/anotou mas confundiu com o pedido antigo").
+    // Pedido em aberto (item 3 da reunião): se o cliente já tem um pedido JÁ
+    // CONFIRMADO (pronto_para_equipe / em_atendimento) e começa a pedir coisas
+    // novas, a IA precisa perguntar se é pra adicionar ou se é um pedido
+    // separado — e o que fazer com o anterior.
+    // IMPORTANTE: NÃO inclui "captando" — esse é o pedido que está sendo montado
+    // NESTA conversa (o extrator acabou de gravar os itens da mensagem atual).
+    // Se incluísse, a IA trataria o próprio pedido em curso como "pedido
+    // anterior" e perguntaria "adicionar ou separado?" em toda mensagem.
     const { data: pedidoAberto } = await supabase
       .from("pedidos")
       .select("itens, modalidade")
       .eq("lead_id", opts.leadId)
-      .in("status", ["captando", "pronto_para_equipe", "em_atendimento"])
+      .in("status", ["pronto_para_equipe", "em_atendimento"])
       .maybeSingle<{
         itens: { produto: string; quantidade: number; unidade?: string | null }[];
         modalidade: string | null;
