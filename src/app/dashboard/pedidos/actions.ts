@@ -182,6 +182,8 @@ export async function atualizarPedido(
     modalidade?: "retirada" | "entrega" | null;
     endereco?: string | null;
     nome_cliente?: string | null;
+    forma_pagamento?: "pix" | "cartao" | "dinheiro" | null;
+    troco_para?: string | null;
     obs?: string | null;
   },
   // CAS: updated_at que o painel viu ao abrir a edição. Se o pedido mudou
@@ -231,6 +233,13 @@ export async function atualizarPedido(
   ) {
     return { error: "Modalidade inválida" };
   }
+  if (
+    patch.forma_pagamento !== undefined &&
+    patch.forma_pagamento !== null &&
+    !["pix", "cartao", "dinheiro"].includes(patch.forma_pagamento)
+  ) {
+    return { error: "Forma de pagamento inválida" };
+  }
 
   const admin = createAdminClient();
   let query = admin
@@ -238,6 +247,18 @@ export async function atualizarPedido(
     .update({
       ...(itensLimpos !== undefined ? { itens: itensLimpos } : {}),
       ...(patch.modalidade !== undefined ? { modalidade: patch.modalidade } : {}),
+      ...(patch.forma_pagamento !== undefined
+        ? { forma_pagamento: patch.forma_pagamento }
+        : {}),
+      ...(patch.troco_para !== undefined
+        ? {
+            // Troco só faz sentido em dinheiro; noutra forma, zera.
+            troco_para:
+              patch.forma_pagamento === "dinheiro"
+                ? patch.troco_para?.trim() || null
+                : null,
+          }
+        : {}),
       ...(patch.endereco !== undefined ? { endereco: patch.endereco?.trim() || null } : {}),
       ...(patch.nome_cliente !== undefined
         ? { nome_cliente: patch.nome_cliente?.trim() || null }

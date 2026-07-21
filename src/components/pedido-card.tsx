@@ -26,11 +26,19 @@ export type PedidoRow = {
   modalidade: string | null;
   endereco: string | null;
   nome_cliente: string | null;
+  forma_pagamento?: string | null;
+  troco_para?: string | null;
   obs: string | null;
   confirmado_em?: string | null;
   created_at: string;
   updated_at: string;
   assumido_por?: string | null;
+};
+
+const PAGAMENTO_LABEL: Record<string, string> = {
+  pix: "💳 PIX",
+  cartao: "💳 Cartão",
+  dinheiro: "💵 Dinheiro",
 };
 
 const STATUS_PEDIDO: Record<
@@ -102,6 +110,10 @@ export function PedidoCard({
   const [itens, setItens] = useState<ItemPedido[]>(pedido.itens ?? []);
   const [modalidade, setModalidade] = useState<string>(pedido.modalidade ?? "");
   const [endereco, setEndereco] = useState(pedido.endereco ?? "");
+  const [formaPagamento, setFormaPagamento] = useState<string>(
+    pedido.forma_pagamento ?? "",
+  );
+  const [trocoPara, setTrocoPara] = useState(pedido.troco_para ?? "");
   const [obs, setObs] = useState(pedido.obs ?? "");
 
   const aberto = ABERTOS.includes(pedido.status);
@@ -143,6 +155,12 @@ export function PedidoCard({
           itens: limpos,
           modalidade: (modalidade || null) as "retirada" | "entrega" | null,
           endereco: endereco || null,
+          forma_pagamento: (formaPagamento || null) as
+            | "pix"
+            | "cartao"
+            | "dinheiro"
+            | null,
+          troco_para: formaPagamento === "dinheiro" ? trocoPara || null : null,
           obs: obs || null,
         },
         updatedAtEdicao,
@@ -179,6 +197,8 @@ export function PedidoCard({
                 setItens(pedido.itens ?? []);
                 setModalidade(pedido.modalidade ?? "");
                 setEndereco(pedido.endereco ?? "");
+                setFormaPagamento(pedido.forma_pagamento ?? "");
+                setTrocoPara(pedido.troco_para ?? "");
                 setObs(pedido.obs ?? "");
                 setUpdatedAtEdicao(pedido.updated_at);
                 setEditando(true);
@@ -232,6 +252,14 @@ export function PedidoCard({
                   : "Retirada/entrega a definir"}
             </span>
             {pedido.nome_cliente && <span>👤 {pedido.nome_cliente}</span>}
+            {pedido.forma_pagamento && (
+              <span className="font-heading font-semibold text-preto">
+                {PAGAMENTO_LABEL[pedido.forma_pagamento] ?? pedido.forma_pagamento}
+                {pedido.forma_pagamento === "dinheiro" && pedido.troco_para
+                  ? ` — troco pra ${pedido.troco_para}`
+                  : ""}
+              </span>
+            )}
           </div>
           {pedido.obs && (
             <p className="text-xs text-cinza-medio italic mt-1">{pedido.obs}</p>
@@ -324,6 +352,27 @@ export function PedidoCard({
                 value={endereco}
                 placeholder="Endereço de entrega"
                 onChange={(e) => setEndereco(e.target.value)}
+                className="flex-1 px-2 py-1.5 border border-cinza-claro rounded-lg text-sm"
+              />
+            )}
+          </div>
+          <div className="flex gap-2">
+            <select
+              value={formaPagamento}
+              onChange={(e) => setFormaPagamento(e.target.value)}
+              className="px-2 py-1.5 border border-cinza-claro rounded-lg text-sm bg-white"
+              title="Forma de pagamento"
+            >
+              <option value="">Pagamento a definir</option>
+              <option value="pix">PIX</option>
+              <option value="cartao">Cartão</option>
+              <option value="dinheiro">Dinheiro</option>
+            </select>
+            {formaPagamento === "dinheiro" && (
+              <input
+                value={trocoPara}
+                placeholder="Troco pra quanto?"
+                onChange={(e) => setTrocoPara(e.target.value)}
                 className="flex-1 px-2 py-1.5 border border-cinza-claro rounded-lg text-sm"
               />
             )}

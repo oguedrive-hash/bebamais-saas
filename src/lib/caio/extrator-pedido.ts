@@ -36,11 +36,15 @@ export type ItemPedido = {
   ref?: string | null;
 };
 
+export type FormaPagamento = "pix" | "cartao" | "dinheiro";
+
 export type ExtracaoPedido = {
   itens: ItemPedido[];
   modalidade: "retirada" | "entrega" | null;
   endereco: string | null;
   nome_cliente: string | null;
+  forma_pagamento: FormaPagamento | null;
+  troco_para: string | null;
   completo: boolean;
   confirmado: boolean;
 };
@@ -48,7 +52,7 @@ export type ExtracaoPedido = {
 const SYSTEM_PROMPT = `Você é um extrator de dados. Leia a conversa entre o atendente da Beba Mais (distribuidora de bebidas) e o cliente e extraia o PEDIDO ATUAL como JSON.
 
 Retorne APENAS JSON, sem markdown:
-{"itens":[{"produto":"...","quantidade":N,"unidade":"caixa|fardo|pack|unidade|litro ou null"}],"modalidade":"retirada"|"entrega"|null,"endereco":"..."|null,"nome_cliente":"..."|null,"completo":true|false,"confirmado":true|false}
+{"itens":[{"produto":"...","quantidade":N,"unidade":"caixa|fardo|pack|unidade|litro ou null"}],"modalidade":"retirada"|"entrega"|null,"endereco":"..."|null,"nome_cliente":"..."|null,"forma_pagamento":"pix"|"cartao"|"dinheiro"|null,"troco_para":"..."|null,"completo":true|false,"confirmado":true|false}
 
 REGRAS:
 - "itens": só o que o cliente PEDIU (não o que só perguntou preço). Nome do produto EXATAMENTE como o cliente disse (ex: "Skol lata 350ml"). Se ainda não pediu nada: [].
@@ -59,6 +63,8 @@ REGRAS:
 - "modalidade": "retirada" se o cliente disse que vai BUSCAR na loja, "entrega" se pediu para ENTREGAR, null se indefinido. Extraia a modalidade do PEDIDO ATUAL — se a conversa recente indica retirada, use "retirada" mesmo que um pedido anterior tenha sido entrega. Nunca herde a modalidade de um pedido antigo.
 - "endereco": só se entrega e o cliente informou (bairro conta); senão null.
 - "nome_cliente": nome que o cliente DISSE na conversa; null se não disse.
+- "forma_pagamento": "pix", "cartao" ou "dinheiro" APENAS se o cliente já disse como vai pagar; null se ainda não falou. Cartão de crédito/débito → "cartao".
+- "troco_para": só quando forma_pagamento="dinheiro" E o cliente disse um valor de troco (ex: "troco pra 100" → "100"); senão null.
 - "completo": true se tem itens E modalidade definida E (endereco quando entrega) E nome_cliente.
 - "confirmado": true SOMENTE se o atendente RECAPITULOU o pedido (listou os itens de volta) E o cliente respondeu AFIRMANDO depois do recap ("isso", "isso mesmo", "fechou", "pode ser", "confirmo"). Se o cliente alterou algo depois do último recap → false.
 - NUNCA invente item, quantidade ou endereço que não estejam na conversa.`;
@@ -70,6 +76,8 @@ type PedidoRow = {
   modalidade: string | null;
   endereco: string | null;
   nome_cliente: string | null;
+  forma_pagamento: string | null;
+  troco_para: string | null;
   editado_pelo_painel: boolean;
   updated_at: string;
 };
@@ -122,6 +130,12 @@ function validarExtracao(raw: unknown): ExtracaoPedido | null {
     o.modalidade === "retirada" || o.modalidade === "entrega"
       ? o.modalidade
       : null;
+  const forma_pagamento =
+    o.forma_pagamento === "pix" ||
+    o.forma_pagamento === "cartao" ||
+    o.forma_pagamento === "dinheiro"
+      ? o.forma_pagamento
+      : null;
   return {
     itens,
     modalidade,
@@ -132,6 +146,14 @@ function validarExtracao(raw: unknown): ExtracaoPedido | null {
     nome_cliente:
       typeof o.nome_cliente === "string" && o.nome_cliente.trim()
         ? o.nome_cliente.trim().slice(0, 120)
+        : null,
+    forma_pagamento,
+    // Troco só vale pra dinheiro; em qualquer outra forma é ruído.
+    troco_para:
+      forma_pagamento === "dinheiro" &&
+      typeof o.troco_para === "string" &&
+      o.troco_para.trim()
+        ? o.troco_para.trim().slice(0, 40)
         : null,
     completo: o.completo === true,
     confirmado: o.confirmado === true,
@@ -158,7 +180,7 @@ export async function extrairEAtualizarPedido(opts: {
   const { data: aberto } = await admin
     .from("pedidos")
     .select(
-      "id, status, itens, modalidade, endereco, nome_cliente, editado_pelo_painel, updated_at",
+      "id, status, itens, modalidade, endereco, nome_cliente, forma_pagamento, troco_para, editado_pelo_painel, updated_at",
     )
     .eq("lead_id", opts.leadId)
     .in("status", ["captando", "pronto_para_equipe", "em_atendimento"])
@@ -262,6 +284,8 @@ export async function extrairEAtualizarPedido(opts: {
         modalidade: extracao.modalidade,
         endereco: extracao.endereco,
         nome_cliente: extracao.nome_cliente,
+        forma_pagamento: extracao.forma_pagamento,
+        troco_para: extracao.troco_para,
         status: "captando",
       })
       .select("id")
@@ -312,6 +336,9 @@ export async function extrairEAtualizarPedido(opts: {
         modalidade: extracao.modalidade ?? aberto.modalidade,
         endereco: extracao.endereco ?? aberto.endereco,
         nome_cliente: extracao.nome_cliente ?? aberto.nome_cliente,
+        // MERGE: forma de pagamento dita antes não é apagada por extração null.
+        forma_pagamento: extracao.forma_pagamento ?? aberto.forma_pagamento,
+        troco_para: extracao.troco_para ?? aberto.troco_para,
       })
       .eq("id", pedidoId)
       .eq("editado_pelo_painel", false)

@@ -30,6 +30,7 @@ export default async function PedidosPage({
     .from("pedidos")
     .select(
       `id, status, itens, modalidade, endereco, nome_cliente, obs,
+       forma_pagamento, troco_para,
        confirmado_em, created_at, updated_at, assumido_por,
        lead:leads(id, nome, telefone),
        agendamento:agendamentos(id, data_inicio, status)`,

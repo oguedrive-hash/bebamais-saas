@@ -87,7 +87,7 @@ export default async function LeadDetalhePage({
     supabase
       .from("pedidos")
       .select(
-        "id, status, itens, modalidade, endereco, nome_cliente, obs, confirmado_em, created_at, updated_at",
+        "id, status, itens, modalidade, endereco, nome_cliente, obs, forma_pagamento, troco_para, confirmado_em, created_at, updated_at",
       )
       .eq("lead_id", id)
       .order("created_at", { ascending: false })

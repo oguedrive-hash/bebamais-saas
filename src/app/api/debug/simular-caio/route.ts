@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
     (
       await admin
         .from("pedidos")
-        .select("id, status, itens, modalidade, endereco, nome_cliente, agendamento_id")
+        .select("id, status, itens, modalidade, endereco, nome_cliente, forma_pagamento, troco_para, agendamento_id")
         .eq("lead_id", lead.id)
         .order("created_at", { ascending: false })
         .limit(1)
