@@ -18,6 +18,7 @@ import { logarEvento } from "@/lib/caio/eventos";
 import { enviarComMidia } from "@/lib/caio/enviar-com-midia";
 import { numeroPorPapel } from "@/lib/caio/numeros";
 import { podeEnviarProativo, podeProspectarHoje } from "@/lib/caio/guardrails";
+import { resolverSpintax } from "./spintax";
 
 type RegraProspeccao = {
   nivel: number;
@@ -47,7 +48,9 @@ function aplicarTemplate(
   msg: string,
   lead: LeadProspeccao,
 ): string {
-  let texto = msg;
+  // Spintax ANTES das variáveis: se o dado do lead (nome/dados_extras) contiver
+  // '|' ou '{}', rodar spintax depois interpretaria o dado como sintaxe.
+  let texto = resolverSpintax(msg);
   const nome = lead.nome?.split(" ")[0] || "tudo bem";
   texto = texto.replace(/\{nome\}/g, nome);
   // Placeholders dinamicos do dados_extras

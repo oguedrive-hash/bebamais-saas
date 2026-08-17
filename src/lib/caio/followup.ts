@@ -29,6 +29,7 @@ import {
   podeEnviarProativo,
   dentroDaJanelaProativa,
 } from "@/lib/caio/guardrails";
+import { resolverSpintax } from "./spintax";
 
 type Regra = {
   nivel: number;
@@ -121,7 +122,8 @@ type LeadProcess = {
  */
 function aplicarTemplate(msg: string, lead: LeadProcess): string {
   const nome = lead.nome?.split(" ")[0] || "tudo bem";
-  return msg.replace(/\{nome\}/g, nome);
+  // Spintax ANTES do {nome}: nome sujo com '|' ou '{}' não vira sintaxe.
+  return resolverSpintax(msg).replace(/\{nome\}/g, nome);
 }
 
 function calcularProximoEm(

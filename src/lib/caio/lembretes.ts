@@ -18,6 +18,7 @@ import {
 import { evoSendText } from "@/lib/caio/evolution-api";
 import { enviarSerializado } from "@/lib/caio/fila-envio";
 import { numeroPorPapel } from "@/lib/caio/numeros";
+import { resolverSpintax } from "./spintax";
 
 type RegraLembrete = {
   nivel: number;
@@ -91,7 +92,8 @@ function aplicarTemplate(
     month: "2-digit",
     timeZone: "America/Sao_Paulo",
   });
-  return msg
+  // Spintax ANTES das variáveis: dado do lead com '|' ou '{}' não vira sintaxe.
+  return resolverSpintax(msg)
     .replace(/\{nome\}/g, primeiroNome)
     .replace(/\{hora\}/g, hora)
     .replace(/\{data\}/g, data)

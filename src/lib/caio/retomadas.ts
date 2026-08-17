@@ -22,6 +22,7 @@ import {
   enviarComMidia,
   type TipoMidia,
 } from "@/lib/caio/enviar-com-midia";
+import { resolverSpintax } from "./spintax";
 
 type RegraSimples = {
   nivel: number;
@@ -33,7 +34,8 @@ type RegraSimples = {
 
 function aplicarTemplate(msg: string, nome: string | null): string {
   const primeiro = nome?.split(" ")[0] || "tudo bem";
-  return msg.replace(/\{nome\}/g, primeiro);
+  // Spintax ANTES do {nome}: nome sujo com '|' ou '{}' não vira sintaxe.
+  return resolverSpintax(msg).replace(/\{nome\}/g, primeiro);
 }
 
 export async function processarRetomadasPendentes(): Promise<{

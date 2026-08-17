@@ -134,6 +134,34 @@ export function NumerosManager({
     });
   }
 
+  /**
+   * Liga/desliga a IA de UM número, num clique.
+   *
+   * ⚠️ Com a IA desligada o webhook faz `return` ANTES de gravar: a mensagem
+   * recebida NÃO fica salva e nenhum lead é criado. É o certo durante o
+   * aquecimento (o tráfego de warming não polui a base), mas significa que
+   * mensagem de gente real nessa janela se perde. Por isso o confirm ao desligar.
+   */
+  function alternarIa(n: NumeroView) {
+    setErro(null);
+    const ligando = !n.ia_ativa;
+    const nome = n.persona_nome ?? n.instance_name;
+    if (!ligando) {
+      const ok = confirm(
+        `Desligar a IA de "${nome}"?\n\nO número continua CONECTADO no WhatsApp, mas a IA para de responder.\n\n⚠️ Enquanto estiver desligada, as mensagens recebidas NÃO são salvas e nenhum lead é criado — mensagem de cliente real nessa janela se perde.`,
+      );
+      if (!ok) return;
+    }
+    startTransition(async () => {
+      const r = await atualizarNumero(organizationId, n.id, { ia_ativa: ligando });
+      if ("error" in r) {
+        setErro(r.error);
+        return;
+      }
+      router.refresh();
+    });
+  }
+
   function conectar(instance: string) {
     setErro(null);
     setQr({ instance });
@@ -232,6 +260,23 @@ export function NumerosManager({
                 )}
               </div>
               <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => alternarIa(n)}
+                  disabled={pending}
+                  title={
+                    n.ia_ativa
+                      ? "A IA está respondendo neste número. Clique para silenciar (o número continua conectado)."
+                      : "A IA está desligada: o número está conectado mas não responde. Clique para ativar."
+                  }
+                  className={`px-3 py-2 rounded-lg text-sm font-heading font-bold transition disabled:opacity-50 border ${
+                    n.ia_ativa
+                      ? "bg-green-50 text-green-800 border-green-300 hover:bg-green-100"
+                      : "bg-cinza-claro/40 text-cinza-medio border-cinza-claro hover:border-laranja"
+                  }`}
+                >
+                  {n.ia_ativa ? "🔔 IA ligada" : "🔕 IA desligada"}
+                </button>
                 <button
                   type="button"
                   onClick={() => abrirEdicao(n)}

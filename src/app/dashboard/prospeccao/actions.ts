@@ -5,6 +5,10 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getJanela } from "@/lib/caio/janela-prospeccao";
 import { digitosTelefone } from "@/lib/caio/telefone";
+import {
+  calcularOffsetsRajada,
+  CADENCIA_DEFAULT,
+} from "@/lib/caio/cadencia-rajada";
 
 export type RelatorioDisparo = {
   agendados: number;
@@ -108,6 +112,30 @@ export async function dispararPrimeirasMensagensEmLote(
     intervaloPorOrg.set(orgId, janela.intervalo_minutos);
   }
 
+  // Cadência em rajada: offsets pré-calculados POR ORG (a cadência é da conta
+  // que dispara, não do lote global) e consumidos por índice dentro do loop.
+  // Substitui o antigo `idx * intervalo` (mesmo gap N vezes = assinatura de bot).
+  const totalPorOrg = new Map<string, number>();
+  for (const lead of leadsVisiveis) {
+    if (conflitosPorLead.get(lead.id)) continue; // conflito não dispara
+    totalPorOrg.set(
+      lead.organization_id,
+      (totalPorOrg.get(lead.organization_id) ?? 0) + 1,
+    );
+  }
+  const offsetsPorOrg = new Map<string, number[]>();
+  for (const [orgId, total] of totalPorOrg) {
+    offsetsPorOrg.set(
+      orgId,
+      calcularOffsetsRajada(
+        total,
+        CADENCIA_DEFAULT,
+        Math.random,
+        OFFSET_PRIMEIRO_SEGUNDOS,
+      ),
+    );
+  }
+
   // Contador por org pra calcular o offset de cada lead na fila
   const indicePorOrg = new Map<string, number>();
 
@@ -127,15 +155,15 @@ export async function dispararPrimeirasMensagensEmLote(
     const idx = indicePorOrg.get(orgId) ?? 0;
     indicePorOrg.set(orgId, idx + 1);
 
-    // 1º lead da org (idx=0) → +5s. Demais → idx * intervalo_minutos.
+    // Offset da cadência em rajada (pré-calculado por org). Fallback linear se
+    // algo falhar — melhor espaçado que junto.
     // IMPORTANTE: usa now() do DB via RPC pra evitar clock drift. Quando
     // calculávamos com Date.now() em JS na server action, o resultado vinha
     // ~3 min adiantado em relação ao now() do Postgres (Next.js 16 parece
     // cachear o tempo da request).
+    const offsets = offsetsPorOrg.get(orgId);
     const segundos =
-      idx === 0
-        ? OFFSET_PRIMEIRO_SEGUNDOS
-        : idx * intervalo * 60;
+      offsets?.[idx] ?? (idx === 0 ? OFFSET_PRIMEIRO_SEGUNDOS : idx * intervalo * 60);
 
     const { error: upErr } = await admin.rpc("agendar_disparo_prospeccao", {
       p_lead_id: lead.id,
