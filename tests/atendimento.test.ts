@@ -1,0 +1,124 @@
+/**
+ * Testes das regras do pré-atendente (sem banco e sem WhatsApp).
+ * Rodar: npm test
+ */
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import {
+  CONFIG_PADRAO,
+  avisoDeEsperaDevido,
+  decidirEntrada,
+  estaAberto,
+  normalizarConfig,
+  proximaAbertura,
+} from "../src/lib/atendimento/regras";
+import { normalizarMensagem } from "../src/lib/atendimento/inbound";
+import { aplicarTravas, interpretarResposta } from "../src/lib/atendimento/assistente";
+
+// Datas em horário de São Paulo (UTC-3): 2026-10-06 é terça-feira.
+const sp = (iso: string) => new Date(`${iso}-03:00`);
+
+test("loja aberta e fechada conforme o horário", () => {
+  assert.equal(estaAberto(CONFIG_PADRAO, sp("2026-10-06T09:30:00")), true);
+  assert.equal(estaAberto(CONFIG_PADRAO, sp("2026-10-06T07:59:00")), false);
+  assert.equal(estaAberto(CONFIG_PADRAO, sp("2026-10-06T18:00:00")), false);
+  assert.equal(estaAberto(CONFIG_PADRAO, sp("2026-10-10T12:00:00")), true); // sábado até 13h
+  assert.equal(estaAberto(CONFIG_PADRAO, sp("2026-10-11T10:00:00")), false); // domingo fechado
+});
+
+test("próxima abertura em texto", () => {
+  assert.equal(proximaAbertura(CONFIG_PADRAO, sp("2026-10-06T06:00:00")), "hoje às 08:00");
+  assert.equal(proximaAbertura(CONFIG_PADRAO, sp("2026-10-06T20:00:00")), "amanhã (quarta-feira) às 08:00");
+  assert.equal(proximaAbertura(CONFIG_PADRAO, sp("2026-10-10T15:00:00")), "segunda-feira às 08:00");
+});
+
+test("config do banco incompleta vira padrão", () => {
+  const c = normalizarConfig({ horarios: { seg: { abre: "25:00", fecha: "18:00" }, dom: null }, espera_minutos: [15, "x", 5] });
+  assert.deepEqual(c.horarios.seg, CONFIG_PADRAO.horarios.seg);
+  assert.equal(c.horarios.dom, null);
+  assert.deepEqual(c.espera_minutos, [5, 15]);
+  assert.equal(c.assistente_ativo, true);
+});
+
+const agora = sp("2026-10-06T10:00:00");
+const haMinutos = (m: number) => new Date(agora.getTime() - m * 60_000).toISOString();
+
+test("cliente novo: assistente responde", () => {
+  const d = decidirEntrada({ atend_status: "bot", ultima_atividade_em: null, caio_ativo: true }, CONFIG_PADRAO, agora, true);
+  assert.deepEqual(d, { novaConversa: true, status: "bot", assistenteResponde: true });
+});
+
+test("conversa com atendente: assistente fica quieto", () => {
+  const d = decidirEntrada({ atend_status: "atendendo", ultima_atividade_em: haMinutos(10), caio_ativo: true }, CONFIG_PADRAO, agora, true);
+  assert.deepEqual(d, { novaConversa: false, status: "atendendo", assistenteResponde: false });
+});
+
+test("esperando atendente: mensagem nova não aciona o assistente", () => {
+  const d = decidirEntrada({ atend_status: "aguardando", ultima_atividade_em: haMinutos(2), caio_ativo: true }, CONFIG_PADRAO, agora, true);
+  assert.equal(d.assistenteResponde, false);
+  assert.equal(d.status, "aguardando");
+});
+
+test("atendimento finalizado: próxima mensagem abre conversa nova", () => {
+  const d = decidirEntrada({ atend_status: "finalizado", ultima_atividade_em: haMinutos(5), caio_ativo: false }, CONFIG_PADRAO, agora, true);
+  assert.deepEqual(d, { novaConversa: true, status: "bot", assistenteResponde: true });
+});
+
+test("conversa parada há mais de 6 horas recomeça", () => {
+  const d = decidirEntrada({ atend_status: "atendendo", ultima_atividade_em: haMinutos(7 * 60), caio_ativo: true }, CONFIG_PADRAO, agora, true);
+  assert.equal(d.novaConversa, true);
+  assert.equal(d.assistenteResponde, true);
+});
+
+test("assistente desligado: cliente vai direto para a fila", () => {
+  const off = { ...CONFIG_PADRAO, assistente_ativo: false };
+  const d = decidirEntrada({ atend_status: "bot", ultima_atividade_em: null, caio_ativo: true }, off, agora, true);
+  assert.deepEqual(d, { novaConversa: true, status: "aguardando", assistenteResponde: false });
+  const semNumero = decidirEntrada({ atend_status: "bot", ultima_atividade_em: null, caio_ativo: true }, CONFIG_PADRAO, agora, false);
+  assert.equal(semNumero.status, "aguardando");
+});
+
+test("mensagens de espera: 5 e 15 minutos, no máximo 2, só com a loja aberta", () => {
+  assert.equal(avisoDeEsperaDevido(haMinutos(3), 0, CONFIG_PADRAO, agora), null);
+  assert.equal(avisoDeEsperaDevido(haMinutos(6), 0, CONFIG_PADRAO, agora), 0);
+  assert.equal(avisoDeEsperaDevido(haMinutos(10), 1, CONFIG_PADRAO, agora), null);
+  assert.equal(avisoDeEsperaDevido(haMinutos(16), 1, CONFIG_PADRAO, agora), 1);
+  assert.equal(avisoDeEsperaDevido(haMinutos(60), 2, CONFIG_PADRAO, agora), null);
+  assert.equal(avisoDeEsperaDevido(haMinutos(60), 0, CONFIG_PADRAO, sp("2026-10-06T21:00:00")), null);
+});
+
+test("lê os tipos de mensagem do WhatsApp", () => {
+  assert.deepEqual(normalizarMensagem({ conversation: " oi " }), { tipo: "texto", texto: "oi", midia: null, ignorar: false });
+  assert.equal(normalizarMensagem({ extendedTextMessage: { text: "25 fardo de coca" } }).texto, "25 fardo de coca");
+  const foto = normalizarMensagem({ imageMessage: { caption: "meu pedido", mimetype: "image/jpeg" } });
+  assert.equal(foto.tipo, "imagem");
+  assert.equal(foto.texto, "meu pedido");
+  const doc = normalizarMensagem({ documentWithCaptionMessage: { message: { documentMessage: { fileName: "pedido.xlsx", mimetype: "application/vnd.ms-excel" } } } });
+  assert.equal(doc.tipo, "arquivo");
+  assert.equal(doc.midia?.nome, "pedido.xlsx");
+  const loc = normalizarMensagem({ locationMessage: { degreesLatitude: -22.7, degreesLongitude: -47.3, name: "Bar do Zé" } });
+  assert.equal(loc.tipo, "localizacao");
+  assert.match(loc.texto ?? "", /maps\.google\.com\/\?q=-22\.7,-47\.3/);
+  assert.equal(normalizarMensagem({ reactionMessage: { text: "👍" } }).ignorar, true);
+  assert.equal(normalizarMensagem({ ephemeralMessage: { message: { conversation: "temporária" } } }).texto, "temporária");
+  assert.equal(normalizarMensagem({ audioMessage: { mimetype: "audio/ogg; codecs=opus" } }).midia?.mime, "audio/ogg");
+});
+
+test("resposta da IA: JSON válido é usado, inválido vira passar para atendente", () => {
+  const ok = interpretarResposta('{"resposta":"Olá, bom dia! Como posso ajudar?","assunto":"outro","passar_para_atendente":false}', true);
+  assert.deepEqual(ok, { resposta: "Olá, bom dia! Como posso ajudar?", assunto: "outro", passar: false });
+  const ruim = interpretarResposta("não sou json", true);
+  assert.equal(ruim.passar, true);
+  const assuntoEstranho = interpretarResposta('{"resposta":"ok","assunto":"xyz"}', true);
+  assert.equal(assuntoEstranho.assunto, "outro");
+});
+
+test("trava: nunca manda valor em dinheiro; depois de 3 respostas passa para a atendente", () => {
+  const comPreco = aplicarTravas({ resposta: "A Heineken sai R$ 6,50", assunto: "duvida", passar: false }, 0, true);
+  assert.equal(comPreco.passar, true);
+  assert.doesNotMatch(comPreco.resposta, /R\$/);
+  const muitas = aplicarTravas({ resposta: "Me conta o que precisa?", assunto: "pedido", passar: false }, 2, true);
+  assert.equal(muitas.passar, true);
+  const normal = aplicarTravas({ resposta: "Me conta o que precisa?", assunto: "pedido", passar: false }, 0, true);
+  assert.equal(normal.passar, false);
+});

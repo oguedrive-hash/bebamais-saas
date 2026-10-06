@@ -278,3 +278,38 @@ export async function evoSendMedia(opts: {
     fileName: opts.fileName,
   });
 }
+
+/**
+ * Baixa a mídia de uma mensagem recebida (foto, áudio, PDF...) em base64.
+ * A mídia nem sempre está pronta no instante em que o webhook chega (a Evolution
+ * ainda está baixando do WhatsApp), então tenta algumas vezes com intervalo curto.
+ */
+export async function evoBaixarMidia(
+  instance: string,
+  key: unknown,
+): Promise<{ base64: string; mimetype: string | null } | null> {
+  let url: string, apikey: string;
+  try {
+    ({ url, key: apikey } = config());
+  } catch {
+    return null;
+  }
+  for (let i = 0; i < 4; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, 1500));
+    try {
+      const res = await fetch(`${url}/chat/getBase64FromMediaMessage/${instance}`, {
+        method: "POST",
+        headers: { apikey, "Content-Type": "application/json" },
+        body: JSON.stringify({ message: { key } }),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { base64?: string; mimetype?: string };
+        if (data.base64) return { base64: data.base64, mimetype: data.mimetype ?? null };
+      }
+    } catch {
+      /* tenta de novo */
+    }
+  }
+  return null;
+}
