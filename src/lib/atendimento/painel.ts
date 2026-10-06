@@ -87,26 +87,46 @@ async function apelidosDosNumeros(): Promise<Record<string, string>> {
   return out;
 }
 
+interface LeadLinha {
+  id: string;
+  nome: string | null;
+  telefone: string | null;
+  telefone_digitos: string | null;
+  atend_status: string;
+  assunto: string | null;
+  evolution_instance: string | null;
+  atribuido_a: string | null;
+  atribuido_nome: string | null;
+  aguardando_desde: string | null;
+  ultima_msg_lead_em: string | null;
+  updated_at: string | null;
+}
+
+const CAMPOS_LISTA =
+  "id, nome, telefone, telefone_digitos, atend_status, assunto, evolution_instance, atribuido_a, atribuido_nome, aguardando_desde, ultima_msg_lead_em, updated_at";
+
 /** Clientes que aparecem na lista: em atendimento agora, ou que bateram com a busca. */
 export async function listarClientes(busca: string | null): Promise<ClienteResumo[]> {
   const supabase = await createClient();
-  let q = supabase
-    .from("leads")
-    .select("id, nome, telefone, telefone_digitos, atend_status, assunto, evolution_instance, atribuido_a, atribuido_nome, aguardando_desde, ultima_msg_lead_em, updated_at")
-    .order("updated_at", { ascending: false })
-    .limit(80);
   const termo = busca?.trim();
+  let leads: LeadLinha[] = [];
   if (termo) {
     const digitos = termo.replace(/\D/g, "");
     const seguro = termo.replace(/[%,()*]/g, " ");
+    let q = supabase.from("leads").select(CAMPOS_LISTA).order("updated_at", { ascending: false }).limit(80);
     q = digitos.length >= 4
       ? q.or(`telefone_digitos.ilike.%${digitos}%,nome.ilike.%${seguro}%`)
       : q.ilike("nome", `%${seguro}%`);
+    leads = ((await q).data ?? []) as LeadLinha[];
   } else {
-    q = q.in("atend_status", ["bot", "aguardando", "atendendo"]);
+    // Quem está esperando aparece SEMPRE (sem limite pequeno), mais as conversas em andamento.
+    const [esperando, andamento] = await Promise.all([
+      supabase.from("leads").select(CAMPOS_LISTA).eq("atend_status", "aguardando").order("aguardando_desde", { ascending: true }).limit(500),
+      supabase.from("leads").select(CAMPOS_LISTA).in("atend_status", ["bot", "atendendo"]).order("updated_at", { ascending: false }).limit(120),
+    ]);
+    leads = [...(esperando.data ?? []), ...(andamento.data ?? [])] as LeadLinha[];
   }
-  const { data: leads } = await q;
-  if (!leads?.length) return [];
+  if (!leads.length) return [];
 
   const ids = leads.map((l) => l.id);
   const [{ data: msgs }, apelidos] = await Promise.all([
@@ -114,6 +134,7 @@ export async function listarClientes(busca: string | null): Promise<ClienteResum
       .from("mensagens")
       .select("lead_id, tipo, conteudo, direcao, created_at")
       .in("lead_id", ids)
+      .eq("shadow", false)
       .order("created_at", { ascending: false })
       .limit(400),
     apelidosDosNumeros(),
@@ -152,6 +173,7 @@ export async function carregarConversa(leadId: string): Promise<{ cliente: Clien
     .from("mensagens")
     .select("id, direcao, autor, remetente_nome, tipo, conteudo, arquivo_path, arquivo_nome, attachment_url, falha_envio, created_at")
     .eq("lead_id", leadId)
+    .eq("shadow", false)
     .order("created_at", { ascending: false })
     .limit(150);
   const lista = (msgs ?? []).reverse();

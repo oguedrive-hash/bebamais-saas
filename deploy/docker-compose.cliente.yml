@@ -110,7 +110,7 @@ services:
     environment:
       CRON_SECRET: ${CRON_SECRET}
     volumes:
-      - ./deploy/crons.sh:/crons.sh:ro
+      - ./crons.sh:/crons.sh:ro
     command: ["sh", "/crons.sh"]
 
 volumes:

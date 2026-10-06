@@ -19,8 +19,13 @@ import { salvarArquivo, tipoPorMime } from "./arquivos";
 
 type Autor = "assistente" | "atendente" | "sistema";
 
-/** IDs de mensagens que o PRÓPRIO sistema mandou (para não confundir com resposta pelo celular). */
-const enviadosRecentemente = new Map<string, number>();
+/**
+ * IDs de mensagens que o PRÓPRIO sistema mandou (para não confundir com resposta
+ * pelo celular). Fica em `globalThis` porque o Next carrega cópias separadas deste
+ * arquivo para as rotas e para as ações do painel — todas no mesmo processo.
+ */
+const g = globalThis as unknown as { __bebamaisEnviados?: Map<string, number> };
+const enviadosRecentemente = (g.__bebamaisEnviados ??= new Map<string, number>());
 export function registrarEnvioDoSistema(id: string) {
   enviadosRecentemente.set(id, Date.now());
   if (enviadosRecentemente.size > 1000) {
@@ -118,7 +123,8 @@ async function registrar(opts: {
   arquivoNome?: string | null;
   arquivoMime?: string | null;
 }) {
-  await createAdminClient().from("mensagens").insert({
+  const admin = createAdminClient();
+  const linha = {
     organization_id: opts.rota.orgId,
     lead_id: opts.rota.leadId,
     direcao: "saida",
@@ -131,7 +137,14 @@ async function registrar(opts: {
     arquivo_path: opts.arquivoPath ?? null,
     arquivo_nome: opts.arquivoNome ?? null,
     arquivo_mime: opts.arquivoMime ?? null,
-  });
+  };
+  // Se o webhook já tiver gravado esta mensagem como "pelo celular", esta versão
+  // (com o autor certo) substitui.
+  const { error } = opts.msgId
+    ? await admin.from("mensagens").upsert(linha, { onConflict: "whatsapp_msg_id" })
+    : await admin.from("mensagens").insert(linha);
+  if (error) console.error("[whatsapp] não registrou mensagem enviada:", error.message);
+  await admin.from("leads").update({ ultima_atividade_em: new Date().toISOString() }).eq("id", opts.rota.leadId);
 }
 
 /** Mostra "digitando..." para o cliente (não bloqueia se falhar). */

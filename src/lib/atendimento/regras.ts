@@ -150,7 +150,7 @@ export interface DecisaoEntrada {
 
 /**
  * O que acontece quando o CLIENTE manda uma mensagem.
- * - finalizado, ou parado há mais de `reiniciar_apos_horas` → conversa nova, volta para o assistente.
+ * - finalizado, ou parado há mais de `reiniciar_apos_horas` (exceto quem está na fila) → conversa nova.
  * - bot → o assistente responde.
  * - aguardando / atendendo → a mensagem só aparece no painel; o assistente fica quieto.
  */
@@ -163,7 +163,8 @@ export function decidirEntrada(
   const parado =
     !lead.ultima_atividade_em ||
     agora.getTime() - new Date(lead.ultima_atividade_em).getTime() > cfg.reiniciar_apos_horas * 3600_000;
-  const novaConversa = lead.atend_status === "finalizado" || parado;
+  // Quem está na fila continua na fila (não perde o lugar nem é recumprimentado).
+  const novaConversa = lead.atend_status === "finalizado" || (parado && lead.atend_status !== "aguardando");
   const status: AtendStatus = novaConversa ? "bot" : lead.atend_status;
   const assistenteLigado = cfg.assistente_ativo && numeroComAssistente && (novaConversa || lead.caio_ativo);
   if (status === "bot" && !assistenteLigado) {
@@ -176,18 +177,42 @@ export function decidirEntrada(
 /** Limite de respostas do assistente por conversa: passou disso, vai para a atendente. */
 export const MAX_RESPOSTAS_ASSISTENTE = 3;
 
-/** Qual mensagem de espera mandar agora (índice), ou null se nenhuma. */
+/** Momento em que a loja abriu hoje (ou null se hoje está fechada). */
+export function aberturaDeHoje(cfg: AtendimentoConfig, agora: Date): Date | null {
+  const { dia, minuto } = agoraSaoPaulo(agora);
+  const h = cfg.horarios[dia];
+  if (!h) return null;
+  const diff = minuto - minutos(h.abre);
+  const d = new Date(agora.getTime() - diff * 60_000);
+  d.setSeconds(0, 0);
+  return d;
+}
+
+/**
+ * Qual mensagem de espera mandar agora (índice), ou null se nenhuma.
+ * A espera conta a partir de quando a loja abriu (quem chegou de madrugada não
+ * recebe as duas mensagens de uma vez às 8h) e respeita o intervalo entre avisos.
+ */
 export function avisoDeEsperaDevido(
   aguardandoDesde: string | null,
   avisosJaEnviados: number,
+  ultimoAvisoEm: string | null,
   cfg: AtendimentoConfig,
   agora: Date,
 ): number | null {
   if (!aguardandoDesde) return null;
-  if (avisosJaEnviados >= cfg.espera_minutos.length) return null;
+  const i = avisosJaEnviados;
+  if (i >= cfg.espera_minutos.length) return null;
   if (!estaAberto(cfg, agora)) return null; // fora do horário o assistente já avisou quando abre
-  const esperaMin = (agora.getTime() - new Date(aguardandoDesde).getTime()) / 60_000;
-  return esperaMin >= cfg.espera_minutos[avisosJaEnviados] ? avisosJaEnviados : null;
+  const abertura = aberturaDeHoje(cfg, agora);
+  const inicio = Math.max(new Date(aguardandoDesde).getTime(), abertura?.getTime() ?? 0);
+  const esperaMin = (agora.getTime() - inicio) / 60_000;
+  if (esperaMin < cfg.espera_minutos[i]) return null;
+  if (i > 0 && ultimoAvisoEm) {
+    const intervalo = cfg.espera_minutos[i] - cfg.espera_minutos[i - 1];
+    if ((agora.getTime() - new Date(ultimoAvisoEm).getTime()) / 60_000 < intervalo) return null;
+  }
+  return i;
 }
 
 export const MENSAGENS_ESPERA = [

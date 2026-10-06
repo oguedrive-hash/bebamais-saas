@@ -16,7 +16,16 @@ alter table leads
   add column if not exists avisos_espera integer not null default 0,
   add column if not exists conversa_iniciada_em timestamptz,
   add column if not exists respostas_bot integer not null default 0,
-  add column if not exists finalizado_em timestamptz;
+  add column if not exists finalizado_em timestamptz,
+  -- última mensagem de qualquer lado (cliente, assistente, atendente, celular)
+  add column if not exists ultima_atividade_em timestamptz,
+  -- até qual mensagem do cliente o assistente já respondeu (evita deixar mensagem sem resposta)
+  add column if not exists assistente_viu_ate timestamptz,
+  add column if not exists ultimo_aviso_em timestamptz;
+
+-- Clientes que já existiam (sistema antigo) começam como "finalizado": a próxima
+-- mensagem deles abre uma conversa nova, sem arrastar o histórico do Caio antigo.
+update leads set atend_status = 'finalizado' where conversa_iniciada_em is null and atend_status = 'bot';
 
 alter table leads drop constraint if exists leads_atend_status_check;
 alter table leads add constraint leads_atend_status_check
@@ -44,8 +53,17 @@ alter table mensagens drop constraint if exists mensagens_tipo_check;
 alter table mensagens add constraint mensagens_tipo_check
   check (tipo in ('texto', 'audio', 'imagem', 'arquivo', 'video', 'localizacao'));
 
-create index if not exists idx_mensagens_whatsapp_msg_id
-  on mensagens (whatsapp_msg_id) where whatsapp_msg_id is not null;
+-- Cada mensagem do WhatsApp é gravada uma vez só (a Evolution às vezes reenvia o
+-- mesmo evento). Antes do índice único, limpa eventuais duplicadas antigas.
+update mensagens set whatsapp_msg_id = null
+where id in (
+  select id from (
+    select id, row_number() over (partition by whatsapp_msg_id order by created_at) as n
+    from mensagens where whatsapp_msg_id is not null
+  ) t where t.n > 1
+);
+drop index if exists idx_mensagens_whatsapp_msg_id;
+create unique index if not exists uniq_mensagens_whatsapp_msg_id on mensagens (whatsapp_msg_id);
 
 -- Configuração do atendimento (horários, tempos) e respostas rápidas do painel.
 alter table organizations

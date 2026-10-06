@@ -56,7 +56,7 @@ REGRAS QUE NUNCA PODEM SER QUEBRADAS:
 6. Não converse sobre assuntos que não sejam o atendimento da loja.
 
 O QUE FAZER EM CADA CASO:
-- Cliente mandou o pedido (lista de produtos, quantidades, ou foto/planilha/arquivo de pedido): cumprimente e diga que recebeu e que uma atendente já vai gerar o pedido e mandar para ele conferir. passar_para_atendente = true. Não faça perguntas.
+- Cliente mandou o pedido (lista de produtos, quantidades, ou foto/planilha/arquivo de pedido): cumprimente e diga que recebeu e que uma atendente vai gerar o pedido e mandar para ele conferir (se a loja estiver fechada, diga que isso acontece assim que a loja abrir). passar_para_atendente = true. Não faça perguntas.
 - Cliente quer comprar mas ainda não disse o quê: pergunte o que ele precisa. passar_para_atendente = false. Quando ele disser o que quer, diga que a atendente já vai continuar e passar_para_atendente = true.
 - Orçamento para festa ou evento: se ainda não mandou, peça a lista do que precisa (ou para quantas pessoas) e a data. passar_para_atendente = false. Quando ele mandar essas informações, diga que a atendente já vai montar o orçamento e passar_para_atendente = true.
 - Dúvida que as INFORMAÇÕES DA LOJA respondem (horário, endereço, formas de pagamento, se entrega na região dele): responda e pergunte se pode ajudar em algo mais. passar_para_atendente = false.
@@ -104,7 +104,7 @@ export function respostaDeSeguranca(aberto: boolean, assunto: Assunto = "outro")
 
 /** Trava final: se escapar valor em dinheiro, não manda — passa para a atendente. */
 export function aplicarTravas(d: Decisao, respostasJaDadas: number, aberto: boolean): Decisao {
-  if (/R\$\s*\d|\d+[,.]\d{2}\s*(reais|real)\b/i.test(d.resposta)) {
+  if (/R\$|\d+[,.]\d{2}\b|\breais\b|\d+\s*real\b/i.test(d.resposta)) {
     return respostaDeSeguranca(aberto, d.assunto);
   }
   if (!d.passar && respostasJaDadas + 1 >= MAX_RESPOSTAS_ASSISTENTE) {
@@ -146,7 +146,7 @@ export async function responderCliente(leadId: string): Promise<void> {
   const admin = createAdminClient();
   const { data: lead } = await admin
     .from("leads")
-    .select("id, organization_id, nome, atend_status, conversa_iniciada_em, respostas_bot, evolution_instance, caio_ativo")
+    .select("id, organization_id, nome, atend_status, conversa_iniciada_em, respostas_bot, evolution_instance, caio_ativo, assistente_viu_ate")
     .eq("id", leadId)
     .maybeSingle();
   if (!lead || lead.atend_status !== "bot" || lead.caio_ativo === false) return;
@@ -166,12 +166,17 @@ export async function responderCliente(leadId: string): Promise<void> {
     .from("mensagens")
     .select("direcao, autor, tipo, conteudo, arquivo_nome, created_at")
     .eq("lead_id", leadId)
+    .eq("shadow", false)
     .order("created_at", { ascending: false })
     .limit(16);
   if (lead.conversa_iniciada_em) historicoQuery = historicoQuery.gte("created_at", lead.conversa_iniciada_em);
   const { data: msgs } = await historicoQuery;
   const historico = (msgs ?? []).reverse();
-  if (!historico.length || historico[historico.length - 1].direcao !== "entrada") return; // nada novo do cliente
+  // Responde só se tem mensagem do cliente que o assistente ainda não viu.
+  const entradas = historico.filter((m) => m.direcao === "entrada");
+  const ultimaEntradaEm = entradas.length ? entradas[entradas.length - 1].created_at : null;
+  if (!ultimaEntradaEm) return;
+  if (lead.assistente_viu_ate && new Date(ultimaEntradaEm).getTime() <= new Date(lead.assistente_viu_ate).getTime()) return;
 
   const instrucoes = montarInstrucoes({
     nomeAssistente: numero?.persona_nome?.trim() || "o assistente virtual",
@@ -189,7 +194,7 @@ export async function responderCliente(leadId: string): Promise<void> {
   for (const m of historico) {
     const texto = descreverMensagem(m);
     if (m.direcao === "entrada") mensagens.push({ role: "user", content: texto });
-    else if (m.autor === "assistente") mensagens.push({ role: "assistant", content: JSON.stringify({ resposta: texto }) });
+    else if (m.autor === "assistente") mensagens.push({ role: "assistant", content: JSON.stringify({ resposta: texto, passar_para_atendente: false }) });
     else mensagens.push({ role: "user", content: `[mensagem da atendente da loja para o cliente] ${texto}` });
   }
 
@@ -211,6 +216,7 @@ export async function responderCliente(leadId: string): Promise<void> {
   const upd: Record<string, unknown> = {
     respostas_bot: (lead.respostas_bot ?? 0) + 1,
     assunto: decisao.assunto,
+    assistente_viu_ate: ultimaEntradaEm,
   };
   if (decisao.passar || "error" in envio) {
     upd.atend_status = "aguardando";
@@ -218,7 +224,19 @@ export async function responderCliente(leadId: string): Promise<void> {
     upd.avisos_espera = 0;
   }
   // Só aplica se ninguém pegou a conversa enquanto a mensagem saía.
-  await admin.from("leads").update(upd).eq("id", leadId).eq("atend_status", "bot");
+  const { data: aplicado } = await admin.from("leads").update(upd).eq("id", leadId).eq("atend_status", "bot").select("id");
+
+  // O cliente mandou mais alguma coisa enquanto o assistente "digitava"? Responde de novo.
+  if (aplicado?.length && !upd.atend_status) {
+    const { data: novas } = await admin
+      .from("mensagens")
+      .select("id")
+      .eq("lead_id", leadId)
+      .eq("direcao", "entrada")
+      .gt("created_at", ultimaEntradaEm)
+      .limit(1);
+    if (novas?.length) setTimeout(() => void agendarResposta(leadId).catch(() => {}), 0);
+  }
 }
 
 /**
@@ -239,10 +257,12 @@ export async function agendarResposta(leadId: string): Promise<void> {
   }
 
   // Trava: um ciclo por vez por cliente (evita duas respostas se a IA demorar).
-  const limite = new Date(Date.now() - 2 * 60_000).toISOString();
+  // 5 minutos cobre o pior caso (IA com novas tentativas + digitação + envio).
+  const limite = new Date(Date.now() - 5 * 60_000).toISOString();
+  const minhaTrava = new Date().toISOString();
   const { data: travou } = await admin
     .from("leads")
-    .update({ caio_processing_since: new Date().toISOString() })
+    .update({ caio_processing_since: minhaTrava })
     .eq("id", leadId)
     .or(`caio_processing_since.is.null,caio_processing_since.lt.${limite}`)
     .select("id")
@@ -255,7 +275,8 @@ export async function agendarResposta(leadId: string): Promise<void> {
   try {
     await responderCliente(leadId);
   } finally {
-    await admin.from("leads").update({ caio_processing_since: null, caio_responder_em: null }).eq("id", leadId).eq("caio_responder_em", previsto);
-    await admin.from("leads").update({ caio_processing_since: null }).eq("id", leadId);
+    await admin.from("leads").update({ caio_responder_em: null }).eq("id", leadId).eq("caio_responder_em", previsto);
+    // Solta só a própria trava (outro ciclo pode ter assumido depois de 5 min).
+    await admin.from("leads").update({ caio_processing_since: null }).eq("id", leadId).eq("caio_processing_since", minhaTrava);
   }
 }

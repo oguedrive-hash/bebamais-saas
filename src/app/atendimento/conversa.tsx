@@ -289,8 +289,10 @@ function Conteudo({ m }: { m: MensagemPainel }) {
     );
   }
   if (m.tipo === "localizacao") {
-    const link = m.texto?.match(/https?:\/\/\S+/)?.[0];
-    const nome = m.texto?.replace(/https?:\/\/\S+/, "").trim();
+    // O link do mapa é sempre o último do texto (o nome do lugar vem do cliente).
+    const links = m.texto?.match(/https:\/\/maps\.google\.com\/\?q=[-\d.,]+/g) ?? [];
+    const link = links[links.length - 1];
+    const nome = m.texto?.split("\n")[0]?.replace(/https?:\/\/\S+/g, "").trim();
     return (
       <div className="space-y-1">
         <p className="text-sm">📍 {nome || "Localização"}</p>

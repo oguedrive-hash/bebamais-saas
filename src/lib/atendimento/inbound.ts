@@ -156,28 +156,35 @@ interface ClienteLinha {
   id: string;
   atend_status: AtendStatus;
   caio_ativo: boolean;
+  atribuido_a: string | null;
+  ultima_atividade_em: string | null;
   ultima_msg_lead_em: string | null;
   updated_at: string | null;
   nome: string | null;
 }
 
+const CAMPOS_CLIENTE = "id, atend_status, caio_ativo, atribuido_a, ultima_atividade_em, ultima_msg_lead_em, updated_at, nome";
+
+async function buscarCliente(telefone: string, lidJid: string): Promise<ClienteLinha | null> {
+  const admin = createAdminClient();
+  if (telefone) {
+    const { data } = await admin.from("leads").select(CAMPOS_CLIENTE).eq("organization_id", ORG_ID).eq("telefone_digitos", telefone).limit(1);
+    if (data?.[0]) return data[0] as ClienteLinha;
+  }
+  if (lidJid) {
+    const { data } = await admin.from("leads").select(CAMPOS_CLIENTE).eq("organization_id", ORG_ID).eq("whatsapp_jid", lidJid).limit(1);
+    if (data?.[0]) return data[0] as ClienteLinha;
+  }
+  return null;
+}
+
 /** Acha o cliente pelo telefone (ou pelo @lid), ou cria. */
 async function acharOuCriarCliente(telefone: string, lidJid: string, nome: string | null) {
-  const admin = createAdminClient();
-  const campos = "id, atend_status, caio_ativo, ultima_msg_lead_em, updated_at, nome";
-  let lead: ClienteLinha | null = null;
-  if (telefone) {
-    const { data } = await admin.from("leads").select(campos).eq("organization_id", ORG_ID).eq("telefone_digitos", telefone).limit(1);
-    lead = (data?.[0] as ClienteLinha | undefined) ?? null;
-  }
-  if (!lead && lidJid) {
-    const { data } = await admin.from("leads").select(campos).eq("organization_id", ORG_ID).eq("whatsapp_jid", lidJid).limit(1);
-    lead = (data?.[0] as ClienteLinha | undefined) ?? null;
-  }
-  if (lead) return { lead, novo: false };
+  const existente = await buscarCliente(telefone, lidJid);
+  if (existente) return { lead: existente, novo: false };
   const digitos = telefone || lidJid.replace(/@.*/, "").replace(/\D/g, "");
   if (!digitos) return null;
-  const { data: novo, error } = await admin
+  const { data: novo, error } = await createAdminClient()
     .from("leads")
     .insert({
       organization_id: ORG_ID,
@@ -190,13 +197,36 @@ async function acharOuCriarCliente(telefone: string, lidJid: string, nome: strin
       whatsapp_jid: lidJid || null,
       atend_status: "bot",
     })
-    .select(campos)
+    .select(CAMPOS_CLIENTE)
     .single();
-  if (error || !novo) {
-    console.error("[inbound] não criou cliente:", error?.message);
-    return null;
+  if (novo) return { lead: novo as ClienteLinha, novo: true };
+  // Duas mensagens do mesmo cliente novo chegando juntas: a outra já criou.
+  if (error?.code === "23505") {
+    const criado = await buscarCliente(telefone, lidJid);
+    if (criado) return { lead: criado, novo: false };
   }
-  return { lead: novo as ClienteLinha, novo: true };
+  console.error("[inbound] não criou cliente:", error?.message);
+  return null;
+}
+
+function atividadeDe(lead: ClienteLinha): string | null {
+  return lead.ultima_atividade_em ?? maisRecente(lead.ultima_msg_lead_em, lead.updated_at);
+}
+
+function camposDeConversaNova(agora: Date): Record<string, unknown> {
+  return {
+    conversa_iniciada_em: agora.toISOString(),
+    respostas_bot: 0,
+    assunto: null,
+    avisos_espera: 0,
+    ultimo_aviso_em: null,
+    atribuido_a: null,
+    atribuido_nome: null,
+    atribuido_em: null,
+    finalizado_em: null,
+    assistente_viu_ate: null,
+    caio_ativo: true,
+  };
 }
 
 export async function processarMensagem(instance: string, d: EvoMensagem): Promise<void> {
@@ -211,20 +241,20 @@ export async function processarMensagem(instance: string, d: EvoMensagem): Promi
 
   const admin = createAdminClient();
   const msgId = d.key?.id ?? null;
-  if (msgId) {
-    const { data: ja } = await admin.from("mensagens").select("id").eq("whatsapp_msg_id", msgId).limit(1);
-    if (ja?.length) return; // já registrada (a Evolution às vezes reenvia)
-  }
+  const jaGravada = async () => {
+    if (!msgId) return false;
+    const { data } = await admin.from("mensagens").select("id").eq("whatsapp_msg_id", msgId).limit(1);
+    return !!data?.length;
+  };
+  if (await jaGravada()) return; // a Evolution às vezes reenvia o mesmo evento
 
   const fromMe = d.key?.fromMe === true;
   if (fromMe) {
-    // Pode ser uma mensagem que o próprio sistema acabou de mandar: espera o envio se registrar.
+    // A Evolution também avisa das mensagens que o PRÓPRIO sistema mandou.
+    // Espera o envio se registrar antes de concluir que foi alguém pelo celular.
     await new Promise((r) => setTimeout(r, 4000));
     if (msgId && foiEnviadoPeloSistema(msgId)) return;
-    if (msgId) {
-      const { data: ja } = await admin.from("mensagens").select("id").eq("whatsapp_msg_id", msgId).limit(1);
-      if (ja?.length) return;
-    }
+    if (await jaGravada()) return;
   }
 
   const n = normalizarMensagem(d.message);
@@ -243,10 +273,10 @@ export async function processarMensagem(instance: string, d: EvoMensagem): Promi
 
   const achado = await acharOuCriarCliente(telefone, lidJid, fromMe ? null : d.pushName?.trim() || null);
   if (!achado) return;
-  const { lead } = achado;
+  const lead = achado.lead;
   const agora = new Date();
 
-  await admin.from("mensagens").insert({
+  const linha = {
     organization_id: ORG_ID,
     lead_id: lead.id,
     direcao: fromMe ? "saida" : "entrada",
@@ -258,64 +288,84 @@ export async function processarMensagem(instance: string, d: EvoMensagem): Promi
     arquivo_path: arquivoPath,
     arquivo_nome: n.midia?.nome ?? null,
     arquivo_mime: n.midia?.mime ?? null,
-  });
-
-  if (fromMe) {
-    // Alguém da loja respondeu pelo celular: o assistente sai desta conversa.
-    const upd: Record<string, unknown> = {};
-    if (lead.atend_status === "bot" || lead.atend_status === "aguardando") {
-      upd.atend_status = "atendendo";
-      upd.atribuido_nome = "Pelo celular";
-      upd.atribuido_a = null;
-      upd.atribuido_em = agora.toISOString();
-    }
-    upd.caio_responder_em = null;
-    await admin.from("leads").update(upd).eq("id", lead.id);
-    return;
+    created_at: agora.toISOString(),
+  };
+  if (msgId) {
+    // Grava uma vez só: se dois avisos iguais chegarem juntos, só um segue.
+    const { data: gravou } = await admin
+      .from("mensagens")
+      .upsert(linha, { onConflict: "whatsapp_msg_id", ignoreDuplicates: true })
+      .select("id");
+    if (!gravou?.length) return;
+  } else {
+    await admin.from("mensagens").insert(linha);
   }
 
   const { data: org } = await admin.from("organizations").select("atendimento_config").eq("id", ORG_ID).maybeSingle();
   const cfg = normalizarConfig(org?.atendimento_config);
-  const naListaDeTeste = numero.testes.length === 0 || numero.testes.some((t) => telefone.endsWith(t) || (t.endsWith(telefone) && telefone.length >= 8));
-  const decisao = decidirEntrada(
-    {
-      atend_status: lead.atend_status,
-      // A conversa conta como "parada" pela atividade mais recente (cliente ou loja).
-      ultima_atividade_em: achado.novo ? null : maisRecente(lead.ultima_msg_lead_em, lead.updated_at),
-      caio_ativo: lead.caio_ativo,
-    },
-    cfg,
-    agora,
-    numero.assistenteLigado && naListaDeTeste,
-  );
 
-  const upd: Record<string, unknown> = {
-    ultima_msg_lead_em: agora.toISOString(),
-    evolution_instance: instance, // responde pelo número em que o cliente escreveu
-    atend_status: decisao.status,
-  };
-  if (lidJid) upd.whatsapp_jid = lidJid;
-  if (!lead.nome && d.pushName?.trim()) upd.nome = d.pushName.trim();
-  if (decisao.novaConversa) {
-    Object.assign(upd, {
-      conversa_iniciada_em: agora.toISOString(),
-      respostas_bot: 0,
-      assunto: null,
-      avisos_espera: 0,
-      atribuido_a: null,
-      atribuido_nome: null,
-      atribuido_em: null,
-      finalizado_em: null,
-      caio_ativo: true,
-      aguardando_desde: decisao.status === "aguardando" ? agora.toISOString() : null,
-    });
-  } else if (decisao.status === "aguardando" && lead.atend_status !== "aguardando") {
-    upd.aguardando_desde = agora.toISOString();
-    upd.avisos_espera = 0;
+  // Atualiza o estado com "trava otimista": se outra coisa mudou o estado no meio
+  // (atendente pegou, assistente passou a conversa), relê e decide de novo.
+  let atual: ClienteLinha | null = lead;
+  for (let tentativa = 0; tentativa < 3 && atual; tentativa++) {
+    const upd: Record<string, unknown> = { ultima_atividade_em: agora.toISOString() };
+    let assistenteResponde = false;
+
+    if (fromMe) {
+      // Alguém da loja respondeu pelo celular: o assistente sai desta conversa.
+      const comAtendente = atual.atend_status === "atendendo" && !!atual.atribuido_a;
+      if (!comAtendente) {
+        if (atual.atend_status !== "atendendo" && atual.atend_status !== "aguardando" && atual.atend_status !== "bot") {
+          Object.assign(upd, camposDeConversaNova(agora)); // estava finalizado: conversa nova, pela loja
+        }
+        Object.assign(upd, { atend_status: "atendendo", atribuido_a: null, atribuido_nome: "Pelo celular", atribuido_em: agora.toISOString() });
+      }
+      upd.caio_responder_em = null;
+    } else {
+      const naListaDeTeste =
+        numero.testes.length === 0 ||
+        numero.testes.some((t) => telefone.endsWith(t) || (t.endsWith(telefone) && telefone.length >= 8));
+      const decisao = decidirEntrada(
+        {
+          atend_status: atual.atend_status,
+          ultima_atividade_em: achado.novo && tentativa === 0 ? null : atividadeDe(atual),
+          caio_ativo: atual.caio_ativo,
+        },
+        cfg,
+        agora,
+        numero.assistenteLigado && naListaDeTeste,
+      );
+      Object.assign(upd, {
+        ultima_msg_lead_em: agora.toISOString(),
+        evolution_instance: instance, // responde pelo número em que o cliente escreveu
+        atend_status: decisao.status,
+      });
+      if (lidJid) upd.whatsapp_jid = lidJid;
+      if (!atual.nome && d.pushName?.trim()) upd.nome = d.pushName.trim();
+      if (decisao.novaConversa) {
+        Object.assign(upd, camposDeConversaNova(agora));
+        upd.aguardando_desde = decisao.status === "aguardando" ? agora.toISOString() : null;
+      } else if (decisao.status === "aguardando" && atual.atend_status !== "aguardando") {
+        upd.aguardando_desde = agora.toISOString();
+        upd.avisos_espera = 0;
+      }
+      assistenteResponde = decisao.assistenteResponde;
+    }
+
+    const { data: aplicado } = await admin
+      .from("leads")
+      .update(upd)
+      .eq("id", lead.id)
+      .eq("atend_status", atual.atend_status)
+      .select("id");
+    if (aplicado?.length) {
+      if (assistenteResponde) await agendarResposta(lead.id);
+      return;
+    }
+    const { data: relido } = await admin.from("leads").select(CAMPOS_CLIENTE).eq("id", lead.id).maybeSingle();
+    atual = (relido as ClienteLinha | null) ?? null;
   }
-  await admin.from("leads").update(upd).eq("id", lead.id);
-
-  if (decisao.assistenteResponde) await agendarResposta(lead.id);
+  console.warn("[inbound] estado do cliente mudou várias vezes seguidas; mensagem registrada sem mudar o estado", lead.id);
 }
 
 /** Atualiza o status de conexão do número (aparece no painel do admin). */

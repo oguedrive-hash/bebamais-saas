@@ -79,12 +79,26 @@ test("assistente desligado: cliente vai direto para a fila", () => {
 });
 
 test("mensagens de espera: 5 e 15 minutos, no máximo 2, só com a loja aberta", () => {
-  assert.equal(avisoDeEsperaDevido(haMinutos(3), 0, CONFIG_PADRAO, agora), null);
-  assert.equal(avisoDeEsperaDevido(haMinutos(6), 0, CONFIG_PADRAO, agora), 0);
-  assert.equal(avisoDeEsperaDevido(haMinutos(10), 1, CONFIG_PADRAO, agora), null);
-  assert.equal(avisoDeEsperaDevido(haMinutos(16), 1, CONFIG_PADRAO, agora), 1);
-  assert.equal(avisoDeEsperaDevido(haMinutos(60), 2, CONFIG_PADRAO, agora), null);
-  assert.equal(avisoDeEsperaDevido(haMinutos(60), 0, CONFIG_PADRAO, sp("2026-10-06T21:00:00")), null);
+  assert.equal(avisoDeEsperaDevido(haMinutos(3), 0, null, CONFIG_PADRAO, agora), null);
+  assert.equal(avisoDeEsperaDevido(haMinutos(6), 0, null, CONFIG_PADRAO, agora), 0);
+  assert.equal(avisoDeEsperaDevido(haMinutos(10), 1, haMinutos(4), CONFIG_PADRAO, agora), null);
+  assert.equal(avisoDeEsperaDevido(haMinutos(16), 1, haMinutos(11), CONFIG_PADRAO, agora), 1);
+  assert.equal(avisoDeEsperaDevido(haMinutos(60), 2, haMinutos(30), CONFIG_PADRAO, agora), null);
+  assert.equal(avisoDeEsperaDevido(haMinutos(60), 0, null, CONFIG_PADRAO, sp("2026-10-06T21:00:00")), null);
+});
+
+test("quem chegou com a loja fechada não recebe as duas mensagens de espera de uma vez na abertura", () => {
+  const ontemNoite = sp("2026-10-05T19:00:00").toISOString();
+  assert.equal(avisoDeEsperaDevido(ontemNoite, 0, null, CONFIG_PADRAO, sp("2026-10-06T08:02:00")), null); // abriu há 2 min
+  assert.equal(avisoDeEsperaDevido(ontemNoite, 0, null, CONFIG_PADRAO, sp("2026-10-06T08:05:00")), 0);
+  const primeiro = sp("2026-10-06T08:05:00").toISOString();
+  assert.equal(avisoDeEsperaDevido(ontemNoite, 1, primeiro, CONFIG_PADRAO, sp("2026-10-06T08:06:00")), null);
+  assert.equal(avisoDeEsperaDevido(ontemNoite, 1, primeiro, CONFIG_PADRAO, sp("2026-10-06T08:15:00")), 1);
+});
+
+test("cliente na fila não perde o lugar mesmo depois de horas", () => {
+  const d = decidirEntrada({ atend_status: "aguardando", ultima_atividade_em: haMinutos(13 * 60), caio_ativo: true }, CONFIG_PADRAO, agora, true);
+  assert.deepEqual(d, { novaConversa: false, status: "aguardando", assistenteResponde: false });
 });
 
 test("lê os tipos de mensagem do WhatsApp", () => {
@@ -115,6 +129,8 @@ test("resposta da IA: JSON válido é usado, inválido vira passar para atendent
 
 test("trava: nunca manda valor em dinheiro; depois de 3 respostas passa para a atendente", () => {
   const comPreco = aplicarTravas({ resposta: "A Heineken sai R$ 6,50", assunto: "duvida", passar: false }, 0, true);
+  assert.equal(aplicarTravas({ resposta: "Fica 6,50 cada", assunto: "duvida", passar: false }, 0, true).passar, true);
+  assert.equal(aplicarTravas({ resposta: "São 30 reais", assunto: "duvida", passar: false }, 0, true).passar, true);
   assert.equal(comPreco.passar, true);
   assert.doesNotMatch(comPreco.resposta, /R\$/);
   const muitas = aplicarTravas({ resposta: "Me conta o que precisa?", assunto: "pedido", passar: false }, 2, true);
