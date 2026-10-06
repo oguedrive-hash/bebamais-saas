@@ -50,7 +50,9 @@ async function req(
 
 // O token na URL é o que autentica o webhook (a Evolution não assina as chamadas).
 // Sem WEBHOOK_SECRET o webhook recusa tudo — ver src/lib/seguranca.ts.
-const WEBHOOK_URL = `${APP_BASE_URL}/api/webhooks/evolution?token=${encodeURIComponent(
+// WEBHOOK_BASE_URL permite a Evolution chamar o painel pela rede interna do Docker.
+const WEBHOOK_BASE = (process.env.WEBHOOK_BASE_URL?.trim() || APP_BASE_URL).replace(/\/+$/, "");
+const WEBHOOK_URL = `${WEBHOOK_BASE}/api/webhooks/evolution?token=${encodeURIComponent(
   process.env.WEBHOOK_SECRET?.trim() ?? "",
 )}`;
 

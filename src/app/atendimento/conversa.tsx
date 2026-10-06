@@ -410,7 +410,7 @@ function Escrever({
           className="shrink-0 rounded-lg border border-cinza-claro bg-white px-3 py-2.5 text-sm font-semibold text-preto hover:bg-offwhite"
           title="Enviar foto ou arquivo"
         >
-          📷 Foto ou arquivo
+          📷<span className="hidden sm:inline"> Foto ou arquivo</span>
         </button>
         <input
           ref={inputArquivo}
