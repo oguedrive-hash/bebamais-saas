@@ -1,49 +1,24 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   adicionarNumero,
   atualizarNumero,
+  estadoConexao,
   excluirNumero,
   gerarQrNumero,
-  type PapelNumero,
+  reconfigurarConexao,
+  type NumeroRow,
 } from "./actions";
 
-type NumeroView = {
-  id: string;
-  instance_name: string;
-  numero: string | null;
-  papel: PapelNumero;
-  persona_nome: string | null;
-  persona_voice_id: string | null;
-  prioridade: number;
-  estado: string;
-  ativo: boolean;
-  ia_ativa: boolean;
-  numeros_teste: string | null;
-  envio_falhando: boolean;
-  conexao: string;
-};
+type NumeroView = NumeroRow & { conexao: string };
 
-const PAPEL_LABEL: Record<PapelNumero, string> = {
-  atendimento: "Atendimento",
-  prospeccao: "Prospecção",
-  backup: "Backup",
-};
-
-function StatusBadge({ conexao }: { conexao: string }) {
-  const map: Record<string, { txt: string; cls: string }> = {
-    open: { txt: "🟢 Conectado", cls: "bg-green-50 text-green-700 border-green-200" },
-    close: { txt: "🔴 Desconectado", cls: "bg-red-50 text-red-700 border-red-200" },
-    connecting: { txt: "🟡 Conectando", cls: "bg-yellow-50 text-yellow-700 border-yellow-200" },
-  };
-  const s = map[conexao] ?? { txt: "⚪ —", cls: "bg-cinza-claro/40 text-cinza-medio border-cinza-claro" };
-  return (
-    <span className={`text-xs font-heading font-semibold px-2 py-1 rounded-full border ${s.cls}`}>
-      {s.txt}
-    </span>
-  );
+function Status({ conexao }: { conexao: string }) {
+  if (conexao === "open") return <span className="text-sm font-semibold text-green-700">● Conectado</span>;
+  if (conexao === "connecting") return <span className="text-sm font-semibold text-yellow-700">● Conectando</span>;
+  if (conexao === "close") return <span className="text-sm font-semibold text-red-700">● Desconectado</span>;
+  return <span className="text-sm text-cinza-medio">● Sem informação</span>;
 }
 
 export function NumerosManager({
@@ -56,471 +31,197 @@ export function NumerosManager({
   erroInicial: string | null;
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
   const [erro, setErro] = useState<string | null>(erroInicial);
-  const [modalAberto, setModalAberto] = useState(false);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const [pendente, iniciar] = useTransition();
+  const [novo, setNovo] = useState({ numero: "", apelido: "", nomeAssistente: "" });
   const [qr, setQr] = useState<{ instance: string; base64?: string; pairing?: string | null } | null>(null);
 
-  // form do modal
-  const [papel, setPapel] = useState<PapelNumero>("backup");
-  const [numero, setNumero] = useState("");
-  const [persona, setPersona] = useState("");
-  const [voiceId, setVoiceId] = useState("");
-  const [prioridade, setPrioridade] = useState(0);
-
-  // form do modal de EDIÇÃO (número existente)
-  const [editando, setEditando] = useState<NumeroView | null>(null);
-  const [edPapel, setEdPapel] = useState<PapelNumero>("backup");
-  const [edPersona, setEdPersona] = useState("");
-  const [edVoice, setEdVoice] = useState("");
-  const [edPrio, setEdPrio] = useState(0);
-  const [edIaAtiva, setEdIaAtiva] = useState(true);
-  const [edNumerosTeste, setEdNumerosTeste] = useState("");
-
-  function abrirEdicao(n: NumeroView) {
+  function rodar(acao: () => Promise<{ ok: true } | { error: string } | { ok: true; instance_name: string }>, ok?: string) {
     setErro(null);
-    setEditando(n);
-    setEdPapel(n.papel);
-    setEdPersona(n.persona_nome ?? "");
-    setEdVoice(n.persona_voice_id ?? "");
-    setEdPrio(n.prioridade);
-    setEdIaAtiva(n.ia_ativa);
-    setEdNumerosTeste(n.numeros_teste ?? "");
-  }
-
-  function salvarEdicao() {
-    if (!editando) return;
-    setErro(null);
-    startTransition(async () => {
-      const r = await atualizarNumero(organizationId, editando.id, {
-        papel: edPapel,
-        persona_nome: edPersona.trim(),
-        persona_voice_id: edVoice.trim() || null,
-        prioridade: edPrio,
-        ia_ativa: edIaAtiva,
-        numeros_teste: edNumerosTeste.trim() || null,
-      });
-      if ("error" in r) {
-        setErro(r.error);
-        return;
-      }
-      setEditando(null);
-      router.refresh();
-    });
-  }
-
-  function salvar() {
-    setErro(null);
-    startTransition(async () => {
-      const r = await adicionarNumero(organizationId, {
-        papel,
-        numero,
-        persona_nome: persona,
-        persona_voice_id: voiceId,
-        prioridade,
-      });
-      if ("error" in r) {
-        setErro(r.error);
-        return;
-      }
-      setModalAberto(false);
-      setNumero("");
-      setPersona("");
-      setVoiceId("");
-      setPrioridade(0);
-      router.refresh();
-      // já abre o QR pra conectar o número recém-criado
-      conectar(r.instance_name);
-    });
-  }
-
-  /**
-   * Liga/desliga a IA de UM número, num clique.
-   *
-   * ⚠️ Com a IA desligada o webhook faz `return` ANTES de gravar: a mensagem
-   * recebida NÃO fica salva e nenhum lead é criado. É o certo durante o
-   * aquecimento (o tráfego de warming não polui a base), mas significa que
-   * mensagem de gente real nessa janela se perde. Por isso o confirm ao desligar.
-   */
-  function alternarIa(n: NumeroView) {
-    setErro(null);
-    const ligando = !n.ia_ativa;
-    const nome = n.persona_nome ?? n.instance_name;
-    if (!ligando) {
-      const ok = confirm(
-        `Desligar a IA de "${nome}"?\n\nO número continua CONECTADO no WhatsApp, mas a IA para de responder.\n\n⚠️ Enquanto estiver desligada, as mensagens recebidas NÃO são salvas e nenhum lead é criado — mensagem de cliente real nessa janela se perde.`,
-      );
-      if (!ok) return;
-    }
-    startTransition(async () => {
-      const r = await atualizarNumero(organizationId, n.id, { ia_ativa: ligando });
-      if ("error" in r) {
-        setErro(r.error);
-        return;
-      }
-      router.refresh();
-    });
-  }
-
-  function conectar(instance: string) {
-    setErro(null);
-    setQr({ instance });
-    startTransition(async () => {
-      const r = await gerarQrNumero(instance);
-      if ("error" in r) {
-        setErro(r.error);
-        setQr(null);
-        return;
-      }
-      setQr({ instance, base64: r.base64, pairing: r.pairingCode });
-    });
-  }
-
-  function excluir(id: string, instance: string, label: string) {
-    if (!confirm(`Excluir o número "${label}"? Isso remove a instância da Evolution.`)) return;
-    setErro(null);
-    startTransition(async () => {
-      const r = await excluirNumero(organizationId, id, instance);
+    setAviso(null);
+    iniciar(async () => {
+      const r = await acao();
       if ("error" in r) setErro(r.error);
-      else router.refresh();
+      else {
+        if (ok) setAviso(ok);
+        router.refresh();
+      }
     });
   }
+
+  function abrirQr(instance: string) {
+    setErro(null);
+    iniciar(async () => {
+      const r = await gerarQrNumero(instance);
+      if ("error" in r) setErro(r.error);
+      else setQr({ instance, base64: r.base64, pairing: r.pairingCode });
+    });
+  }
+
+  // Enquanto o QR está aberto, confere a cada 4s se o número conectou.
+  useEffect(() => {
+    if (!qr) return;
+    const t = setInterval(async () => {
+      if ((await estadoConexao(qr.instance)) === "open") {
+        setQr(null);
+        setAviso("Número conectado!");
+        router.refresh();
+      }
+    }, 4000);
+    return () => clearInterval(t);
+  }, [qr, router]);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-cinza-medio">
-          {inicial.length} número(s) no pool
-        </p>
+      {erro && <div className="rounded-lg bg-red-50 border border-red-200 text-red-800 px-4 py-3 text-sm">{erro}</div>}
+      {aviso && <div className="rounded-lg bg-green-50 border border-green-200 text-green-800 px-4 py-3 text-sm">{aviso}</div>}
+
+      {inicial.length === 0 && <p className="text-cinza-medio">Nenhum número cadastrado ainda.</p>}
+
+      {inicial.map((n) => (
+        <CartaoNumero
+          key={n.id}
+          n={n}
+          pendente={pendente}
+          onSalvar={(patch) => rodar(() => atualizarNumero(organizationId, n.id, patch), "Salvo.")}
+          onConectar={() => abrirQr(n.instance_name)}
+          onReconfigurar={() => rodar(() => reconfigurarConexao(n.instance_name), "Conexão reconfigurada.")}
+          onExcluir={() => {
+            if (window.confirm(`Excluir o número "${n.apelido ?? n.numero}"? Ele para de receber mensagens no painel.`)) {
+              rodar(() => excluirNumero(organizationId, n.id, n.instance_name), "Número excluído.");
+            }
+          }}
+        />
+      ))}
+
+      <div className="rounded-2xl border border-cinza-claro bg-white p-5">
+        <p className="font-heading font-semibold text-preto mb-3">Adicionar número</p>
+        <div className="grid md:grid-cols-3 gap-3">
+          <label className="text-sm">
+            <span className="block text-cinza-medio mb-1">Telefone com DDD</span>
+            <input value={novo.numero} onChange={(e) => setNovo({ ...novo, numero: e.target.value })} placeholder="19 99999-9999" className="w-full rounded-lg border border-cinza-claro px-3 py-2" />
+          </label>
+          <label className="text-sm">
+            <span className="block text-cinza-medio mb-1">Nome curto (aparece para as atendentes)</span>
+            <input value={novo.apelido} onChange={(e) => setNovo({ ...novo, apelido: e.target.value })} placeholder="Loja" className="w-full rounded-lg border border-cinza-claro px-3 py-2" />
+          </label>
+          <label className="text-sm">
+            <span className="block text-cinza-medio mb-1">Nome do assistente (opcional)</span>
+            <input value={novo.nomeAssistente} onChange={(e) => setNovo({ ...novo, nomeAssistente: e.target.value })} placeholder="Assistente Beba Mais" className="w-full rounded-lg border border-cinza-claro px-3 py-2" />
+          </label>
+        </div>
         <button
-          type="button"
-          onClick={() => setModalAberto(true)}
-          className="px-4 py-2 rounded-lg bg-laranja hover:bg-laranja-escuro text-white font-heading font-semibold transition"
+          disabled={pendente}
+          onClick={() =>
+            rodar(async () => {
+              const r = await adicionarNumero(organizationId, novo);
+              if ("ok" in r) {
+                setNovo({ numero: "", apelido: "", nomeAssistente: "" });
+                abrirQr(r.instance_name);
+              }
+              return r;
+            })
+          }
+          className="mt-4 rounded-lg bg-vermelho text-white px-5 py-2.5 font-heading font-bold disabled:opacity-50"
         >
-          + Adicionar atendente
+          Adicionar e conectar
         </button>
       </div>
 
-      {erro && (
-        <div className="p-4 rounded-lg bg-red-50 border border-red-200">
-          <p className="text-sm text-red-800">{erro}</p>
-        </div>
-      )}
-
-      {inicial.length === 0 ? (
-        <div className="p-8 rounded-2xl border border-dashed border-cinza-claro text-center">
-          <p className="text-sm text-cinza-medio">
-            Nenhum número cadastrado ainda. Clique em “Adicionar atendente”.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {inicial.map((n) => (
-            <section
-              key={n.id}
-              className="bg-white rounded-2xl border border-cinza-claro p-5 flex items-center justify-between gap-4"
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-base font-heading font-bold text-preto">
-                    {n.persona_nome ?? "—"}
-                  </span>
-                  <span className="text-xs font-heading font-semibold px-2 py-0.5 rounded-full bg-laranja/10 text-laranja-escuro border border-laranja/20">
-                    {PAPEL_LABEL[n.papel]}
-                  </span>
-                  <StatusBadge conexao={n.conexao} />
-                  {n.envio_falhando && n.conexao === "open" && (
-                    <span className="text-xs font-heading font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-300" title="O número conecta mas o WhatsApp está bloqueando o envio. NÃO reconecte — deixe descansar. Outro número assume os atendimentos.">
-                      ⚠️ conectado, sem envio
-                    </span>
-                  )}
-                  {!n.ia_ativa && (
-                    <span className="text-xs font-heading font-semibold px-2 py-0.5 rounded-full bg-cinza-claro/50 text-cinza-medio border border-cinza-claro">
-                      🔕 IA off
-                    </span>
-                  )}
-                  {n.ia_ativa && n.numeros_teste?.trim() && (
-                    <span className="text-xs font-heading font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                      🧪 modo teste
-                    </span>
-                  )}
-                  {n.papel === "backup" && (
-                    <span className="text-xs text-cinza-medio">prio {n.prioridade}</span>
-                  )}
-                </div>
-                <p className="text-xs text-cinza-medio mt-1 truncate">
-                  {n.numero ? `+${n.numero}` : "sem número"} · estado {n.estado}
-                  {n.persona_voice_id ? ` · voz ✓` : " · voz —"}
-                </p>
-                {n.envio_falhando && n.conexao === "open" && (
-                  <p className="text-xs text-red-700 mt-1 max-w-md">
-                    Conecta mas o WhatsApp está <strong>bloqueando o envio</strong> (restrição temporária). Outro número já assumiu os atendimentos.{" "}
-                    <strong>NÃO reconecte</strong> — reconectar piora; deixe descansar (volta sozinho em algumas horas).
-                  </p>
-                )}
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => alternarIa(n)}
-                  disabled={pending}
-                  title={
-                    n.ia_ativa
-                      ? "A IA está respondendo neste número. Clique para silenciar (o número continua conectado)."
-                      : "A IA está desligada: o número está conectado mas não responde. Clique para ativar."
-                  }
-                  className={`px-3 py-2 rounded-lg text-sm font-heading font-bold transition disabled:opacity-50 border ${
-                    n.ia_ativa
-                      ? "bg-green-50 text-green-800 border-green-300 hover:bg-green-100"
-                      : "bg-cinza-claro/40 text-cinza-medio border-cinza-claro hover:border-laranja"
-                  }`}
-                >
-                  {n.ia_ativa ? "🔔 IA ligada" : "🔕 IA desligada"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => abrirEdicao(n)}
-                  disabled={pending}
-                  className="px-3 py-2 rounded-lg border border-cinza-claro hover:border-laranja text-sm font-heading font-medium text-preto transition disabled:opacity-50"
-                >
-                  Editar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => conectar(n.instance_name)}
-                  disabled={pending}
-                  className="px-3 py-2 rounded-lg border border-cinza-claro hover:border-laranja text-sm font-heading font-medium text-preto transition disabled:opacity-50"
-                >
-                  Conectar (QR)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => excluir(n.id, n.instance_name, n.persona_nome ?? n.instance_name)}
-                  disabled={pending}
-                  className="px-3 py-2 rounded-lg border border-red-200 hover:bg-red-50 text-sm font-heading font-medium text-red-700 transition disabled:opacity-50"
-                >
-                  Excluir
-                </button>
-              </div>
-            </section>
-          ))}
-        </div>
-      )}
-
-      {/* Modal: adicionar atendente */}
-      {modalAberto && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl border border-cinza-claro p-6 w-full max-w-md space-y-4">
-            <h3 className="text-lg font-heading font-bold text-preto">Adicionar atendente</h3>
-            <div>
-              <label className="block text-xs font-heading font-semibold text-cinza-medio mb-1">Papel</label>
-              <select
-                value={papel}
-                onChange={(e) => setPapel(e.target.value as PapelNumero)}
-                className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:border-laranja transition"
-              >
-                <option value="atendimento">Atendimento</option>
-                <option value="prospeccao">Prospecção</option>
-                <option value="backup">Backup</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-heading font-semibold text-cinza-medio mb-1">Número (telefone, com DDD/DDI)</label>
-              <input
-                value={numero}
-                onChange={(e) => setNumero(e.target.value)}
-                placeholder="5519981756606"
-                className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-heading font-semibold text-cinza-medio mb-1">Persona (nome)</label>
-              <input
-                value={persona}
-                onChange={(e) => setPersona(e.target.value)}
-                placeholder="Ex.: Yasmin, Ana…"
-                className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-heading font-semibold text-cinza-medio mb-1">Voice ID (ElevenLabs — opcional)</label>
-              <input
-                value={voiceId}
-                onChange={(e) => setVoiceId(e.target.value)}
-                placeholder="cola o ID da voz"
-                className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition"
-              />
-            </div>
-            {papel === "backup" && (
-              <div>
-                <label className="block text-xs font-heading font-semibold text-cinza-medio mb-1">Prioridade (menor entra primeiro)</label>
-                <input
-                  type="number"
-                  value={prioridade}
-                  onChange={(e) => setPrioridade(Number(e.target.value) || 0)}
-                  className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:border-laranja transition"
-                />
-              </div>
-            )}
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setModalAberto(false)}
-                disabled={pending}
-                className="px-4 py-2 rounded-lg border border-cinza-claro text-sm font-heading font-medium text-cinza-medio transition"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={salvar}
-                disabled={pending}
-                className="px-4 py-2 rounded-lg bg-laranja hover:bg-laranja-escuro disabled:bg-laranja-claro text-white font-heading font-semibold transition"
-              >
-                {pending ? "Criando…" : "Criar e conectar"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: editar número */}
-      {editando && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl border border-cinza-claro p-6 w-full max-w-md space-y-4">
-            <h3 className="text-lg font-heading font-bold text-preto">
-              Editar {editando.persona_nome ?? "número"}
-            </h3>
-            <p className="text-xs text-cinza-medio">
-              {editando.numero ? `+${editando.numero}` : "sem número"} · instância{" "}
-              <span className="font-mono">{editando.instance_name}</span>
-            </p>
-            <div>
-              <label className="block text-xs font-heading font-semibold text-cinza-medio mb-1">Papel</label>
-              <select
-                value={edPapel}
-                onChange={(e) => setEdPapel(e.target.value as PapelNumero)}
-                className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:border-laranja transition"
-              >
-                <option value="atendimento">Atendimento</option>
-                <option value="prospeccao">Prospecção</option>
-                <option value="backup">Backup</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-heading font-semibold text-cinza-medio mb-1">Persona (nome)</label>
-              <input
-                value={edPersona}
-                onChange={(e) => setEdPersona(e.target.value)}
-                placeholder="Ex.: Yasmin, Ana…"
-                className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-heading font-semibold text-cinza-medio mb-1">Voice ID (ElevenLabs)</label>
-              <input
-                value={edVoice}
-                onChange={(e) => setEdVoice(e.target.value)}
-                placeholder="cola o ID da voz"
-                className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-heading font-semibold text-cinza-medio mb-1">Prioridade (menor entra primeiro)</label>
-              <input
-                type="number"
-                value={edPrio}
-                onChange={(e) => setEdPrio(Number(e.target.value) || 0)}
-                className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto focus:outline-none focus:border-laranja transition"
-              />
-            </div>
-
-            <div className="border-t border-cinza-claro pt-3 space-y-2">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={edIaAtiva}
-                  onChange={(e) => setEdIaAtiva(e.target.checked)}
-                  className="w-4 h-4 accent-laranja"
-                />
-                <span className="text-sm font-heading font-semibold text-preto">IA responde automaticamente</span>
-              </label>
-              <p className="text-[11px] text-cinza-medio">
-                Desligado = número de <strong>uso manual</strong> (a IA não responde ninguém — ex: número de cobrança).
-              </p>
-              <div className="pt-1">
-                <label className="block text-xs font-heading font-semibold text-cinza-medio mb-1">Números de teste</label>
-                <input
-                  value={edNumerosTeste}
-                  onChange={(e) => setEdNumerosTeste(e.target.value)}
-                  placeholder="5519998744971, 5511999999999"
-                  disabled={!edIaAtiva}
-                  className="w-full px-3 py-2 rounded-lg border border-cinza-claro bg-white text-preto placeholder:text-cinza-medio focus:outline-none focus:border-laranja transition disabled:bg-cinza-claro/30"
-                />
-                <p className="text-[11px] text-cinza-medio mt-1">
-                  <strong>Vazio = responde todos</strong> (normal). Preenchido = a IA <strong>só responde esses números</strong> (teus clientes ficam intocados). Separe por vírgula.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setEditando(null)}
-                disabled={pending}
-                className="px-4 py-2 rounded-lg border border-cinza-claro text-sm font-heading font-medium text-cinza-medio transition"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={salvarEdicao}
-                disabled={pending}
-                className="px-4 py-2 rounded-lg bg-laranja hover:bg-laranja-escuro disabled:bg-laranja-claro text-white font-heading font-semibold transition"
-              >
-                {pending ? "Salvando…" : "Salvar"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: QR */}
       {qr && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl border border-cinza-claro p-6 w-full max-w-sm space-y-4 text-center">
-            <h3 className="text-lg font-heading font-bold text-preto">Conectar número</h3>
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setQr(null)}>
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full text-center" onClick={(e) => e.stopPropagation()}>
+            <p className="font-heading font-bold text-lg mb-2">Conectar o WhatsApp</p>
+            <p className="text-sm text-cinza-medio mb-4">
+              No celular do número: WhatsApp → Aparelhos conectados → Conectar um aparelho → aponte para o código.
+            </p>
             {qr.base64 ? (
-              <>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={qr.base64} alt="QR Code" className="mx-auto w-64 h-64" />
-                <p className="text-xs text-cinza-medio">
-                  No celular do número: WhatsApp → Aparelhos conectados → Conectar um
-                  aparelho → aponte pro QR. Expira em ~40s; feche e clique “Conectar (QR)”
-                  de novo se precisar.
-                </p>
-                {qr.pairing && (
-                  <p className="text-xs text-cinza-medio">
-                    Ou código: <strong>{qr.pairing}</strong>
-                  </p>
-                )}
-              </>
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={qr.base64} alt="QR Code" className="mx-auto w-64 h-64" />
             ) : (
-              <p className="text-sm text-cinza-medio py-8">Gerando QR…</p>
+              <p className="text-sm">Código ainda não disponível. Feche e tente de novo.</p>
             )}
-            <button
-              type="button"
-              onClick={() => {
-                setQr(null);
-                router.refresh();
-              }}
-              className="px-4 py-2 rounded-lg bg-laranja hover:bg-laranja-escuro text-white font-heading font-semibold transition"
-            >
-              Fechar
-            </button>
+            {qr.pairing && <p className="mt-3 text-sm">Ou use o código: <strong className="tracking-widest">{qr.pairing}</strong></p>}
+            <button onClick={() => setQr(null)} className="mt-5 rounded-lg border border-cinza-claro px-4 py-2 font-semibold">Fechar</button>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function CartaoNumero(props: {
+  n: NumeroView;
+  pendente: boolean;
+  onSalvar: (patch: Partial<NumeroRow>) => void;
+  onConectar: () => void;
+  onReconfigurar: () => void;
+  onExcluir: () => void;
+}) {
+  const { n } = props;
+  const [apelido, setApelido] = useState(n.apelido ?? "");
+  const [persona, setPersona] = useState(n.persona_nome ?? "");
+  const [testes, setTestes] = useState(n.numeros_teste ?? "");
+  return (
+    <div className="rounded-2xl border border-cinza-claro bg-white p-5 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="font-heading font-bold text-lg text-preto">{n.apelido || "Sem nome"}</p>
+          <p className="text-sm text-cinza-medio">{n.numero}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Status conexao={n.conexao} />
+          {n.conexao !== "open" && (
+            <button onClick={props.onConectar} disabled={props.pendente} className="rounded-lg bg-preto text-white px-4 py-2 text-sm font-semibold disabled:opacity-50">
+              Conectar (QR Code)
+            </button>
+          )}
+        </div>
+      </div>
+
+      <label className="flex items-center gap-3 rounded-lg bg-offwhite px-4 py-3 cursor-pointer">
+        <input type="checkbox" checked={n.ia_ativa} onChange={(e) => props.onSalvar({ ia_ativa: e.target.checked })} className="h-5 w-5" />
+        <span>
+          <span className="font-semibold">Assistente responde neste número</span>
+          <span className="block text-sm text-cinza-medio">Desligado: as mensagens vão direto para a fila das atendentes.</span>
+        </span>
+      </label>
+
+      <div className="grid md:grid-cols-2 gap-3">
+        <label className="text-sm">
+          <span className="block text-cinza-medio mb-1">Nome curto</span>
+          <input value={apelido} onChange={(e) => setApelido(e.target.value)} className="w-full rounded-lg border border-cinza-claro px-3 py-2" />
+        </label>
+        <label className="text-sm">
+          <span className="block text-cinza-medio mb-1">Nome do assistente</span>
+          <input value={persona} onChange={(e) => setPersona(e.target.value)} placeholder="Assistente virtual" className="w-full rounded-lg border border-cinza-claro px-3 py-2" />
+        </label>
+      </div>
+      <label className="text-sm block">
+        <span className="block text-cinza-medio mb-1">
+          Modo teste: o assistente só responde estes telefones (separe por vírgula). Deixe vazio para responder todos.
+        </span>
+        <input value={testes} onChange={(e) => setTestes(e.target.value)} placeholder="19999998888, 19988887777" className="w-full rounded-lg border border-cinza-claro px-3 py-2" />
+      </label>
+
+      <div className="flex flex-wrap gap-2 justify-between">
+        <button
+          onClick={() => props.onSalvar({ apelido: apelido.trim() || null, persona_nome: persona.trim() || null, numeros_teste: testes.trim() || null })}
+          disabled={props.pendente}
+          className="rounded-lg bg-vermelho text-white px-4 py-2 text-sm font-heading font-bold disabled:opacity-50"
+        >
+          Salvar
+        </button>
+        <div className="flex gap-2">
+          <button onClick={props.onReconfigurar} disabled={props.pendente} className="rounded-lg border border-cinza-claro px-3 py-2 text-sm">
+            Reconfigurar conexão
+          </button>
+          <button onClick={props.onExcluir} disabled={props.pendente} className="rounded-lg border border-red-200 text-red-700 px-3 py-2 text-sm">
+            Excluir
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

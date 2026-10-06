@@ -5,22 +5,15 @@ const nextConfig: NextConfig = {
   devIndicators: false,
   // Build standalone — gera Dockerfile menor (só com runtime necessário)
   output: "standalone",
-  // Permite upload de vídeos/imagens até 25MB em route handlers
+  // Limite do corpo das requisições (fotos e arquivos do painel, até ~15MB)
   // (default do Next 16 é 10MB e corta o body, quebrando o parse do FormData)
   experimental: {
-    proxyClientMaxBodySize: "100mb",
+    proxyClientMaxBodySize: "20mb",
     serverActions: {
-      // JSON com config de follow-up pode ficar grande (URLs de attachment, msgs)
-      bodySizeLimit: "10mb",
+      // Fotos e arquivos enviados pelo painel de atendimento (limite do WhatsApp ~15MB)
+      bodySizeLimit: "16mb",
     },
   },
-  // Marca pacotes binários (ffmpeg-static) como externos pra Next nao tentar
-  // bundlar — eles tem que ser resolvidos em runtime
-  serverExternalPackages: [
-    "@ffmpeg-installer/ffmpeg",
-    "@ffprobe-installer/ffprobe",
-    "fluent-ffmpeg",
-  ],
 };
 
 export default nextConfig;

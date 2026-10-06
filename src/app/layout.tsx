@@ -1,22 +1,25 @@
 import type { Metadata, Viewport } from "next";
-import { Work_Sans, Manrope } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
-const workSans = Work_Sans({
+// Fontes servidas pelo próprio painel (sem depender do Google Fonts no build).
+const workSans = localFont({
+  src: "../../node_modules/@fontsource-variable/work-sans/files/work-sans-latin-wght-normal.woff2",
   variable: "--font-work-sans",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: "100 900",
+  display: "swap",
 });
 
-const manrope = Manrope({
+const manrope = localFont({
+  src: "../../node_modules/@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2",
   variable: "--font-manrope",
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: "200 800",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "Beba Mais — Painel",
-  description: "Atendimento e pedidos da Beba Mais Distribuidora.",
+  title: "Atendimento - Beba Mais",
+  description: "Painel de atendimento do Beba Mais Distribuidora.",
 };
 
 export const viewport: Viewport = {
