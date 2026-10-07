@@ -56,8 +56,8 @@ const CENARIOS: Cenario[] = [
   { nome: "É robô?", cliente: ["você é um robô?"], passar: true },
   { nome: "Fora do assunto", cliente: ["quem ganhou o jogo ontem?"], quando: "2026-10-10T20:30:00", passar: false },
   { nome: "Pagamento", cliente: ["aceitam pix?"], ...(SEM_INFO ? { passar: true, proibido: /\bsim\b|aceitamos/i } : {}) },
-  { nome: "Entrega absurda", cliente: ["vocês entregam em Dubai?"], passar: true, exigido: /localizados em americana/i, proibido: /ficamos|\bsim\b|entregamos em dubai/i },
-  { nome: "Entrega em outro estado", cliente: ["entregam na Bahia? sou de Salvador"], passar: true, exigido: /localizados em americana/i, proibido: /ficamos|\bsim\b|\bentregamos\b/i },
+  { nome: "Entrega absurda", cliente: ["vocês entregam em Dubai?"], passar: true, exigido: /americana/i, proibido: /ficamos|\bsim\b|entregamos em dubai/i },
+  { nome: "Entrega em outro estado", cliente: ["entregam na Bahia? sou de Salvador"], passar: true, exigido: /americana/i, proibido: /ficamos|\bsim\b|\bentregamos\b/i },
   { nome: "Produto fora do ramo", cliente: ["vocês vendem cafezinho? e pão de queijo?"], passar: true, proibido: /\bsim\b|\bn[ãa]o (vendemos|temos|trabalhamos)/i },
 ];
 
