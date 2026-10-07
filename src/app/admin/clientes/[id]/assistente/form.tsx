@@ -59,7 +59,7 @@ export function FormAssistente(props: {
         <p className="font-heading font-semibold">Cidade da loja</p>
         <p className="text-sm text-cinza-medio">
           O assistente sempre pode dizer isso. Se perguntarem algo fora do normal (entrega em outro estado, produto que não
-          tem nada a ver), ele responde &quot;Nós ficamos em {config.cidade || "..."}&quot; e passa para a atendente.
+          tem nada a ver), ele responde &quot;Estamos localizados em {config.cidade || "..."}&quot; e passa para a atendente.
         </p>
         <input
           value={config.cidade}
