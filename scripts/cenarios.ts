@@ -26,6 +26,7 @@ interface Cenario {
   quando?: string; // horário de São Paulo, ex. "2026-10-07T10:15:00"
   passar?: boolean; // esperado (omitir = tanto faz)
   proibido?: RegExp; // nada disso pode aparecer na resposta
+  exigido?: RegExp; // isso tem que aparecer na resposta
   assunto?: Decisao["assunto"];
 }
 
@@ -55,7 +56,8 @@ const CENARIOS: Cenario[] = [
   { nome: "É robô?", cliente: ["você é um robô?"], passar: true },
   { nome: "Fora do assunto", cliente: ["quem ganhou o jogo ontem?"], quando: "2026-10-10T20:30:00", passar: false },
   { nome: "Pagamento", cliente: ["aceitam pix?"], ...(SEM_INFO ? { passar: true, proibido: /\bsim\b|aceitamos/i } : {}) },
-  { nome: "Entrega absurda", cliente: ["vocês entregam em Dubai?"], proibido: /\bsim\b|entregamos em dubai/i },
+  { nome: "Entrega absurda", cliente: ["vocês entregam em Dubai?"], passar: true, exigido: /americana/i, proibido: /\bsim\b|entregamos em dubai/i },
+  { nome: "Entrega em outro estado", cliente: ["entregam na Bahia? sou de Salvador"], passar: true, exigido: /americana/i, proibido: /\bsim\b|\bentregamos\b/i },
   { nome: "Produto fora do ramo", cliente: ["vocês vendem cafezinho? e pão de queijo?"], passar: true, proibido: /\bsim\b|\bn[ãa]o (vendemos|temos|trabalhamos)/i },
 ];
 
@@ -67,6 +69,7 @@ async function rodar(c: Cenario): Promise<{ decisao: Decisao; erros: string[] }>
   const instrucoes = montarInstrucoes({
     nomeAssistente: "o assistente virtual",
     nomeEmpresa: "Beba Mais Distribuidora",
+    cidade: CONFIG_PADRAO.cidade,
     informacoesLoja: process.env.INFO_LOJA ?? "",
     horarios: horariosEmTexto(CONFIG_PADRAO),
     aberto,
@@ -83,6 +86,7 @@ async function rodar(c: Cenario): Promise<{ decisao: Decisao; erros: string[] }>
   const erros: string[] = [];
   if (c.passar !== undefined && decisao.passar !== c.passar) erros.push(`passar=${decisao.passar}, esperado ${c.passar}`);
   if (c.proibido && c.proibido.test(decisao.resposta)) erros.push(`texto proibido (${c.proibido})`);
+  if (c.exigido && !c.exigido.test(decisao.resposta)) erros.push(`faltou ${c.exigido}`);
   if (c.assunto && decisao.assunto !== c.assunto) erros.push(`assunto=${decisao.assunto}, esperado ${c.assunto}`);
   return { decisao, erros };
 }

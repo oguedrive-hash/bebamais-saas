@@ -56,6 +56,20 @@ export function FormAssistente(props: {
       </label>
 
       <div className={secao}>
+        <p className="font-heading font-semibold">Cidade da loja</p>
+        <p className="text-sm text-cinza-medio">
+          O assistente sempre pode dizer isso. Se perguntarem algo fora do normal (entrega em outro estado, produto que não
+          tem nada a ver), ele responde &quot;Nós ficamos em {config.cidade || "..."}&quot; e passa para a atendente.
+        </p>
+        <input
+          value={config.cidade}
+          onChange={(e) => setConfig({ ...config, cidade: e.target.value })}
+          placeholder="Americana/SP"
+          className="w-full max-w-sm rounded-lg border border-cinza-claro px-3 py-2 text-sm"
+        />
+      </div>
+
+      <div className={secao}>
         <p className="font-heading font-semibold">Informações da loja</p>
         <p className="text-sm text-cinza-medio">
           É só isso que o assistente sabe. Escreva como se explicasse para uma atendente nova. Ele usa para responder

@@ -35,6 +35,8 @@ export interface AtendimentoConfig {
   reiniciar_apos_horas: number;
   /** Liga/desliga o assistente para a empresa toda. */
   assistente_ativo: boolean;
+  /** Onde a loja fica (ex.: "Americana/SP"). O assistente sempre pode dizer isso. */
+  cidade: string;
 }
 
 export const CONFIG_PADRAO: AtendimentoConfig = {
@@ -50,6 +52,7 @@ export const CONFIG_PADRAO: AtendimentoConfig = {
   espera_minutos: [5, 15],
   reiniciar_apos_horas: 6,
   assistente_ativo: true,
+  cidade: "Americana/SP",
 };
 
 /** Mescla o que veio do banco com o padrão (campos ausentes/errados viram padrão). */
@@ -74,6 +77,7 @@ export function normalizarConfig(raw: unknown): AtendimentoConfig {
     espera_minutos: espera.slice(0, 3),
     reiniciar_apos_horas: Number.isFinite(reiniciar) && reiniciar > 0 ? reiniciar : CONFIG_PADRAO.reiniciar_apos_horas,
     assistente_ativo: r.assistente_ativo !== false,
+    cidade: typeof r.cidade === "string" && r.cidade.trim() ? r.cidade.trim().slice(0, 80) : CONFIG_PADRAO.cidade,
   };
 }
 

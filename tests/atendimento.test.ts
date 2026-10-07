@@ -38,6 +38,7 @@ test("config do banco incompleta vira padrão", () => {
   assert.equal(c.horarios.dom, null);
   assert.deepEqual(c.espera_minutos, [5, 15]);
   assert.equal(c.assistente_ativo, true);
+  assert.equal(c.cidade, "Americana/SP");
 });
 
 const agora = sp("2026-10-06T10:00:00");
