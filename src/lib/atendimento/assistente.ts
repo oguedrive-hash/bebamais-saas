@@ -19,6 +19,15 @@ import {
 
 const ASSUNTOS: Assunto[] = ["pedido", "orcamento", "duvida", "pos_venda", "outro"];
 
+export type Saudacao = "bom dia" | "boa tarde" | "boa noite";
+
+/** Cumprimento certo para o horário de São Paulo (calculado pelo código, não pela IA). */
+export function saudacaoPara(minutoDoDia: number): Saudacao {
+  if (minutoDoDia >= 5 * 60 && minutoDoDia < 12 * 60) return "bom dia";
+  if (minutoDoDia >= 12 * 60 && minutoDoDia < 18 * 60) return "boa tarde";
+  return "boa noite";
+}
+
 export interface Decisao {
   resposta: string;
   assunto: Assunto;
@@ -36,6 +45,7 @@ export function montarInstrucoes(opts: {
   agoraTexto: string;
   nomeCliente: string | null;
   respostasJaDadas: number;
+  saudacao: Saudacao;
 }): string {
   const situacaoLoja = opts.aberto
     ? "A loja está ABERTA agora. As atendentes respondem em poucos minutos."
@@ -45,12 +55,13 @@ export function montarInstrucoes(opts: {
 
 SEU PAPEL: fazer só o PRIMEIRO atendimento. Cumprimentar, entender o que o cliente precisa e deixar a conversa pronta para uma atendente humana continuar. Quem gera o pedido, passa valores e combina a entrega são as atendentes.
 
-COMO ESCREVER (igual às atendentes da loja): frases curtas, educadas e simples. Sem emoji. Exemplos do jeito delas: "Olá, bom dia!", "Ook, já vou gerar o seu pedido!!", "Verifique se está correto, por favor?". Use "bom dia", "boa tarde" ou "boa noite" conforme o horário.
+COMO ESCREVER (igual às atendentes da loja): frases curtas, educadas e simples. Sem emoji. Fale sempre no plural, em nome da loja ("recebemos", "vamos", "entregamos"), nunca "recebi". Exemplos do jeito delas: "Olá, bom dia!", "Ook, já vou gerar o seu pedido!!", "Verifique se está correto, por favor?".
+CUMPRIMENTO DE AGORA: "Olá, ${opts.saudacao}!". Use exatamente esse cumprimento (nunca outro período do dia). ${opts.respostasJaDadas === 0 ? 'Esta é a PRIMEIRA mensagem da conversa: comece com ele (pode incluir o primeiro nome do cliente, ex.: "Olá, João, ' + opts.saudacao + '!").' : "Não cumprimente de novo."}
 
 REGRAS QUE NUNCA PODEM SER QUEBRADAS:
 1. Nunca informe preço, valor, total, desconto, taxa de entrega, estoque, disponibilidade de produto ou horário/prazo de entrega. Diga que a atendente confirma.
-2. Nunca confirme o pedido, nunca repita nem resuma a lista do cliente, nunca diga "anotei".
-3. Nunca invente informação. Use só as INFORMAÇÕES DA LOJA abaixo. Se não estiver lá, a atendente responde.
+2. Nunca confirme o pedido e nunca diga "anotei". Nunca escreva nenhum produto, marca, número ou quantidade que o cliente mandou: diga apenas "recebemos seu pedido".
+3. Nunca invente informação. Só responda uma dúvida se a resposta estiver ESCRITA nas INFORMAÇÕES DA LOJA abaixo. Se não estiver escrita (por exemplo, um bairro que não aparece na lista de entrega), não diga sim nem não: diga que a atendente confirma e passe a conversa (passar_para_atendente = true).
 4. No máximo 2 frases curtas e no máximo 1 pergunta por mensagem.
 5. Se perguntarem se você é robô ou pessoa, diga com naturalidade que é o assistente virtual de ${opts.nomeEmpresa} e que uma atendente vai continuar o atendimento.
 6. Não converse sobre assuntos que não sejam o atendimento da loja.
@@ -64,12 +75,12 @@ O QUE FAZER EM CADA CASO:
 - Assuntos de depois da venda (nota fiscal, boleto, comprovante, pagamento, reembolso, troca, reclamação, problema na entrega): diga que vai passar para uma atendente resolver. passar_para_atendente = true.
 - Cliente pede para falar com uma pessoa, está irritado, ou o assunto não se encaixa em nada acima: passar_para_atendente = true.
 - Só um cumprimento ("oi", "bom dia"): cumprimente e pergunte como pode ajudar. passar_para_atendente = false.
-- Sempre que passar_para_atendente = true, a resposta tem que dizer que uma atendente vai continuar.
+- Sempre que passar_para_atendente = true, a resposta tem que dizer que uma atendente vai continuar. E sempre que a resposta falar em atendente, passar_para_atendente TEM que ser true.
 
 SITUAÇÃO AGORA: ${opts.agoraTexto}. ${situacaoLoja}
 Horários de atendimento: ${opts.horarios}.
 ${opts.nomeCliente ? `Nome do cliente no WhatsApp: ${opts.nomeCliente} (use só o primeiro nome, e só se parecer um nome de pessoa).` : ""}
-${opts.respostasJaDadas > 0 ? `Você já mandou ${opts.respostasJaDadas} mensagem(ns) nesta conversa. Não cumprimente de novo.` : ""}
+${opts.respostasJaDadas > 0 ? `Você já mandou ${opts.respostasJaDadas} mensagem(ns) nesta conversa.` : ""}
 
 INFORMAÇÕES DA LOJA:
 ${opts.informacoesLoja.trim() || "(nenhuma informação cadastrada — para qualquer dúvida, passe para a atendente)"}
@@ -92,26 +103,67 @@ export function interpretarResposta(conteudo: string, aberto: boolean): Decisao 
   }
 }
 
-export function respostaDeSeguranca(aberto: boolean, assunto: Assunto = "outro"): Decisao {
+export function respostaDeSeguranca(aberto: boolean, assunto: Assunto = "outro", saudacao?: Saudacao): Decisao {
+  const ola = saudacao ? `Olá, ${saudacao}!` : "Olá!";
+  if (assunto === "pedido") {
+    return {
+      resposta: aberto
+        ? `${ola} Recebemos seu pedido, uma atendente já vai gerar e te mandar para conferir.`
+        : `${ola} Recebemos seu pedido. Assim que a loja abrir, uma atendente gera e te manda para conferir.`,
+      assunto,
+      passar: true,
+    };
+  }
   return {
     resposta: aberto
-      ? "Olá! Recebemos sua mensagem, uma atendente já vai te responder."
-      : "Olá! Recebemos sua mensagem. Uma atendente te responde assim que a loja abrir.",
+      ? `${ola} Recebemos sua mensagem, uma atendente já vai te responder.`
+      : `${ola} Recebemos sua mensagem. Uma atendente te responde assim que a loja abrir.`,
     assunto,
     passar: true,
   };
 }
 
-/** Trava final: se escapar valor em dinheiro, não manda — passa para a atendente. */
-export function aplicarTravas(d: Decisao, respostasJaDadas: number, aberto: boolean): Decisao {
-  if (/R\$|\d+[,.]\d{2}\b|\breais\b|\d+\s*real\b/i.test(d.resposta)) {
-    return respostaDeSeguranca(aberto, d.assunto);
+/** Valor em dinheiro, escrito de qualquer jeito ("R$ 89", "89,90", "45 conto", "30 reais"). */
+const RE_DINHEIRO = /R\$|\d+[,.]\d{2}\b|\breais\b|\d+\s*real\b|\d+\s*(contos?|pilas?)\b/i;
+/** Número junto de unidade de venda ("3 fardos", "89 o fardo", "2L"): preço ou lista do pedido repetida. */
+const RE_QUANTIDADE =
+  /\d+\s*(o |a |cada |por )?(fardos?|caixas?|cx|unidades?|un\b|latas?|garrafas?|packs?|litros?|l\b|ml\b|sacos?|gal[õo]es|gal[ãa]o|engradados?|barras?)/i;
+/** A resposta promete atendente/pessoa da loja. */
+const RE_FALA_DE_ATENDENTE = /atendente|algu[ée]m da (loja|equipe)|nossa equipe|uma pessoa/i;
+
+export interface ContextoTravas {
+  respostasJaDadas: number;
+  aberto: boolean;
+  saudacao: Saudacao;
+  /** Assunto que a conversa já tinha (não deixa virar "outro" no meio do caminho). */
+  assuntoAnterior?: Assunto | null;
+}
+
+/** Corrige o período do dia e garante o cumprimento na primeira mensagem; fala no plural. */
+export function ajustarTom(texto: string, saudacao: Saudacao, primeira: boolean): string {
+  let t = texto.replace(/\b(bom dia|boa tarde|boa noite)\b/gi, (m) => (m[0] === m[0].toUpperCase() ? saudacao[0].toUpperCase() + saudacao.slice(1) : saudacao));
+  t = t.replace(/\bRecebi\b/g, "Recebemos").replace(/\brecebi\b/g, "recebemos");
+  if (primeira && !/^\s*ol[áa](?![a-z])/i.test(t)) t = `Olá, ${saudacao}! ${t}`;
+  return t.trim();
+}
+
+/** Travas finais do código: valem mesmo que a IA desobedeça as instruções. */
+export function aplicarTravas(d: Decisao, ctx: ContextoTravas): Decisao {
+  let decisao = d;
+  // Mantém o assunto da conversa quando a IA responde "outro" depois (ex.: orçamento em duas etapas).
+  if (decisao.assunto === "outro" && ctx.assuntoAnterior && ctx.assuntoAnterior !== "outro") {
+    decisao = { ...decisao, assunto: ctx.assuntoAnterior };
   }
-  if (!d.passar && respostasJaDadas + 1 >= MAX_RESPOSTAS_ASSISTENTE) {
-    // Conversa está rodando demais com o assistente: a próxima palavra é da atendente.
-    return { ...d, passar: true };
+  // Valor em dinheiro ou quantidade/produto na resposta: não manda; usa a resposta padrão e passa.
+  if (RE_DINHEIRO.test(decisao.resposta) || RE_QUANTIDADE.test(decisao.resposta)) {
+    return respostaDeSeguranca(ctx.aberto, decisao.assunto, ctx.respostasJaDadas === 0 ? ctx.saudacao : undefined);
   }
-  return d;
+  decisao = { ...decisao, resposta: ajustarTom(decisao.resposta, ctx.saudacao, ctx.respostasJaDadas === 0) };
+  // Falou em atendente: a conversa TEM que ir para a fila (senão ninguém é avisado).
+  if (!decisao.passar && RE_FALA_DE_ATENDENTE.test(decisao.resposta)) decisao = { ...decisao, passar: true };
+  // Conversa está rodando demais com o assistente: a próxima palavra é da atendente.
+  if (!decisao.passar && ctx.respostasJaDadas + 1 >= MAX_RESPOSTAS_ASSISTENTE) decisao = { ...decisao, passar: true };
+  return decisao;
 }
 
 function descreverMensagem(m: { tipo: string; conteudo: string | null; arquivo_nome: string | null }): string {
@@ -146,7 +198,7 @@ export async function responderCliente(leadId: string): Promise<void> {
   const admin = createAdminClient();
   const { data: lead } = await admin
     .from("leads")
-    .select("id, organization_id, nome, atend_status, conversa_iniciada_em, respostas_bot, evolution_instance, caio_ativo, assistente_viu_ate")
+    .select("id, organization_id, nome, atend_status, assunto, conversa_iniciada_em, respostas_bot, evolution_instance, caio_ativo, assistente_viu_ate")
     .eq("id", leadId)
     .maybeSingle();
   if (!lead || lead.atend_status !== "bot" || lead.caio_ativo === false) return;
@@ -161,6 +213,7 @@ export async function responderCliente(leadId: string): Promise<void> {
   const agora = new Date();
   const aberto = estaAberto(cfg, agora);
   const sp = agoraSaoPaulo(agora);
+  const saudacao = saudacaoPara(sp.minuto);
 
   let historicoQuery = admin
     .from("mensagens")
@@ -188,6 +241,7 @@ export async function responderCliente(leadId: string): Promise<void> {
     agoraTexto: `${NOME_DIA[sp.dia]}, ${sp.hhmm}`,
     nomeCliente: lead.nome ?? null,
     respostasJaDadas: lead.respostas_bot ?? 0,
+    saudacao,
   });
 
   const mensagens: ChatMessage[] = [{ role: "system", content: instrucoes }];
@@ -199,9 +253,14 @@ export async function responderCliente(leadId: string): Promise<void> {
   }
 
   const r = await chatCompletion({ messages: mensagens, temperature: 0.3, max_tokens: 300, json: true });
-  let decisao = "error" in r ? respostaDeSeguranca(aberto) : interpretarResposta(r.content, aberto);
+  let decisao = "error" in r ? respostaDeSeguranca(aberto, "outro", saudacao) : interpretarResposta(r.content, aberto);
   if ("error" in r) console.error("[assistente] IA falhou, usando resposta de segurança:", r.error);
-  decisao = aplicarTravas(decisao, lead.respostas_bot ?? 0, aberto);
+  decisao = aplicarTravas(decisao, {
+    respostasJaDadas: lead.respostas_bot ?? 0,
+    aberto,
+    saudacao,
+    assuntoAnterior: (lead.assunto as Assunto | null) ?? null,
+  });
 
   // "Digitando..." por alguns segundos, depois confere de novo se ainda é a vez do assistente.
   const ms = tempoDigitacao(decisao.resposta);

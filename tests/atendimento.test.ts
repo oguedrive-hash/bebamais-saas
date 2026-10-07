@@ -13,7 +13,7 @@ import {
   proximaAbertura,
 } from "../src/lib/atendimento/regras";
 import { normalizarMensagem } from "../src/lib/atendimento/inbound";
-import { aplicarTravas, interpretarResposta } from "../src/lib/atendimento/assistente";
+import { aplicarTravas, interpretarResposta, saudacaoPara, type ContextoTravas, type Decisao } from "../src/lib/atendimento/assistente";
 
 // Datas em horário de São Paulo (UTC-3): 2026-10-06 é terça-feira.
 const sp = (iso: string) => new Date(`${iso}-03:00`);
@@ -127,14 +127,44 @@ test("resposta da IA: JSON válido é usado, inválido vira passar para atendent
   assert.equal(assuntoEstranho.assunto, "outro");
 });
 
-test("trava: nunca manda valor em dinheiro; depois de 3 respostas passa para a atendente", () => {
-  const comPreco = aplicarTravas({ resposta: "A Heineken sai R$ 6,50", assunto: "duvida", passar: false }, 0, true);
-  assert.equal(aplicarTravas({ resposta: "Fica 6,50 cada", assunto: "duvida", passar: false }, 0, true).passar, true);
-  assert.equal(aplicarTravas({ resposta: "São 30 reais", assunto: "duvida", passar: false }, 0, true).passar, true);
-  assert.equal(comPreco.passar, true);
-  assert.doesNotMatch(comPreco.resposta, /R\$/);
-  const muitas = aplicarTravas({ resposta: "Me conta o que precisa?", assunto: "pedido", passar: false }, 2, true);
-  assert.equal(muitas.passar, true);
-  const normal = aplicarTravas({ resposta: "Me conta o que precisa?", assunto: "pedido", passar: false }, 0, true);
-  assert.equal(normal.passar, false);
+const ctx = (respostasJaDadas: number, extra: Partial<ContextoTravas> = {}): ContextoTravas => ({
+  respostasJaDadas,
+  aberto: true,
+  saudacao: "boa tarde",
+  ...extra,
+});
+const d = (resposta: string, assunto: Decisao["assunto"] = "duvida", passar = false): Decisao => ({ resposta, assunto, passar });
+
+test("trava: nunca manda valor em dinheiro, escrito de qualquer jeito", () => {
+  for (const r of ["A Heineken sai R$ 6,50", "Fica 6,50 cada", "São 30 reais", "Tá 89 o fardo", "45 conto a caixa"]) {
+    const t = aplicarTravas(d(r), ctx(1));
+    assert.equal(t.passar, true, r);
+    assert.doesNotMatch(t.resposta, /\d/, r);
+  }
+});
+
+test("trava: nunca repete a lista do pedido", () => {
+  const t = aplicarTravas(d("Recebi seu pedido de 3 fardos de Skol e 2 de Coca 2L.", "pedido", true), ctx(0));
+  assert.equal(t.resposta, "Olá, boa tarde! Recebemos seu pedido, uma atendente já vai gerar e te mandar para conferir.");
+  assert.equal(t.passar, true);
+});
+
+test("trava: se fala em atendente, passa a conversa", () => {
+  const t = aplicarTravas(d("A atendente pode confirmar se entregamos no Parque das Árvores."), ctx(1));
+  assert.equal(t.passar, true);
+});
+
+test("tom: cumprimento certo para o horário, sempre na primeira resposta, no plural", () => {
+  assert.equal(saudacaoPara(9 * 60), "bom dia");
+  assert.equal(saudacaoPara(14 * 60 + 30), "boa tarde");
+  assert.equal(saudacaoPara(20 * 60), "boa noite");
+  assert.equal(aplicarTravas(d("Olá, bom dia! Como posso ajudar?"), ctx(0)).resposta, "Olá, boa tarde! Como posso ajudar?");
+  assert.equal(aplicarTravas(d("A atendente já passa essa informação.", "duvida", true), ctx(0)).resposta, "Olá, boa tarde! A atendente já passa essa informação.");
+  assert.equal(aplicarTravas(d("Recebi as informações."), ctx(1)).resposta, "Recebemos as informações.");
+});
+
+test("assunto da conversa não se perde; depois de 3 respostas passa para a atendente", () => {
+  assert.equal(aplicarTravas(d("Obrigado pelas informações.", "outro"), ctx(1, { assuntoAnterior: "orcamento" })).assunto, "orcamento");
+  assert.equal(aplicarTravas(d("Me conta o que precisa?", "pedido"), ctx(2)).passar, true);
+  assert.equal(aplicarTravas(d("Me conta o que precisa?", "pedido"), ctx(0)).passar, false);
 });
