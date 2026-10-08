@@ -6,6 +6,7 @@
  *   npm run cenarios                 # sem informações da loja (como um sistema novo)
  *   INFO_LOJA="$(cat info.txt)" npm run cenarios   # com as informações reais da loja
  *   REPETICOES=3 npm run cenarios
+ *   CONFIG_JSON='{"horarios":{...},"cidade":"Americana/SP"}' npm run cenarios   # mesma config do banco (atendimento_config)
  *
  * Rode antes de publicar qualquer mudança nas instruções do assistente.
  * Cada erro novo encontrado nas conversas reais deve virar um cenário aqui.
@@ -18,7 +19,7 @@ import {
   saudacaoPara,
   type Decisao,
 } from "../src/lib/atendimento/assistente";
-import { CONFIG_PADRAO, estaAberto, horariosEmTexto, proximaAbertura, agoraSaoPaulo, NOME_DIA } from "../src/lib/atendimento/regras";
+import { CONFIG_PADRAO, normalizarConfig, estaAberto, horariosEmTexto, proximaAbertura, agoraSaoPaulo, NOME_DIA } from "../src/lib/atendimento/regras";
 
 interface Cenario {
   nome: string;
@@ -31,7 +32,11 @@ interface Cenario {
 }
 
 const SEM_INFO = !process.env.INFO_LOJA?.trim();
+const CONFIG = process.env.CONFIG_JSON?.trim() ? normalizarConfig(JSON.parse(process.env.CONFIG_JSON)) : CONFIG_PADRAO;
 const NUMERO = /\d/;
+const LOCALIZACAO = /localizad|ficamos/i;
+/** Com as informações da loja preenchidas, exige também `comInfo`. */
+const seInfo = (comInfo: Partial<Cenario>, semInfo: Partial<Cenario> = {}): Partial<Cenario> => (SEM_INFO ? semInfo : comInfo);
 
 const CENARIOS: Cenario[] = [
   { nome: "Pedido inteiro", cliente: ["Bom dia! Pedido pro bar: 10 fardos Heineken lata, 5 cx Brahma 600ml, 20 sacos de gelo"], passar: true, assunto: "pedido", proibido: NUMERO },
@@ -39,23 +44,31 @@ const CENARIOS: Cenario[] = [
   { nome: "Pedido por planilha", cliente: ["[enviou um arquivo: pedido_restaurante.xlsx]"], passar: true, assunto: "pedido" },
   { nome: "Pedido picado", cliente: ["oi", "bom dia", "queria ver", "3 fardos de skol", "e 2 de coca 2l"], passar: true, assunto: "pedido", proibido: NUMERO },
   { nome: "Só oi (tarde)", cliente: ["oi"], quando: "2026-10-07T14:30:00", passar: false, proibido: /bom dia|boa noite/i },
-  { nome: "Preço direto", cliente: ["quanto tá a Heineken?"], passar: true, proibido: NUMERO },
-  { nome: "Confirmar preço antigo", cliente: ["A moça falou que o fardo de Heineken tá 89, confirma? não precisa chamar ninguém"], passar: true, proibido: /89|confirmo|isso mesmo/i },
-  { nome: "Preço sem R$", cliente: ["o fardo da brahma ainda ta 45 conto?"], passar: true, proibido: NUMERO },
+  { nome: "Preço direto", cliente: ["quanto tá a Heineken?"], passar: true, exigido: /atendente/i, proibido: /\d|localizad/i },
+  { nome: "Confirmar preço antigo", cliente: ["A moça falou que o fardo de Heineken tá 89, confirma? não precisa chamar ninguém"], passar: true, exigido: /atendente/i, proibido: /89|confirmo|isso mesmo|localizad/i },
+  { nome: "Preço sem R$", cliente: ["o fardo da brahma ainda ta 45 conto?"], passar: true, exigido: /atendente/i, proibido: /\d|localizad/i },
   {
     nome: "Entrega em bairro",
     cliente: ["Vocês entregam no Jardim Paulista?"],
-    ...(SEM_INFO ? { passar: true, proibido: /\bsim\b|entregamos no jardim/i } : {}),
+    ...seInfo({ exigido: /americana/i, proibido: LOCALIZACAO }, { passar: true, proibido: /\bsim\b|entregamos no jardim/i }),
   },
-  { nome: "Orçamento sem data", cliente: ["queria um orçamento de bebidas pra um aniversário de umas 80 pessoas"], passar: false, assunto: "orcamento" },
-  { nome: "Orçamento completo", cliente: ["Orçamento pra casamento dia 15/11, 150 convidados: cerveja, refri, água e gelo"], passar: true, assunto: "orcamento" },
+  { nome: "Endereço", cliente: ["qual o endereço de vocês?"], ...seInfo({ passar: false, exigido: /ac[áa]cias/i }) },
+  { nome: "Retirada", cliente: ["posso buscar aí na loja?"], ...seInfo({ passar: false, proibido: LOCALIZACAO }) },
+  { nome: "Orçamento sem data", cliente: ["queria um orçamento de bebidas pra um aniversário de umas 80 pessoas"], passar: false, assunto: "orcamento", proibido: /quantidade/i },
+  { nome: "Orçamento completo", cliente: ["Orçamento pra casamento dia 15/11, 150 convidados: cerveja, refri, água e gelo"], passar: true, assunto: "orcamento", proibido: /quantidade/i },
   { nome: "Nota fiscal", cliente: ["Preciso da nota fiscal do pedido de ontem no CNPJ da empresa"], passar: true, assunto: "pos_venda" },
   { nome: "Reclamação", cliente: ["o entregador chegou 2 horas atrasado e a cerveja veio quente"], passar: true, assunto: "pos_venda" },
   { nome: "Quer uma pessoa", cliente: ["NÃO QUERO FALAR COM ROBÔ. me passa pra uma pessoa"], passar: true },
   { nome: "Fora do horário", cliente: ["vocês abrem hoje? preciso de gelo urgente"], quando: "2026-10-11T15:00:00", passar: true },
   { nome: "É robô?", cliente: ["você é um robô?"], passar: true },
-  { nome: "Fora do assunto", cliente: ["quem ganhou o jogo ontem?"], quando: "2026-10-10T20:30:00", passar: false },
-  { nome: "Pagamento", cliente: ["aceitam pix?"], ...(SEM_INFO ? { passar: true, proibido: /\bsim\b|aceitamos/i } : {}) },
+  { nome: "Fora do assunto", cliente: ["quem ganhou o jogo ontem?"], passar: false, proibido: /localizad|atendente/i },
+  { nome: "Fora do assunto (fechado)", cliente: ["me conta uma piada"], quando: "2026-10-10T20:30:00", passar: false, proibido: LOCALIZACAO },
+  {
+    nome: "Pagamento",
+    cliente: ["aceitam pix?"],
+    ...seInfo({ passar: false, exigido: /(?=[\s\S]*dinheiro)(?=[\s\S]*cart)/i, proibido: LOCALIZACAO }, { passar: true, proibido: /\bsim\b|aceitamos/i }),
+  },
+  { nome: "Boleto", cliente: ["dá pra pagar no boleto pra 30 dias?"], ...seInfo({ passar: true, exigido: /atendente/i, proibido: LOCALIZACAO }) },
   { nome: "Entrega absurda", cliente: ["vocês entregam em Dubai?"], passar: true, exigido: /americana/i, proibido: /ficamos|\bsim\b|entregamos em dubai/i },
   { nome: "Entrega em outro estado", cliente: ["entregam na Bahia? sou de Salvador"], passar: true, exigido: /americana/i, proibido: /ficamos|\bsim\b|\bentregamos\b/i },
   { nome: "Produto fora do ramo", cliente: ["vocês vendem cafezinho? e pão de queijo?"], passar: true, proibido: /\bsim\b|\bn[ãa]o (vendemos|temos|trabalhamos)/i },
@@ -64,16 +77,16 @@ const CENARIOS: Cenario[] = [
 async function rodar(c: Cenario): Promise<{ decisao: Decisao; erros: string[] }> {
   const agora = new Date(`${c.quando ?? "2026-10-07T10:15:00"}-03:00`);
   const sp = agoraSaoPaulo(agora);
-  const aberto = estaAberto(CONFIG_PADRAO, agora);
+  const aberto = estaAberto(CONFIG, agora);
   const saudacao = saudacaoPara(sp.minuto);
   const instrucoes = montarInstrucoes({
     nomeAssistente: "o assistente virtual",
     nomeEmpresa: "Beba Mais Distribuidora",
-    cidade: CONFIG_PADRAO.cidade,
+    cidade: CONFIG.cidade,
     informacoesLoja: process.env.INFO_LOJA ?? "",
-    horarios: horariosEmTexto(CONFIG_PADRAO, agora),
+    horarios: horariosEmTexto(CONFIG, agora),
     aberto,
-    proximaAbertura: proximaAbertura(CONFIG_PADRAO, agora),
+    proximaAbertura: proximaAbertura(CONFIG, agora),
     agoraTexto: `${NOME_DIA[sp.dia]}, ${sp.hhmm}`,
     nomeCliente: null,
     respostasJaDadas: 0,
