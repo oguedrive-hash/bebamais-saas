@@ -169,3 +169,13 @@ test("assunto da conversa não se perde; depois de 3 respostas passa para a aten
   assert.equal(aplicarTravas(d("Me conta o que precisa?", "pedido"), ctx(2)).passar, true);
   assert.equal(aplicarTravas(d("Me conta o que precisa?", "pedido"), ctx(0)).passar, false);
 });
+
+test("feriado cadastrado: loja fechada no dia e próxima abertura pula o feriado", () => {
+  const cfg = { ...CONFIG_PADRAO, dias_fechados: ["2026-10-12"] }; // segunda-feira
+  assert.equal(estaAberto(cfg, sp("2026-10-12T10:00:00")), false);
+  assert.equal(estaAberto(cfg, sp("2026-10-13T10:00:00")), true);
+  assert.equal(proximaAbertura(cfg, sp("2026-10-11T10:00:00")), "terça-feira às 08:00");
+  assert.equal(proximaAbertura(cfg, sp("2026-10-12T09:00:00")), "amanhã (terça-feira) às 08:00");
+  assert.equal(avisoDeEsperaDevido(sp("2026-10-12T09:00:00").toISOString(), 0, null, cfg, sp("2026-10-12T11:00:00")), null);
+  assert.deepEqual(normalizarConfig({ dias_fechados: ["2026-10-12", "lixo", "2026-10-12", 5] }).dias_fechados, ["2026-10-12"]);
+});

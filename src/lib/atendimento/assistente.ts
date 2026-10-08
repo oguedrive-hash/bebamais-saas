@@ -240,7 +240,7 @@ export async function responderCliente(leadId: string): Promise<void> {
     nomeEmpresa: org?.name?.trim() || "a loja",
     cidade: cfg.cidade,
     informacoesLoja: org?.base_conhecimento ?? "",
-    horarios: horariosEmTexto(cfg),
+    horarios: horariosEmTexto(cfg, agora),
     aberto,
     proximaAbertura: proximaAbertura(cfg, agora),
     agoraTexto: `${NOME_DIA[sp.dia]}, ${sp.hhmm}`,

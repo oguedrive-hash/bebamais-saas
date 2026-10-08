@@ -71,7 +71,7 @@ async function rodar(c: Cenario): Promise<{ decisao: Decisao; erros: string[] }>
     nomeEmpresa: "Beba Mais Distribuidora",
     cidade: CONFIG_PADRAO.cidade,
     informacoesLoja: process.env.INFO_LOJA ?? "",
-    horarios: horariosEmTexto(CONFIG_PADRAO),
+    horarios: horariosEmTexto(CONFIG_PADRAO, agora),
     aberto,
     proximaAbertura: proximaAbertura(CONFIG_PADRAO, agora),
     agoraTexto: `${NOME_DIA[sp.dia]}, ${sp.hhmm}`,

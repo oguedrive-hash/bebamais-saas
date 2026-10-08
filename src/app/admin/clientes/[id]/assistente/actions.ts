@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { normalizarConfig, type AtendimentoConfig } from "@/lib/atendimento/regras";
+import { agoraSaoPaulo, normalizarConfig, type AtendimentoConfig } from "@/lib/atendimento/regras";
 
 export async function salvarAssistente(
   orgId: string,
@@ -18,6 +18,8 @@ export async function salvarAssistente(
   if (profile?.role !== "admin") return { error: "Apenas administradores podem alterar o assistente" };
 
   const config = normalizarConfig(dados.config);
+  const hoje = agoraSaoPaulo(new Date()).data;
+  config.dias_fechados = config.dias_fechados.filter((d) => d >= hoje); // feriados que já passaram saem da lista
   const respostas = dados.respostasRapidas.map((r) => r.trim()).filter(Boolean).slice(0, 12);
   const { error } = await createAdminClient()
     .from("organizations")

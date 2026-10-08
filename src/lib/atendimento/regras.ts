@@ -37,6 +37,8 @@ export interface AtendimentoConfig {
   assistente_ativo: boolean;
   /** Onde a loja fica (ex.: "Americana/SP"). O assistente sempre pode dizer isso. */
   cidade: string;
+  /** Datas em que a loja não abre (feriados), no formato "2026-10-12", horário de São Paulo. */
+  dias_fechados: string[];
 }
 
 export const CONFIG_PADRAO: AtendimentoConfig = {
@@ -53,6 +55,7 @@ export const CONFIG_PADRAO: AtendimentoConfig = {
   reiniciar_apos_horas: 6,
   assistente_ativo: true,
   cidade: "Americana/SP",
+  dias_fechados: [],
 };
 
 /** Mescla o que veio do banco com o padrão (campos ausentes/errados viram padrão). */
@@ -78,6 +81,9 @@ export function normalizarConfig(raw: unknown): AtendimentoConfig {
     reiniciar_apos_horas: Number.isFinite(reiniciar) && reiniciar > 0 ? reiniciar : CONFIG_PADRAO.reiniciar_apos_horas,
     assistente_ativo: r.assistente_ativo !== false,
     cidade: typeof r.cidade === "string" && r.cidade.trim() ? r.cidade.trim().slice(0, 80) : CONFIG_PADRAO.cidade,
+    dias_fechados: Array.isArray(r.dias_fechados)
+      ? [...new Set(r.dias_fechados.filter((d): d is string => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d)))].sort().slice(-60)
+      : [],
   };
 }
 
@@ -90,11 +96,14 @@ function minutos(h: string): number {
   return hh * 60 + mm;
 }
 
-/** Dia da semana e minuto do dia no horário de São Paulo. */
-export function agoraSaoPaulo(agora: Date): { dia: DiaSemana; minuto: number; hhmm: string } {
+/** Dia da semana, data e minuto do dia no horário de São Paulo. */
+export function agoraSaoPaulo(agora: Date): { dia: DiaSemana; minuto: number; hhmm: string; data: string } {
   const partes = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Sao_Paulo",
     weekday: "short",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
     hourCycle: "h23",
@@ -103,38 +112,53 @@ export function agoraSaoPaulo(agora: Date): { dia: DiaSemana; minuto: number; hh
   const hh = Number(partes.find((p) => p.type === "hour")?.value ?? "0");
   const mm = Number(partes.find((p) => p.type === "minute")?.value ?? "0");
   const mapa: Record<string, DiaSemana> = { Sun: "dom", Mon: "seg", Tue: "ter", Wed: "qua", Thu: "qui", Fri: "sex", Sat: "sab" };
-  return { dia: mapa[wd] ?? "seg", minuto: hh * 60 + mm, hhmm: `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}` };
+  const v = (t: string) => partes.find((p) => p.type === t)?.value ?? "";
+  return {
+    dia: mapa[wd] ?? "seg",
+    minuto: hh * 60 + mm,
+    hhmm: `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`,
+    data: `${v("year")}-${v("month")}-${v("day")}`,
+  };
+}
+
+/** "2026-10-12" → "12/10". */
+export function dataCurta(iso: string): string {
+  return `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 }
 
 export function estaAberto(cfg: AtendimentoConfig, agora: Date): boolean {
-  const { dia, minuto } = agoraSaoPaulo(agora);
+  const { dia, minuto, data } = agoraSaoPaulo(agora);
   const h = cfg.horarios[dia];
-  if (!h) return false;
+  if (!h || cfg.dias_fechados.includes(data)) return false;
   return minuto >= minutos(h.abre) && minuto < minutos(h.fecha);
 }
 
 /** "hoje às 08:00", "amanhã (sábado) às 08:00", "segunda-feira às 08:00". */
 export function proximaAbertura(cfg: AtendimentoConfig, agora: Date): string | null {
-  const { dia, minuto } = agoraSaoPaulo(agora);
-  const idx = DIAS.indexOf(dia);
-  for (let i = 0; i < 8; i++) {
-    const d = DIAS[(idx + i) % 7];
+  const { minuto } = agoraSaoPaulo(agora);
+  for (let i = 0; i < 40; i++) {
+    const outro = agoraSaoPaulo(new Date(agora.getTime() + i * 86_400_000));
+    const d = outro.dia;
     const h = cfg.horarios[d];
-    if (!h) continue;
+    if (!h || cfg.dias_fechados.includes(outro.data)) continue;
     if (i === 0 && minuto >= minutos(h.abre)) continue; // hoje já abriu (ou já passou)
     if (i === 0) return `hoje às ${h.abre}`;
     if (i === 1) return `amanhã (${NOME_DIA[d]}) às ${h.abre}`;
-    return `${NOME_DIA[d]} às ${h.abre}`;
+    if (i < 7) return `${NOME_DIA[d]} às ${h.abre}`;
+    return `${NOME_DIA[d]}, ${dataCurta(outro.data)}, às ${h.abre}`;
   }
   return null;
 }
 
 /** Texto legível dos horários, para o assistente responder "que horas vocês abrem?". */
-export function horariosEmTexto(cfg: AtendimentoConfig): string {
-  return DIAS.map((d) => {
+export function horariosEmTexto(cfg: AtendimentoConfig, agora: Date = new Date()): string {
+  const semana = DIAS.map((d) => {
     const h = cfg.horarios[d];
     return `${NOME_DIA[d]}: ${h ? `${h.abre} às ${h.fecha}` : "fechado"}`;
   }).join("; ");
+  const hoje = agoraSaoPaulo(agora).data;
+  const fechados = cfg.dias_fechados.filter((d) => d >= hoje).map(dataCurta);
+  return fechados.length ? `${semana}. Fechado também nos dias: ${fechados.join(", ")}` : semana;
 }
 
 export interface LeadEstado {
@@ -183,9 +207,9 @@ export const MAX_RESPOSTAS_ASSISTENTE = 3;
 
 /** Momento em que a loja abriu hoje (ou null se hoje está fechada). */
 export function aberturaDeHoje(cfg: AtendimentoConfig, agora: Date): Date | null {
-  const { dia, minuto } = agoraSaoPaulo(agora);
+  const { dia, minuto, data } = agoraSaoPaulo(agora);
   const h = cfg.horarios[dia];
-  if (!h) return null;
+  if (!h || cfg.dias_fechados.includes(data)) return null;
   const diff = minuto - minutos(h.abre);
   const d = new Date(agora.getTime() - diff * 60_000);
   d.setSeconds(0, 0);

@@ -20,6 +20,7 @@ export function FormAssistente(props: {
   const [informacoes, setInformacoes] = useState(props.informacoesIniciais);
   const [config, setConfig] = useState(props.configInicial);
   const [respostas, setRespostas] = useState(props.respostasIniciais.join("\n"));
+  const [novaData, setNovaData] = useState("");
   const [msg, setMsg] = useState<{ tipo: "ok" | "erro"; texto: string } | null>(null);
   const [pendente, iniciar] = useTransition();
 
@@ -109,6 +110,47 @@ export function FormAssistente(props: {
             );
           })}
         </div>
+      </div>
+
+      <div className={secao}>
+        <p className="font-heading font-semibold">Feriados e dias fechados</p>
+        <p className="text-sm text-cinza-medio">
+          Nesses dias o assistente avisa que a loja está fechada e quando volta a abrir. Cadastre antes de cada feriado
+          em que a loja não abre.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <input type="date" value={novaData} onChange={(e) => setNovaData(e.target.value)} className="rounded border border-cinza-claro px-2 py-1" />
+          <button
+            type="button"
+            disabled={!novaData}
+            onClick={() => {
+              setConfig({ ...config, dias_fechados: [...new Set([...config.dias_fechados, novaData])].sort() });
+              setNovaData("");
+            }}
+            className="rounded-lg border border-cinza-claro px-3 py-1 text-sm disabled:opacity-50"
+          >
+            Adicionar
+          </button>
+        </div>
+        {config.dias_fechados.length ? (
+          <ul className="flex flex-wrap gap-2">
+            {config.dias_fechados.map((d) => (
+              <li key={d} className="flex items-center gap-2 rounded-full bg-cinza-claro/50 px-3 py-1 text-sm">
+                {d.slice(8, 10)}/{d.slice(5, 7)}/{d.slice(0, 4)}
+                <button
+                  type="button"
+                  aria-label="Remover"
+                  onClick={() => setConfig({ ...config, dias_fechados: config.dias_fechados.filter((x) => x !== d) })}
+                  className="text-cinza-medio hover:text-vermelho"
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-cinza-medio">Nenhum dia cadastrado.</p>
+        )}
       </div>
 
       <div className={secao}>
