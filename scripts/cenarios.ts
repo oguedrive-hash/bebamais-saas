@@ -54,7 +54,7 @@ const CENARIOS: Cenario[] = [
   },
   { nome: "Endereço", cliente: ["qual o endereço de vocês?"], ...seInfo({ passar: false, exigido: /ac[áa]cias/i }) },
   { nome: "Retirada", cliente: ["posso buscar aí na loja?"], ...seInfo({ passar: false, proibido: /localizad|o cliente|como podemos/i }) },
-  { nome: "Orçamento sem data", cliente: ["queria um orçamento de bebidas pra um aniversário de umas 80 pessoas"], passar: false, assunto: "orcamento", proibido: /quantidade/i },
+  { nome: "Orçamento sem data", cliente: ["queria um orçamento de bebidas pra um aniversário de umas 80 pessoas"], passar: false, assunto: "orcamento", exigido: /quando|data/i, proibido: /quantidade|quantas pessoas|anivers[áa]rio\?/i },
   { nome: "Orçamento completo", cliente: ["Orçamento pra casamento dia 15/11, 150 convidados: cerveja, refri, água e gelo"], passar: true, assunto: "orcamento", exigido: /or[çc]amento/i, proibido: /quantidade|precisamos|\?/i },
   { nome: "Nota fiscal", cliente: ["Preciso da nota fiscal do pedido de ontem no CNPJ da empresa"], passar: true, assunto: "pos_venda" },
   { nome: "Reclamação", cliente: ["o entregador chegou 2 horas atrasado e a cerveja veio quente"], passar: true, assunto: "pos_venda", exigido: /lament|desculp/i },
@@ -62,7 +62,7 @@ const CENARIOS: Cenario[] = [
   { nome: "Fora do horário", cliente: ["vocês abrem hoje? preciso de gelo urgente"], quando: "2026-10-11T15:00:00", passar: true, assunto: "pedido", proibido: /ajudar/i },
   { nome: "É robô?", cliente: ["você é um robô?"], passar: true },
   { nome: "Fora do assunto", cliente: ["quem ganhou o jogo ontem?"], passar: false, proibido: /localizad|atendente/i },
-  { nome: "Fora do assunto (fechado)", cliente: ["me conta uma piada"], quando: "2026-10-10T20:30:00", passar: false, proibido: LOCALIZACAO },
+  { nome: "Fora do assunto (fechado)", cliente: ["me conta uma piada"], quando: "2026-10-10T20:30:00", passar: false, exigido: /fechad/i, proibido: LOCALIZACAO },
   {
     nome: "Pagamento",
     cliente: ["aceitam pix?"],

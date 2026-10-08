@@ -212,3 +212,18 @@ test("respondeu dúvida: fecha com 'algo mais?'", () => {
   assert.equal(aplicarTravas(d("Sim, você pode retirar na loja. Como podemos ajudar?", "duvida"), ctx(1)).resposta, "Sim, você pode retirar na loja. Podemos ajudar em algo mais?");
   assert.equal(aplicarTravas(d("Olá, bom dia! Como podemos ajudar?", "outro"), ctx(0)).resposta, "Olá, boa tarde! Como podemos ajudar?");
 });
+
+test("orçamento: não pergunta o que o cliente já disse", () => {
+  const t = aplicarTravas(d("Para quantas pessoas é o evento?", "orcamento"), ctx(0, { textoCliente: "orçamento pra aniversário de umas 80 pessoas" }));
+  assert.equal(t.resposta, "Olá, boa tarde! Para quando é o evento?");
+  assert.equal(t.passar, false);
+  const u = aplicarTravas(d("Qual a data do evento?", "orcamento"), ctx(1, { textoCliente: "casamento dia 15/11, 150 convidados" }));
+  assert.equal(u.resposta, "Recebemos as informações. Uma atendente já vai montar o seu orçamento.");
+  assert.equal(u.passar, true);
+});
+
+test("loja fechada: cliente precisando de algo conta como pedido", () => {
+  const t = aplicarTravas(d("Estamos fechados hoje e abrimos amanhã às 08:00.", "outro"), ctx(0, { aberto: false, textoCliente: "vocês abrem hoje? preciso de gelo urgente" }));
+  assert.equal(t.assunto, "pedido");
+  assert.equal(t.passar, true);
+});

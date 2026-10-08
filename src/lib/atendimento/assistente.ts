@@ -72,7 +72,7 @@ O QUE FAZER EM CADA CASO (os textos entre aspas são modelos de tom; adapte com 
 - Cliente mandou o pedido (lista de produtos, quantidades, foto, planilha ou arquivo): "Recebemos seu pedido. Uma atendente já vai gerar e te mandar para conferir." (loja fechada: "...assim que a loja abrir"). Sem perguntas. assunto = pedido, passar = true.
 - Cliente quer comprar mas ainda não disse o quê: pergunte o que ele precisa. assunto = pedido, passar = false. Quando ele disser, avise que a atendente já vai continuar e passar = true.
 - Orçamento para festa ou evento. O orçamento precisa só de duas coisas: a DATA e O QUE precisa (lista de bebidas OU número de pessoas).
-  - Se faltar alguma, peça só o que falta, numa pergunta curta (ex.: "Para quando é o evento?" ou "Para quantas pessoas?"). passar = false.
+  - Antes de perguntar, confira o que o cliente JÁ mandou. Faltando só a data: "Para quando é o evento?". Faltando só o que precisa: "O que você vai precisar, ou para quantas pessoas?". Nunca pergunte o que ele já disse (se falou "80 pessoas", não pergunte quantas pessoas). passar = false.
   - Se já tem as duas (na mensagem atual ou antes): responda só "Recebemos as informações. Uma atendente já vai montar o seu orçamento." Não peça mais nada, não repita data nem lista, nunca peça quantidade de cada item. passar = true.
   - assunto = orcamento.
 - Dúvida que as INFORMAÇÕES DA LOJA respondem (horário, endereço, retirada, formas de pagamento): responda com a informação COMPLETA, com todos os itens escritos (ex.: "Aceitamos Pix, dinheiro e cartão."), e termine com "Podemos ajudar em algo mais?". assunto = duvida, passar = false.
@@ -83,7 +83,7 @@ O QUE FAZER EM CADA CASO (os textos entre aspas são modelos de tom; adapte com 
 - Assuntos de depois da venda (nota fiscal, boleto, comprovante, reembolso, troca): diga o que vai ser feito, ex.: "Vamos verificar a sua nota fiscal. Uma atendente já te responde." assunto = pos_venda, passar = true.
 - Reclamação (atraso, produto errado ou quente, entregador): peça desculpas primeiro: "Lamentamos muito o ocorrido. Uma atendente já vai falar com você para resolver." assunto = pos_venda, passar = true.
 - Cliente pede para falar com uma pessoa, está irritado, ou o assunto não se encaixa em nada aqui: passar = true.
-- Conversa que não tem NADA a ver com a loja nem com produtos (futebol, piada, política, clima, perguntas pessoais): não entre no assunto e não fale de localização: "Aqui é o atendimento da ${opts.nomeEmpresa}. Podemos ajudar com algum pedido ou dúvida?" assunto = outro, passar = false.
+- Conversa que não tem NADA a ver com a loja nem com produtos (futebol, piada, política, clima, perguntas pessoais): não entre no assunto e não fale de localização: "Aqui é o atendimento da ${opts.nomeEmpresa}. Podemos ajudar com algum pedido ou dúvida?" (com a loja fechada, diga também que estamos fechados e quando abrimos). assunto = outro, passar = false.
 - LOJA FECHADA e o cliente quer comprar, precisa de algo ou perguntou se abrimos: diga que estamos fechados, quando abrimos e que uma atendente responde assim que a loja abrir. Não pergunte "podemos ajudar em algo mais?". passar = true (senão o pedido fica parado e ninguém vê).
 - Só um cumprimento ("oi", "bom dia"): cumprimente e pergunte "Como podemos ajudar?". passar = false.
 - Sempre que passar = true, a resposta tem que dizer que uma atendente vai continuar. E sempre que a resposta falar em atendente, passar TEM que ser true.
@@ -154,6 +154,13 @@ export interface ContextoTravas {
   textoCliente?: string;
 }
 
+/** "80 pessoas", "150 convidados". */
+const RE_PESSOAS = /\d+\s*(pessoas|convidados|pessoa)\b/i;
+/** "15/11", "dia 20", "sábado que vem", "amanhã". */
+const RE_DATA = /\b\d{1,2}\s*\/\s*\d{1,2}\b|\bdia \d{1,2}\b|\b(amanh[ãa]|hoje|depois de amanh[ãa])\b|\b(segunda|ter[çc]a|quarta|quinta|sexta|s[áa]bado|domingo)(-feira)?\b/i;
+/** Cliente quer comprar ou precisa de algo. */
+const RE_QUER_ALGO = /\b(preciso|precisava|quero|queria|manda|mandar|entrega|entregar|pedido|comprar|tem)\b/i;
+
 /** Cliente pedindo para falar com gente ("quero falar com uma pessoa", "não quero robô"). */
 export const RE_PEDE_PESSOA =
   /(falar|conversar|atendimento) com (uma |um |a |o |alg)?\s*(pessoa|humano|gente|atendente|algu[ée]m|vendedor)|n[ãa]o quero (falar com |conversar com )?(rob[ôo]|bot|m[áa]quina|ia\b)|(me )?passa (pra|para) (uma |um |a |o )?(pessoa|humano|atendente|algu[ée]m)|\bquero (uma |um |a |o )?(atendente|pessoa|humano)\b|\b(chama|chame) (uma |um |a |o )?(atendente|pessoa|algu[ée]m)/i;
@@ -191,7 +198,20 @@ export function aplicarTravas(d: Decisao, ctx: ContextoTravas): Decisao {
   if (decisao.assunto !== "outro" && /\S.*?\s*Como (podemos|posso) ajudar\?\s*$/i.test(semCumprimento) && !/^\s*Como (podemos|posso) ajudar\?\s*$/i.test(semCumprimento)) {
     decisao = { ...decisao, resposta: decisao.resposta.replace(/\s*Como (podemos|posso) ajudar\?\s*$/i, " Podemos ajudar em algo mais?") };
   }
+  // Orçamento: não pergunta o que o cliente acabou de dizer.
+  if (decisao.assunto === "orcamento" && !decisao.passar && ctx.textoCliente) {
+    const temPessoas = RE_PESSOAS.test(ctx.textoCliente);
+    const temData = RE_DATA.test(ctx.textoCliente);
+    if (temPessoas && temData) {
+      decisao = { ...decisao, resposta: `${primeira ? `Olá, ${ctx.saudacao}! ` : ""}Recebemos as informações. Uma atendente já vai montar o seu orçamento.`, passar: true };
+    } else if (temPessoas && /quantas pessoas|quantos convidados/i.test(decisao.resposta)) {
+      decisao = { ...decisao, resposta: `${primeira ? `Olá, ${ctx.saudacao}! ` : ""}Para quando é o evento?` };
+    }
+  }
   // Loja fechada: qualquer assunto da loja vai para a fila, para a atendente ver quando abrir.
+  if (!ctx.aberto && !decisao.passar && decisao.assunto === "outro" && ctx.textoCliente && RE_QUER_ALGO.test(ctx.textoCliente)) {
+    decisao = { ...decisao, assunto: "pedido" };
+  }
   if (!ctx.aberto && !decisao.passar && decisao.assunto !== "outro") decisao = { ...decisao, passar: true };
   // Falou em atendente: a conversa TEM que ir para a fila (senão ninguém é avisado).
   if (!decisao.passar && RE_FALA_DE_ATENDENTE.test(decisao.resposta)) decisao = { ...decisao, passar: true };
