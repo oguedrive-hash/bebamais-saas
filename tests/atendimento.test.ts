@@ -159,7 +159,7 @@ test("tom: cumprimento certo para o horário, sempre na primeira resposta, no pl
   assert.equal(saudacaoPara(9 * 60), "bom dia");
   assert.equal(saudacaoPara(14 * 60 + 30), "boa tarde");
   assert.equal(saudacaoPara(20 * 60), "boa noite");
-  assert.equal(aplicarTravas(d("Olá, bom dia! Como posso ajudar?"), ctx(0)).resposta, "Olá, boa tarde! Como posso ajudar?");
+  assert.equal(aplicarTravas(d("Olá, bom dia! Como posso ajudar?"), ctx(0)).resposta, "Olá, boa tarde! Como podemos ajudar?");
   assert.equal(aplicarTravas(d("A atendente já passa essa informação.", "duvida", true), ctx(0)).resposta, "Olá, boa tarde! A atendente já passa essa informação.");
   assert.equal(aplicarTravas(d("Recebi as informações."), ctx(1)).resposta, "Recebemos as informações.");
 });

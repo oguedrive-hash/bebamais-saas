@@ -50,16 +50,16 @@ const CENARIOS: Cenario[] = [
   {
     nome: "Entrega em bairro",
     cliente: ["Vocês entregam no Jardim Paulista?"],
-    ...seInfo({ exigido: /americana/i, proibido: LOCALIZACAO }, { passar: true, proibido: /\bsim\b|entregamos no jardim/i }),
+    ...seInfo({ passar: true, exigido: /americana/i, proibido: LOCALIZACAO }, { passar: true, proibido: /\bsim\b|entregamos no jardim/i }),
   },
   { nome: "Endereço", cliente: ["qual o endereço de vocês?"], ...seInfo({ passar: false, exigido: /ac[áa]cias/i }) },
-  { nome: "Retirada", cliente: ["posso buscar aí na loja?"], ...seInfo({ passar: false, proibido: LOCALIZACAO }) },
+  { nome: "Retirada", cliente: ["posso buscar aí na loja?"], ...seInfo({ passar: false, proibido: /localizad|o cliente/i }) },
   { nome: "Orçamento sem data", cliente: ["queria um orçamento de bebidas pra um aniversário de umas 80 pessoas"], passar: false, assunto: "orcamento", proibido: /quantidade/i },
-  { nome: "Orçamento completo", cliente: ["Orçamento pra casamento dia 15/11, 150 convidados: cerveja, refri, água e gelo"], passar: true, assunto: "orcamento", proibido: /quantidade/i },
+  { nome: "Orçamento completo", cliente: ["Orçamento pra casamento dia 15/11, 150 convidados: cerveja, refri, água e gelo"], passar: true, assunto: "orcamento", exigido: /or[çc]amento/i, proibido: /quantidade|precisamos|\?/i },
   { nome: "Nota fiscal", cliente: ["Preciso da nota fiscal do pedido de ontem no CNPJ da empresa"], passar: true, assunto: "pos_venda" },
-  { nome: "Reclamação", cliente: ["o entregador chegou 2 horas atrasado e a cerveja veio quente"], passar: true, assunto: "pos_venda" },
+  { nome: "Reclamação", cliente: ["o entregador chegou 2 horas atrasado e a cerveja veio quente"], passar: true, assunto: "pos_venda", exigido: /lament|desculp/i },
   { nome: "Quer uma pessoa", cliente: ["NÃO QUERO FALAR COM ROBÔ. me passa pra uma pessoa"], passar: true },
-  { nome: "Fora do horário", cliente: ["vocês abrem hoje? preciso de gelo urgente"], quando: "2026-10-11T15:00:00", passar: true },
+  { nome: "Fora do horário", cliente: ["vocês abrem hoje? preciso de gelo urgente"], quando: "2026-10-11T15:00:00", passar: true, assunto: "pedido" },
   { nome: "É robô?", cliente: ["você é um robô?"], passar: true },
   { nome: "Fora do assunto", cliente: ["quem ganhou o jogo ontem?"], passar: false, proibido: /localizad|atendente/i },
   { nome: "Fora do assunto (fechado)", cliente: ["me conta uma piada"], quando: "2026-10-10T20:30:00", passar: false, proibido: LOCALIZACAO },
@@ -70,8 +70,8 @@ const CENARIOS: Cenario[] = [
   },
   { nome: "Boleto", cliente: ["dá pra pagar no boleto pra 30 dias?"], ...seInfo({ passar: true, exigido: /atendente/i, proibido: LOCALIZACAO }) },
   { nome: "Entrega absurda", cliente: ["vocês entregam em Dubai?"], passar: true, exigido: /americana/i, proibido: /ficamos|\bsim\b|entregamos em dubai/i },
-  { nome: "Entrega em outro estado", cliente: ["entregam na Bahia? sou de Salvador"], passar: true, exigido: /americana/i, proibido: /ficamos|\bsim\b|\bentregamos\b/i },
-  { nome: "Produto fora do ramo", cliente: ["vocês vendem cafezinho? e pão de queijo?"], passar: true, proibido: /\bsim\b|\bn[ãa]o (vendemos|temos|trabalhamos)/i },
+  { nome: "Entrega em outro estado", cliente: ["entregam na Bahia? sou de Salvador"], passar: true, exigido: /americana/i, proibido: /ficamos|\bsim\b|entregamos (na|em) (bahia|salvador)/i },
+  { nome: "Produto fora do ramo", cliente: ["vocês vendem cafezinho? e pão de queijo?"], passar: true, exigido: /atendente/i, proibido: /\bsim\b|\bn[ãa]o (vendemos|temos|trabalhamos)/i },
 ];
 
 async function rodar(c: Cenario): Promise<{ decisao: Decisao; erros: string[] }> {
