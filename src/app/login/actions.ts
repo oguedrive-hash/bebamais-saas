@@ -31,7 +31,7 @@ export async function loginAction(formData: FormData) {
   }
 
   revalidatePath("/", "layout");
-  redirect("/dashboard");
+  redirect("/atendimento");
 }
 
 export async function logoutAction() {

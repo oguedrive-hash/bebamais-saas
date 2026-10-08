@@ -27,7 +27,7 @@ export default async function AdminLayout({
 
   // Bloqueia acesso de quem não é admin
   if (profile?.role !== "admin") {
-    redirect("/dashboard");
+    redirect("/atendimento");
   }
 
   // Single-tenant: a org única vem do env (mesma fonte do resto do clone).
@@ -52,19 +52,14 @@ export default async function AdminLayout({
               <Logo />
             </Link>
             <nav className="hidden md:flex items-center gap-7">
-              {/* Single-tenant (Beba Mais): links DIRETOS pra config da org
-                  única — sem hub "cliente" no meio. "Métricas globais"
-                  (multi-cliente da Facilita) foi removida. */}
-              <NavLink href={cfg("caio")}>Atendente</NavLink>
-              <NavLink href={cfg("followup")}>Follow-up</NavLink>
+              <NavLink href={cfg("assistente")}>Assistente</NavLink>
               <NavLink href={cfg("numeros")}>Números</NavLink>
-              <NavLink href={cfg("usuarios")}>Usuários</NavLink>
-              <NavLink href={cfg("editar")}>Empresa</NavLink>
+              <NavLink href={cfg("usuarios")}>Atendentes</NavLink>
               <Link
-                href="/dashboard"
+                href="/atendimento"
                 className="text-sm font-heading font-medium text-cinza-medio hover:text-preto transition"
               >
-                ← Painel do cliente
+                ← Voltar ao atendimento
               </Link>
             </nav>
           </div>

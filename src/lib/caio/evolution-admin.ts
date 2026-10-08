@@ -48,7 +48,13 @@ async function req(
   }
 }
 
-const WEBHOOK_URL = `${APP_BASE_URL}/api/webhooks/evolution`;
+// O token na URL é o que autentica o webhook (a Evolution não assina as chamadas).
+// Sem WEBHOOK_SECRET o webhook recusa tudo — ver src/lib/seguranca.ts.
+// WEBHOOK_BASE_URL permite a Evolution chamar o painel pela rede interna do Docker.
+const WEBHOOK_BASE = (process.env.WEBHOOK_BASE_URL?.trim() || APP_BASE_URL).replace(/\/+$/, "");
+const WEBHOOK_URL = `${WEBHOOK_BASE}/api/webhooks/evolution?token=${encodeURIComponent(
+  process.env.WEBHOOK_SECRET?.trim() ?? "",
+)}`;
 
 /** Configura o webhook da instância (MESSAGES_UPSERT + CONNECTION_UPDATE → painel).
  * MESSAGES_UPSERT: inbound do lead. CONNECTION_UPDATE: detecta queda do número

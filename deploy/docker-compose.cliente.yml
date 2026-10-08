@@ -1,13 +1,15 @@
 # ============================================================================
-# Stack de UM cliente (Caio) — Evolution(+db+redis) + painel + crons + Traefik(TLS).
-# O Supabase do cliente é à parte (ver MANUAL-CLONAGEM.md, Passo 2).
+# Stack do Beba Mais — painel + Evolution (WhatsApp, com banco e cache) + rotina
+# automática + Traefik (HTTPS). O banco de dados fica no Supabase em nuvem.
+# Passo a passo completo: INSTALACAO.md
 #
 # Uso (na VPS do cliente, com Docker + Compose):
 #   1) cp deploy/env.cliente.example deploy/.env.cliente   # e preencher
 #   2) docker login ghcr.io                                 # imagem do painel é privada
 #   3) docker compose --env-file deploy/.env.cliente -f deploy/docker-compose.cliente.yml up -d
 #
-# Substitui os Passos 3+5+8 do manual (Evolution, painel, crons) por 1 comando.
+# Segurança: a Evolution NÃO fica exposta na internet. Só o painel tem endereço
+# público; painel e Evolution conversam pela rede interna do Docker.
 # NÃO usar junto com EasyPanel na mesma VPS (conflito de porta 80/443 no Traefik).
 # ============================================================================
 
@@ -55,7 +57,7 @@ services:
     environment:
       SERVER_TYPE: http
       SERVER_PORT: "8080"
-      SERVER_URL: https://${EVOLUTION_DOMAIN}
+      SERVER_URL: http://evolution:8080
       AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
       DATABASE_PROVIDER: postgresql
       DATABASE_CONNECTION_URI: postgresql://postgres:${EVOLUTION_DB_PASSWORD}@evolution-db:5432/evolution
@@ -68,19 +70,12 @@ services:
       CACHE_REDIS_ENABLED: "true"
       CACHE_REDIS_URI: redis://evolution-redis:6379/6
       CACHE_REDIS_PREFIX_KEY: evolution
-      CORS_ORIGIN: "*"
       DEL_INSTANCE: "false"
       LOG_LEVEL: ERROR,WARN,INFO
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.evo.rule=Host(`${EVOLUTION_DOMAIN}`)
-      - traefik.http.routers.evo.entrypoints=websecure
-      - traefik.http.routers.evo.tls.certresolver=le
-      - traefik.http.services.evo.loadbalancer.server.port=8080
 
   painel:
-    # imagem buildada por cliente na Fase 2 (workflow build-image com inputs).
-    # NEXT_PUBLIC_* já vão EMBUTIDAS nessa imagem — não entram aqui (são build-time).
+    # Imagem gerada pelo GitHub Actions (build-image). O endereço e a chave
+    # pública do Supabase vão embutidos na imagem no build (NEXT_PUBLIC_*).
     image: ${PAINEL_IMAGE}
     restart: unless-stopped
     depends_on: [evolution]
@@ -88,16 +83,14 @@ services:
       DEFAULT_ORG_ID: ${DEFAULT_ORG_ID}
       DEFAULT_INSTANCE_NAME: ${DEFAULT_INSTANCE_NAME}
       APP_BASE_URL: https://${APP_DOMAIN}
-      ADMIN_WHATSAPP_NUMBER: ${ADMIN_WHATSAPP_NUMBER}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
-      EVOLUTION_API_URL: https://${EVOLUTION_DOMAIN}
+      EVOLUTION_API_URL: http://evolution:8080
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
-      EVOLUTION_RECEBE: "1"
-      EVOLUTION_ENVIO_TODOS: "1"
+      # A Evolution chama o painel pela rede interna, com o token do webhook.
+      WEBHOOK_BASE_URL: http://painel
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
-      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
-      ELEVENLABS_VOICE_ID: ${ELEVENLABS_VOICE_ID:-}
       CRON_SECRET: ${CRON_SECRET}
       TZ: ${TZ:-America/Sao_Paulo}
       PORT: "80"
@@ -109,15 +102,15 @@ services:
       - traefik.http.services.painel.loadbalancer.server.port=80
 
   crons:
-    # bate os endpoints /api/cron/* do painel (followup/prospeccao 4x/min, lembretes/retomadas 1x).
-    # Internamente via http://painel:80 (sem TLS, mesma rede).
+    # Chama /api/cron/espera do painel 1x por minuto (mensagem de espera),
+    # pela rede interna (http://painel:80).
     image: alpine:3
     restart: unless-stopped
     depends_on: [painel]
     environment:
       CRON_SECRET: ${CRON_SECRET}
     volumes:
-      - ./deploy/crons.sh:/crons.sh:ro
+      - ./crons.sh:/crons.sh:ro
     command: ["sh", "/crons.sh"]
 
 volumes:
