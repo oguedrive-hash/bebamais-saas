@@ -179,3 +179,15 @@ test("feriado cadastrado: loja fechada no dia e próxima abertura pula o feriado
   assert.equal(avisoDeEsperaDevido(sp("2026-10-12T09:00:00").toISOString(), 0, null, cfg, sp("2026-10-12T11:00:00")), null);
   assert.deepEqual(normalizarConfig({ dias_fechados: ["2026-10-12", "lixo", "2026-10-12", 5] }).dias_fechados, ["2026-10-12"]);
 });
+
+test("loja fechada: assunto da loja sempre vai para a fila; conversa fiada não", () => {
+  const fechado = ctx(1, { aberto: false });
+  const t = aplicarTravas(d("Estamos fechados hoje e abrimos amanhã às 08:00. Podemos ajudar com mais alguma coisa?", "duvida"), fechado);
+  assert.equal(t.passar, true);
+  assert.equal(t.resposta, "Estamos fechados hoje e abrimos amanhã às 08:00. Uma atendente te responde assim que a loja abrir.");
+  assert.equal(aplicarTravas(d("Aqui é o atendimento da loja. Podemos ajudar com algum pedido?", "outro"), fechado).passar, false);
+});
+
+test("tom: fala com o cliente como você", () => {
+  assert.equal(aplicarTravas(d("Sim, o cliente pode retirar o pedido na loja."), ctx(1)).resposta, "Sim, você pode retirar o pedido na loja.");
+});
