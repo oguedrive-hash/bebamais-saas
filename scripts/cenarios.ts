@@ -53,12 +53,12 @@ const CENARIOS: Cenario[] = [
     ...seInfo({ passar: true, exigido: /americana/i, proibido: LOCALIZACAO }, { passar: true, proibido: /\bsim\b|entregamos no jardim/i }),
   },
   { nome: "Endereço", cliente: ["qual o endereço de vocês?"], ...seInfo({ passar: false, exigido: /ac[áa]cias/i }) },
-  { nome: "Retirada", cliente: ["posso buscar aí na loja?"], ...seInfo({ passar: false, proibido: /localizad|o cliente/i }) },
+  { nome: "Retirada", cliente: ["posso buscar aí na loja?"], ...seInfo({ passar: false, proibido: /localizad|o cliente|como podemos/i }) },
   { nome: "Orçamento sem data", cliente: ["queria um orçamento de bebidas pra um aniversário de umas 80 pessoas"], passar: false, assunto: "orcamento", proibido: /quantidade/i },
   { nome: "Orçamento completo", cliente: ["Orçamento pra casamento dia 15/11, 150 convidados: cerveja, refri, água e gelo"], passar: true, assunto: "orcamento", exigido: /or[çc]amento/i, proibido: /quantidade|precisamos|\?/i },
   { nome: "Nota fiscal", cliente: ["Preciso da nota fiscal do pedido de ontem no CNPJ da empresa"], passar: true, assunto: "pos_venda" },
   { nome: "Reclamação", cliente: ["o entregador chegou 2 horas atrasado e a cerveja veio quente"], passar: true, assunto: "pos_venda", exigido: /lament|desculp/i },
-  { nome: "Quer uma pessoa", cliente: ["NÃO QUERO FALAR COM ROBÔ. me passa pra uma pessoa"], passar: true },
+  { nome: "Quer uma pessoa", cliente: ["NÃO QUERO FALAR COM ROBÔ. me passa pra uma pessoa"], passar: true, exigido: /atendente/i, proibido: /\?/ },
   { nome: "Fora do horário", cliente: ["vocês abrem hoje? preciso de gelo urgente"], quando: "2026-10-11T15:00:00", passar: true, assunto: "pedido", proibido: /ajudar/i },
   { nome: "É robô?", cliente: ["você é um robô?"], passar: true },
   { nome: "Fora do assunto", cliente: ["quem ganhou o jogo ontem?"], passar: false, proibido: /localizad|atendente/i },
@@ -68,7 +68,7 @@ const CENARIOS: Cenario[] = [
     cliente: ["aceitam pix?"],
     ...seInfo({ passar: false, exigido: /(?=[\s\S]*dinheiro)(?=[\s\S]*cart)/i, proibido: LOCALIZACAO }, { passar: true, proibido: /\bsim\b|aceitamos/i }),
   },
-  { nome: "Boleto", cliente: ["dá pra pagar no boleto pra 30 dias?"], ...seInfo({ passar: true, exigido: /atendente/i, proibido: /localizad|todos os clientes|n[ãa]o (oferecemos|s[ãa]o oferecidos)/i }) },
+  { nome: "Boleto", cliente: ["dá pra pagar no boleto pra 30 dias?"], ...seInfo({ passar: true, exigido: /atendente/i, proibido: /\?|localizad|todos os clientes|n[ãa]o (oferecemos|s[ãa]o oferecidos)/i }) },
   { nome: "Entrega absurda", cliente: ["vocês entregam em Dubai?"], passar: true, exigido: /americana/i, proibido: /ficamos|\bsim\b|entregamos|regi[ãa]o/i },
   { nome: "Entrega em outro estado", cliente: ["entregam na Bahia? sou de Salvador"], passar: true, exigido: /americana/i, proibido: /ficamos|\bsim\b|entregamos|regi[ãa]o/i },
   { nome: "Produto fora do ramo", cliente: ["vocês vendem cafezinho? e pão de queijo?"], passar: true, exigido: /atendente/i, proibido: /\bsim\b|\bn[ãa]o (vendemos|temos|trabalhamos)/i },
@@ -95,7 +95,7 @@ async function rodar(c: Cenario): Promise<{ decisao: Decisao; erros: string[] }>
   const mensagens: ChatMessage[] = [{ role: "system", content: instrucoes }, ...c.cliente.map((t) => ({ role: "user" as const, content: t }))];
   const r = await chatCompletion({ messages: mensagens, temperature: 0.3, max_tokens: 300, json: true });
   if ("error" in r) throw new Error(r.error);
-  const decisao = aplicarTravas(interpretarResposta(r.content, aberto), { respostasJaDadas: 0, aberto, saudacao });
+  const decisao = aplicarTravas(interpretarResposta(r.content, aberto), { respostasJaDadas: 0, aberto, saudacao, textoCliente: c.cliente.join("\n") });
   const erros: string[] = [];
   if (c.passar !== undefined && decisao.passar !== c.passar) erros.push(`passar=${decisao.passar}, esperado ${c.passar}`);
   if (c.proibido && c.proibido.test(decisao.resposta)) erros.push(`texto proibido (${c.proibido})`);

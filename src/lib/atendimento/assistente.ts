@@ -72,11 +72,11 @@ O QUE FAZER EM CADA CASO (os textos entre aspas são modelos de tom; adapte com 
 - Cliente mandou o pedido (lista de produtos, quantidades, foto, planilha ou arquivo): "Recebemos seu pedido. Uma atendente já vai gerar e te mandar para conferir." (loja fechada: "...assim que a loja abrir"). Sem perguntas. assunto = pedido, passar = true.
 - Cliente quer comprar mas ainda não disse o quê: pergunte o que ele precisa. assunto = pedido, passar = false. Quando ele disser, avise que a atendente já vai continuar e passar = true.
 - Orçamento para festa ou evento. O orçamento precisa só de duas coisas: a DATA e O QUE precisa (lista de bebidas OU número de pessoas).
-  - Se faltar alguma, peça só o que falta, numa pergunta curta. passar = false.
+  - Se faltar alguma, peça só o que falta, numa pergunta curta (ex.: "Para quando é o evento?" ou "Para quantas pessoas?"). passar = false.
   - Se já tem as duas (na mensagem atual ou antes): responda só "Recebemos as informações. Uma atendente já vai montar o seu orçamento." Não peça mais nada, não repita data nem lista, nunca peça quantidade de cada item. passar = true.
   - assunto = orcamento.
 - Dúvida que as INFORMAÇÕES DA LOJA respondem (horário, endereço, retirada, formas de pagamento): responda com a informação COMPLETA, com todos os itens escritos (ex.: "Aceitamos Pix, dinheiro e cartão."), e termine com "Podemos ajudar em algo mais?". assunto = duvida, passar = false.
-- Pergunta se entregamos em um bairro ou cidade da região: responda com a área de entrega escrita. Se o cliente não disse a cidade e o bairro pode ser de outra cidade, condicione sem repetir o nome da cidade: "Entregamos em todos os bairros de Americana. Se o seu endereço for aqui na cidade, entregamos sim; uma atendente confirma com você." Se a cidade for uma das que a atendente confirma, diga isso. passar = true quando a atendente precisar confirmar.
+- Pergunta se entregamos em um bairro ou cidade da região: responda com a área de entrega escrita. Se o cliente não disse a cidade e o bairro pode ser de outra cidade, condicione sem repetir o nome da cidade: "Entregamos em todos os bairros de Americana. Uma atendente confirma o seu endereço com você." Se a cidade for uma das que a atendente confirma, diga isso. passar = true quando a atendente precisar confirmar.
 - Pergunta sobre preço (mesmo sem "R$", como "ainda tá 45?"), se tem um produto, estoque ou prazo de entrega: "Uma atendente já vai te passar essa informação." assunto = duvida, passar = true. Não fale de localização.
 - Entrega em outro estado ou país (Bahia, Dubai): não diga sim nem não e não diga onde entregamos. Em tom formal: "Estamos localizados em ${opts.cidade}. Uma atendente já vai entrar em contato para te atender melhor." assunto = duvida, passar = true. Nunca "ficamos" ou "somos daqui de".
 - Produto ou serviço que claramente não tem nada a ver com bebidas (cafezinho, pão de queijo, roupa): isso é pergunta sobre a loja, não conversa fora do assunto. Não diga sim nem não: "Somos uma distribuidora de bebidas em ${opts.cidade}. Uma atendente já vai te responder sobre isso." passar = true.
@@ -150,7 +150,13 @@ export interface ContextoTravas {
   saudacao: Saudacao;
   /** Assunto que a conversa já tinha (não deixa virar "outro" no meio do caminho). */
   assuntoAnterior?: Assunto | null;
+  /** O que o cliente escreveu desde a última resposta do assistente. */
+  textoCliente?: string;
 }
+
+/** Cliente pedindo para falar com gente ("quero falar com uma pessoa", "não quero robô"). */
+export const RE_PEDE_PESSOA =
+  /(falar|conversar|atendimento) com (uma |um |a |o |alg)?\s*(pessoa|humano|gente|atendente|algu[ée]m|vendedor)|n[ãa]o quero (falar com |conversar com )?(rob[ôo]|bot|m[áa]quina|ia\b)|(me )?passa (pra|para) (uma |um |a |o )?(pessoa|humano|atendente|algu[ée]m)|\bquero (uma |um |a |o )?(atendente|pessoa|humano)\b|\b(chama|chame) (uma |um |a |o )?(atendente|pessoa|algu[ée]m)/i;
 
 /** Corrige o período do dia e garante o cumprimento na primeira mensagem; fala no plural. */
 export function ajustarTom(texto: string, saudacao: Saudacao, primeira: boolean): string {
@@ -165,6 +171,12 @@ export function ajustarTom(texto: string, saudacao: Saudacao, primeira: boolean)
 /** Travas finais do código: valem mesmo que a IA desobedeça as instruções. */
 export function aplicarTravas(d: Decisao, ctx: ContextoTravas): Decisao {
   let decisao = d;
+  const primeira = ctx.respostasJaDadas === 0;
+  // Pediu uma pessoa: não discute, passa na hora.
+  if (ctx.textoCliente && RE_PEDE_PESSOA.test(ctx.textoCliente)) {
+    const fim = ctx.aberto ? "Claro, uma atendente já vai falar com você." : "Claro, uma atendente te responde assim que a loja abrir.";
+    return { resposta: primeira ? `Olá, ${ctx.saudacao}! ${fim}` : fim, assunto: ctx.assuntoAnterior ?? d.assunto, passar: true };
+  }
   // Mantém o assunto da conversa quando a IA responde "outro" depois (ex.: orçamento em duas etapas).
   if (decisao.assunto === "outro" && ctx.assuntoAnterior && ctx.assuntoAnterior !== "outro") {
     decisao = { ...decisao, assunto: ctx.assuntoAnterior };
@@ -174,16 +186,23 @@ export function aplicarTravas(d: Decisao, ctx: ContextoTravas): Decisao {
     return respostaDeSeguranca(ctx.aberto, decisao.assunto, ctx.respostasJaDadas === 0 ? ctx.saudacao : undefined);
   }
   decisao = { ...decisao, resposta: ajustarTom(decisao.resposta, ctx.saudacao, ctx.respostasJaDadas === 0) };
-  // Loja fechada: qualquer assunto da loja vai para a fila, para a atendente ver quando abrir.
-  if (!ctx.aberto && !decisao.passar && decisao.assunto !== "outro") {
-    const semPergunta = decisao.resposta.replace(/\s*(Podemos|Posso) ajudar[^?]*\?\s*$/i, "").trim();
-    const resposta = RE_FALA_DE_ATENDENTE.test(semPergunta) ? semPergunta : `${semPergunta} Uma atendente te responde assim que a loja abrir.`;
-    decisao = { ...decisao, resposta, passar: true };
+  // Respondeu uma dúvida: o fecho é "algo mais?", não "como podemos ajudar?" (isso é para quem só disse oi).
+  const semCumprimento = decisao.resposta.replace(/^\s*ol[áa][^!.]*[!.]\s*/i, "");
+  if (decisao.assunto !== "outro" && /\S.*?\s*Como (podemos|posso) ajudar\?\s*$/i.test(semCumprimento) && !/^\s*Como (podemos|posso) ajudar\?\s*$/i.test(semCumprimento)) {
+    decisao = { ...decisao, resposta: decisao.resposta.replace(/\s*Como (podemos|posso) ajudar\?\s*$/i, " Podemos ajudar em algo mais?") };
   }
+  // Loja fechada: qualquer assunto da loja vai para a fila, para a atendente ver quando abrir.
+  if (!ctx.aberto && !decisao.passar && decisao.assunto !== "outro") decisao = { ...decisao, passar: true };
   // Falou em atendente: a conversa TEM que ir para a fila (senão ninguém é avisado).
   if (!decisao.passar && RE_FALA_DE_ATENDENTE.test(decisao.resposta)) decisao = { ...decisao, passar: true };
   // Conversa está rodando demais com o assistente: a próxima palavra é da atendente.
   if (!decisao.passar && ctx.respostasJaDadas + 1 >= MAX_RESPOSTAS_ASSISTENTE) decisao = { ...decisao, passar: true };
+  // Vai para a fila: não termina com pergunta ao cliente e sempre avisa que uma atendente continua.
+  if (decisao.passar) {
+    let r = decisao.resposta.replace(/\s*(Como )?(Podemos|Posso) (te )?ajudar[^?]*\?\s*$/i, "").trim();
+    if (!RE_FALA_DE_ATENDENTE.test(r)) r = `${r} ${ctx.aberto ? "Uma atendente já vai falar com você." : "Uma atendente te responde assim que a loja abrir."}`.trim();
+    decisao = { ...decisao, resposta: r };
+  }
   return decisao;
 }
 
@@ -251,6 +270,11 @@ export async function responderCliente(leadId: string): Promise<void> {
   const ultimaEntradaEm = entradas.length ? entradas[entradas.length - 1].created_at : null;
   if (!ultimaEntradaEm) return;
   if (lead.assistente_viu_ate && new Date(ultimaEntradaEm).getTime() <= new Date(lead.assistente_viu_ate).getTime()) return;
+  const viuAte = lead.assistente_viu_ate ? new Date(lead.assistente_viu_ate).getTime() : 0;
+  const textoCliente = entradas
+    .filter((m) => new Date(m.created_at).getTime() > viuAte)
+    .map((m) => m.conteudo ?? "")
+    .join("\n");
 
   const instrucoes = montarInstrucoes({
     nomeAssistente: numero?.persona_nome?.trim() || "o assistente virtual",
@@ -282,6 +306,7 @@ export async function responderCliente(leadId: string): Promise<void> {
     aberto,
     saudacao,
     assuntoAnterior: (lead.assunto as Assunto | null) ?? null,
+    textoCliente,
   });
 
   // "Digitando..." por alguns segundos, depois confere de novo se ainda é a vez do assistente.

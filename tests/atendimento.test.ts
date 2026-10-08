@@ -191,3 +191,24 @@ test("loja fechada: assunto da loja sempre vai para a fila; conversa fiada não"
 test("tom: fala com o cliente como você", () => {
   assert.equal(aplicarTravas(d("Sim, o cliente pode retirar o pedido na loja."), ctx(1)).resposta, "Sim, você pode retirar o pedido na loja.");
 });
+
+test("cliente pede uma pessoa: passa na hora com a frase padrão", () => {
+  for (const pedido of ["NÃO QUERO FALAR COM ROBÔ. me passa pra uma pessoa", "quero falar com um atendente", "chama alguém aí", "quero uma pessoa"]) {
+    const t = aplicarTravas(d("Podemos ajudar com algum pedido ou dúvida?", "outro"), ctx(0, { textoCliente: pedido }));
+    assert.equal(t.passar, true, pedido);
+    assert.equal(t.resposta, "Olá, boa tarde! Claro, uma atendente já vai falar com você.", pedido);
+  }
+  assert.equal(aplicarTravas(d("Recebemos seu pedido.", "pedido", true), ctx(1, { textoCliente: "3 fardos de skol pra pessoa que vai buscar" })).resposta.includes("Claro"), false);
+});
+
+test("passou para a fila: tira a pergunta do final e avisa da atendente", () => {
+  const t = aplicarTravas(d("Para boleto, a atendente verifica as condições. Podemos ajudar em algo mais?", "duvida", true), ctx(1));
+  assert.equal(t.resposta, "Para boleto, a atendente verifica as condições.");
+  const u = aplicarTravas(d("Vamos verificar a sua nota fiscal.", "pos_venda", true), ctx(1));
+  assert.equal(u.resposta, "Vamos verificar a sua nota fiscal. Uma atendente já vai falar com você.");
+});
+
+test("respondeu dúvida: fecha com 'algo mais?'", () => {
+  assert.equal(aplicarTravas(d("Sim, você pode retirar na loja. Como podemos ajudar?", "duvida"), ctx(1)).resposta, "Sim, você pode retirar na loja. Podemos ajudar em algo mais?");
+  assert.equal(aplicarTravas(d("Olá, bom dia! Como podemos ajudar?", "outro"), ctx(0)).resposta, "Olá, boa tarde! Como podemos ajudar?");
+});
