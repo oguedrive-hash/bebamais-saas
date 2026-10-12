@@ -1,117 +1,56 @@
-# Facilita Plus — Painel SaaS
+# Beba Mais — Pré-atendente e painel de atendimento
 
-Painel multi-tenant da **Facilita Plus** — IA aplicada para facilitar processos da sua empresa.
+Sistema de atendimento no WhatsApp do Beba Mais Distribuidora, feito pela Facilita Plus.
 
-## Stack
+**O que ele faz**
 
-- **Next.js 16** (App Router + Turbopack)
-- **TypeScript** strict
-- **Tailwind CSS 4** com tema customizado (cores oficiais Facilita Plus)
-- **Supabase** (Postgres + Auth + Realtime + RLS)
-- **shadcn/ui** princípios (componentes próprios usando Tailwind)
-- **Work Sans + Manrope** (fontes oficiais do manual da marca)
+- **Pré-atendente:** responde o cliente na hora, entende o assunto (pedido, orçamento, dúvida ou pós-venda), responde dúvidas simples e passa a conversa para uma atendente. Não passa preço, não fecha pedido e não promete prazo de entrega.
+- **Painel das atendentes (`/atendimento`):** uma tela só com "Esperando atendente" e "Minhas conversas". A atendente pega o cliente, responde, envia foto ou arquivo (pode colar o print do pedido com Ctrl+V), usa respostas prontas, passa para outra atendente e finaliza.
+- **Vários números:** todos os números de WhatsApp caem no mesmo painel, e a resposta sai pelo número em que o cliente escreveu.
+- **Mensagem de espera:** se ninguém pegar o cliente em 5 e em 15 minutos, o assistente avisa que já vão responder.
+- **Configurações (`/admin`, só administradores):** informações da loja usadas pelo assistente, horários, tempos de espera, respostas prontas, números (conexão por QR Code e modo teste) e atendentes.
 
-## Como rodar
+## Como funciona uma conversa
+
+```
+cliente escreve ─▶ assistente responde ─▶ "Esperando atendente" ─▶ atendente pega ─▶ finaliza
+                     (bot)                    (aguardando)           (atendendo)     (finalizado)
+```
+
+- Se alguém responder pelo celular, o assistente sai da conversa na hora.
+- Depois de finalizado, ou com a conversa parada por 6 horas, a próxima mensagem do cliente começa uma conversa nova com o assistente.
+
+## Tecnologia
+
+- **Painel:** Next.js 16 (App Router) e TypeScript.
+- **Banco de dados:** Supabase (Postgres, login, arquivos e tempo real).
+- **WhatsApp:** Evolution API v2.3.7.
+- **IA:** OpenAI, com gpt-4o-mini para o assistente e Whisper para transcrever áudio.
+
+## Onde está cada coisa
+
+| Caminho | Conteúdo |
+| --- | --- |
+| `src/lib/atendimento/regras.ts` | Regras do fluxo, como horários, estados e mensagens de espera (testadas) |
+| `src/lib/atendimento/assistente.ts` | Instruções e travas do pré-atendente |
+| `src/lib/atendimento/inbound.ts` | Mensagens que chegam do WhatsApp: texto, áudio, foto, arquivo e localização |
+| `src/lib/atendimento/whatsapp.ts` | Envio para o cliente e registro no histórico |
+| `src/app/atendimento/` | Painel das atendentes |
+| `src/app/admin/` | Configurações |
+| `src/app/api/webhooks/evolution` | Entrada das mensagens (autenticada por token) |
+| `src/app/api/cron/espera` | Rotina da mensagem de espera |
+| `supabase/migrations/` | Estrutura do banco (rodar em ordem) |
+| `deploy/` | Instalação na VPS (Docker) |
+
+## Rodar em desenvolvimento
 
 ```bash
-# Instalar dependências (já feito)
 npm install
-
-# Servidor de dev
-npm run dev
-
-# Acessa em http://localhost:3000
+cp .env.example .env.local   # e preencher
+npm run dev                  # http://localhost:3000
+npm test                     # testes das regras do atendimento
 ```
 
-## Variáveis de ambiente
+## Instalar em produção
 
-Criar `.env.local` (já criado):
-
-```bash
-NEXT_PUBLIC_SUPABASE_URL=https://zqmmiussjnkwxapirmcp.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_xxxxx
-```
-
-## Estrutura
-
-```
-src/
-├── app/
-│   ├── (root) page.tsx              # Redirect / → /login ou /dashboard
-│   ├── layout.tsx                   # Root layout com fontes oficiais
-│   ├── globals.css                  # Tema Tailwind 4 + cores Facilita Plus
-│   │
-│   ├── login/                       # Autenticação
-│   │   ├── page.tsx
-│   │   ├── login-form.tsx
-│   │   └── actions.ts               # Server Action de login/logout
-│   │
-│   ├── dashboard/                   # Área do cliente (protegida)
-│   │   ├── layout.tsx               # Valida auth, header com nome do cliente
-│   │   ├── page.tsx                 # Métricas do cliente
-│   │   ├── leads/
-│   │   │   ├── page.tsx             # Lista com filtros
-│   │   │   └── [id]/page.tsx        # Detalhe do lead
-│   │   └── agenda/
-│   │       └── page.tsx             # Próximas + histórico
-│   │
-│   ├── admin/                       # Área do admin (Lucas)
-│   │   ├── layout.tsx               # Valida role='admin'
-│   │   ├── page.tsx                 # Lista clientes
-│   │   ├── metricas/page.tsx        # Métricas globais
-│   │   └── clientes/
-│   │       ├── novo/                # Cadastrar cliente
-│   │       │   ├── page.tsx
-│   │       │   ├── form.tsx
-│   │       │   └── actions.ts
-│   │       └── [id]/
-│   │           ├── page.tsx         # Detalhes
-│   │           └── editar/          # Editar prompt, voice, status
-│   │               ├── page.tsx
-│   │               ├── form.tsx
-│   │               └── actions.ts
-│   │
-│   └── proxy.ts                     # Next 16 "proxy" (era middleware)
-│
-├── components/
-│   ├── logo.tsx                     # Logo Facilita Plus (texto + plus)
-│   ├── status-badge.tsx             # Badge colorido por status do lead
-│   ├── empty-state.tsx              # Placeholder de lista vazia
-│   └── page-header.tsx              # Header de página com título + ação
-│
-└── lib/
-    ├── supabase/
-    │   ├── client.ts                # Cliente browser (createBrowserClient)
-    │   ├── server.ts                # Cliente server (createServerClient)
-    │   └── middleware.ts            # Atualiza sessão (chamado pelo proxy)
-    └── status-config.ts             # Config centralizada de status
-
-supabase/
-└── migrations/
-    └── 0001_initial_schema.sql      # Schema multi-tenant + RLS + triggers
-└── seed_dados_teste.sql             # Dados fictícios pra testar UI
-```
-
-## Multi-tenant — como funciona
-
-1. Cada **organization** = 1 cliente (empresa que usa a Facilita Plus)
-2. Cada **profile** tem `organization_id` + `role` (`admin` ou `client`)
-3. **Row Level Security** no Supabase garante isolamento de dados
-4. **Admin** (Lucas) vê tudo. **Cliente** vê só dados da própria org.
-
-## Identidade visual
-
-Cores e fontes vêm do **Manual da Marca Facilita Plus** ([`facilita/identidade-visual.md`](../../facilita/identidade-visual.md)).
-
-Cores no Tailwind 4:
-- `bg-laranja` (#E8501C)
-- `bg-preto` (#0A0A0A)
-- `bg-offwhite` (#F5F1EB)
-- `text-cinza-medio` (#6F6F6F)
-- Tipografia: `font-heading` (Work Sans), `font-body` (Manrope)
-
-## Próximos passos
-
-Ver `saas/PROGRESSO.md` pra checklist completo do que falta.
-
-Próximo bloco crítico: **provisionamento automático ao cadastrar cliente** (Auth + Evolution + Chatwoot + Asaas).
+Veja o passo a passo em [INSTALACAO.md](INSTALACAO.md).

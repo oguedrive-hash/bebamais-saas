@@ -48,7 +48,13 @@ async function req(
   }
 }
 
-const WEBHOOK_URL = `${APP_BASE_URL}/api/webhooks/evolution`;
+// O token na URL é o que autentica o webhook (a Evolution não assina as chamadas).
+// Sem WEBHOOK_SECRET o webhook recusa tudo — ver src/lib/seguranca.ts.
+// WEBHOOK_BASE_URL permite a Evolution chamar o painel pela rede interna do Docker.
+const WEBHOOK_BASE = (process.env.WEBHOOK_BASE_URL?.trim() || APP_BASE_URL).replace(/\/+$/, "");
+const WEBHOOK_URL = `${WEBHOOK_BASE}/api/webhooks/evolution?token=${encodeURIComponent(
+  process.env.WEBHOOK_SECRET?.trim() ?? "",
+)}`;
 
 /** Configura o webhook da instância (MESSAGES_UPSERT + CONNECTION_UPDATE → painel).
  * MESSAGES_UPSERT: inbound do lead. CONNECTION_UPDATE: detecta queda do número
@@ -99,6 +105,18 @@ export async function evoQrCode(
   if ("error" in r) return r;
   const d = r.data as { base64?: string; pairingCode?: string | null };
   return { base64: d?.base64, pairingCode: d?.pairingCode ?? null };
+}
+
+/**
+ * Desconecta o WhatsApp (logout) sem apagar a instância: o número continua
+ * cadastrado e volta a funcionar lendo o QR Code de novo. Já desconectado = ok.
+ */
+export async function evoDesconectar(
+  instance: string,
+): Promise<{ ok: true } | { error: string }> {
+  const r = await req("DELETE", `/instance/logout/${instance}`);
+  if ("error" in r && !/not connected|not open|close/i.test(r.error)) return r;
+  return { ok: true };
 }
 
 /** Desloga e deleta a instância na Evolution (best-effort). */

@@ -15,6 +15,8 @@ export type ChatOptions = {
   model?: string;
   temperature?: number;
   max_tokens?: number;
+  /** Força a resposta a ser um objeto JSON válido (o prompt deve pedir JSON). */
+  json?: boolean;
 };
 
 export type ChatResult =
@@ -116,7 +118,9 @@ export async function chatCompletion(opts: ChatOptions): Promise<ChatResult> {
           messages: opts.messages,
           temperature: opts.temperature ?? 0.7,
           ...(opts.max_tokens ? { max_tokens: opts.max_tokens } : {}),
+          ...(opts.json ? { response_format: { type: "json_object" } } : {}),
         }),
+        signal: AbortSignal.timeout(45000),
       });
 
       if (!res.ok) {
