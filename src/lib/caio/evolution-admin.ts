@@ -107,6 +107,18 @@ export async function evoQrCode(
   return { base64: d?.base64, pairingCode: d?.pairingCode ?? null };
 }
 
+/**
+ * Desconecta o WhatsApp (logout) sem apagar a instância: o número continua
+ * cadastrado e volta a funcionar lendo o QR Code de novo. Já desconectado = ok.
+ */
+export async function evoDesconectar(
+  instance: string,
+): Promise<{ ok: true } | { error: string }> {
+  const r = await req("DELETE", `/instance/logout/${instance}`);
+  if ("error" in r && !/not connected|not open|close/i.test(r.error)) return r;
+  return { ok: true };
+}
+
 /** Desloga e deleta a instância na Evolution (best-effort). */
 export async function evoDeletarInstancia(
   instance: string,

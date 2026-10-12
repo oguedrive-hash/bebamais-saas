@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   adicionarNumero,
   atualizarNumero,
+  desconectarNumero,
   estadoConexao,
   excluirNumero,
   gerarQrNumero,
@@ -132,6 +133,22 @@ export function NumerosManager({
           pendente={pendente}
           onSalvar={(patch, msg) => rodar(() => atualizarNumero(organizationId, n.id, patch), msg)}
           onConectar={() => abrirQr(n.instance_name)}
+          onDesconectar={() => {
+            const nome = n.apelido ?? formatarTelefone(n.numero);
+            if (
+              window.confirm(
+                `Desconectar o WhatsApp "${nome}" do sistema?\n\n` +
+                  "As mensagens desse número param de chegar no painel e o assistente para de responder nele. " +
+                  "O WhatsApp no celular continua funcionando normalmente e as conversas antigas ficam salvas.\n\n" +
+                  "Para voltar a usar, é só clicar em “Conectar (ler QR Code)”.",
+              )
+            ) {
+              rodar(
+                () => desconectarNumero(organizationId, n.id, n.instance_name),
+                `Número "${nome}" desconectado. Para voltar a usar, clique em “Conectar (ler QR Code)”.`,
+              );
+            }
+          }}
           onReconfigurar={() => rodar(() => reconfigurarConexao(n.instance_name), "Conexão refeita. Mande uma mensagem de teste para conferir se chega no painel.")}
           onExcluir={() => {
             const nome = n.apelido ?? formatarTelefone(n.numero);
@@ -263,6 +280,7 @@ function CartaoNumero(props: {
   pendente: boolean;
   onSalvar: (patch: Partial<NumeroRow>, mensagem: string) => void;
   onConectar: () => void;
+  onDesconectar: () => void;
   onReconfigurar: () => void;
   onExcluir: () => void;
 }) {
@@ -323,6 +341,15 @@ function CartaoNumero(props: {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <Status conexao={n.conexao} />
+          {n.conexao === "open" && (
+            <button
+              onClick={props.onDesconectar}
+              disabled={props.pendente}
+              className="rounded-lg border border-cinza-claro bg-white px-4 py-2 text-sm font-semibold text-preto hover:border-preto disabled:opacity-50"
+            >
+              Desconectar
+            </button>
+          )}
           {n.conexao !== "open" && (
             <button onClick={props.onConectar} disabled={props.pendente} className="rounded-lg bg-preto text-white px-4 py-2 text-sm font-semibold disabled:opacity-50">
               Conectar (ler QR Code)

@@ -9,6 +9,7 @@ import {
   evoConfigurarWebhook,
   evoCriarInstancia,
   evoDeletarInstancia,
+  evoDesconectar,
   evoQrCode,
 } from "@/lib/caio/evolution-admin";
 
@@ -106,6 +107,29 @@ export async function reconfigurarConexao(instanceName: string): Promise<{ ok: t
   const err = await exigirAdmin();
   if (err) return { error: err };
   return evoConfigurarWebhook(instanceName);
+}
+
+/**
+ * Desconecta o WhatsApp do sistema (logout), mantendo o número cadastrado.
+ * As mensagens param de chegar no painel até ler o QR Code de novo; as conversas
+ * antigas ficam salvas e o WhatsApp do celular continua funcionando.
+ */
+export async function desconectarNumero(
+  orgId: string,
+  id: string,
+  instanceName: string,
+): Promise<{ ok: true } | { error: string }> {
+  const err = await exigirAdmin();
+  if (err) return { error: err };
+  const r = await evoDesconectar(instanceName);
+  if ("error" in r) return { error: `Não foi possível desconectar: ${r.error}` };
+  await createAdminClient()
+    .from("org_numeros")
+    .update({ status_conexao: "close", updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("organization_id", orgId);
+  revalidatePath(`/admin/clientes/${orgId}/numeros`);
+  return { ok: true };
 }
 
 export async function atualizarNumero(
