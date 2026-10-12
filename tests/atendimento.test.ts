@@ -227,3 +227,32 @@ test("loja fechada: cliente precisando de algo conta como pedido", () => {
   assert.equal(t.assunto, "pedido");
   assert.equal(t.passar, true);
 });
+
+test("primeira mensagem: a apresentação vem logo depois do cumprimento", () => {
+  const t = aplicarTravas(d("Olá, bom dia! Sim, você pode retirar o pedido na loja. Aqui é da Beba Mais Distribuidora. Podemos ajudar em algo mais?", "duvida"), ctx(0));
+  assert.equal(t.resposta, "Olá, boa tarde! Aqui é da Beba Mais Distribuidora. Sim, você pode retirar o pedido na loja. Podemos ajudar em algo mais?");
+  const jaNoLugar = "Olá, boa tarde! Aqui é da Beba Mais Distribuidora, trabalhamos com água e gelo. Quer fazer um pedido ou um orçamento?";
+  assert.equal(aplicarTravas(d(jaNoLugar, "duvida"), ctx(0)).resposta, jaNoLugar);
+  assert.equal(aplicarTravas(d("Sim, você pode retirar. Aqui é da loja.", "duvida"), ctx(1)).resposta, "Sim, você pode retirar. Aqui é da loja.");
+});
+
+test("loja fechada: pedido mesmo quando a IA já passou a conversa", () => {
+  const t = aplicarTravas(d("Aqui é da loja. Estamos fechados hoje e abrimos amanhã às 08:00.", "outro", true), ctx(0, { aberto: false, textoCliente: "vocês abrem hoje? preciso de gelo urgente" }));
+  assert.equal(t.assunto, "pedido");
+  assert.equal(t.passar, true);
+  const u = aplicarTravas(d("Estamos fechados hoje.", "duvida", true), ctx(0, { aberto: false, textoCliente: "vocês abrem hoje? preciso de gelo urgente" }));
+  assert.equal(u.assunto, "pedido");
+  const v = aplicarTravas(d("Entregamos em todos os bairros.", "duvida", true), ctx(0, { aberto: false, textoCliente: "vocês entregam no Centro?" }));
+  assert.equal(v.assunto, "duvida");
+});
+
+test("loja fechada: conversa que fica com o assistente avisa que está fechada", () => {
+  const t = aplicarTravas(
+    d("Olá, boa noite! Aqui é o atendimento da loja. Podemos ajudar com algum pedido ou dúvida?", "outro"),
+    ctx(0, { aberto: false, saudacao: "boa noite", textoCliente: "me conta uma piada", proximaAbertura: "segunda-feira às 08:00" }),
+  );
+  assert.equal(t.resposta, "Olá, boa noite! Aqui é o atendimento da loja. Estamos fechados agora e abrimos segunda-feira às 08:00. Podemos ajudar com algum pedido ou dúvida?");
+  assert.equal(t.passar, false);
+  const aberto = aplicarTravas(d("Olá, boa tarde! Como podemos ajudar?", "outro"), ctx(0));
+  assert.equal(aberto.resposta.includes("fechad"), false);
+});

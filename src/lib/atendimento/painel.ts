@@ -126,6 +126,26 @@ export async function listarClientes(busca: string | null): Promise<ClienteResum
     ]);
     leads = [...(esperando.data ?? []), ...(andamento.data ?? [])] as LeadLinha[];
   }
+  return resumir(supabase, leads);
+}
+
+/**
+ * Visão geral (aba "Todas"): todas as conversas, inclusive as finalizadas, da
+ * mais recente para a mais antiga. Busca uma a mais para saber se há outra página.
+ */
+export async function listarTodas(limite: number): Promise<{ clientes: ClienteResumo[]; temMais: boolean }> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("leads")
+    .select(CAMPOS_LISTA)
+    .order("ultima_atividade_em", { ascending: false, nullsFirst: false })
+    .order("updated_at", { ascending: false })
+    .limit(limite + 1);
+  const leads = (data ?? []) as LeadLinha[];
+  return { clientes: await resumir(supabase, leads.slice(0, limite)), temMais: leads.length > limite };
+}
+
+async function resumir(supabase: Awaited<ReturnType<typeof createClient>>, leads: LeadLinha[]): Promise<ClienteResumo[]> {
   if (!leads.length) return [];
 
   const ids = leads.map((l) => l.id);

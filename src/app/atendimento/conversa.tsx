@@ -87,7 +87,9 @@ export function Conversa({ usuario, cliente, mensagens, atendentes, respostasRap
         <div className="bg-white border-t border-cinza-claro p-4 text-center text-sm text-cinza-medio">
           {cliente.status === "atendendo" && comOutra
             ? `Este cliente está sendo atendido por ${cliente.atribuidoNome ?? "outra atendente"}.`
-            : "Para responder, primeiro clique em “Pegar este cliente”."}
+            : cliente.status === "finalizado"
+              ? "Para escrever para este cliente, clique em “Retomar conversa”."
+              : "Para responder, primeiro clique em “Pegar este cliente”."}
         </div>
       )}
 
@@ -170,8 +172,10 @@ function FaixaDeStatus(props: {
       </>
     );
   } else if (cliente.status === "bot") {
+    cor = "bg-blue-50 border-blue-200 text-blue-900";
     texto = "O assistente está conversando com este cliente. Se quiser, pegue a conversa agora.";
   } else if (props.comOutra) {
+    cor = "bg-violet-50 border-violet-200 text-violet-900";
     texto = <>Com <strong>{cliente.atribuidoNome}</strong>.</>;
     botao = (
       <button onClick={props.onAssumir} disabled={props.pendente} className={`${botaoSecundario} border-cinza-claro bg-white text-preto`}>
@@ -179,12 +183,14 @@ function FaixaDeStatus(props: {
       </button>
     );
   } else if (cliente.status === "atendendo") {
+    cor = "bg-violet-50 border-violet-200 text-violet-900";
     texto = "Alguém da loja respondeu este cliente pelo celular.";
   } else {
-    texto = "Atendimento finalizado.";
+    cor = "bg-stone-100 border-stone-200 text-stone-800";
+    texto = "Atendimento finalizado. Para falar com este cliente de novo, retome a conversa.";
     botao = (
-      <button onClick={props.onPegar} disabled={props.pendente} className={`${botaoSecundario} border-cinza-claro bg-white text-preto`}>
-        Atender de novo
+      <button onClick={props.onPegar} disabled={props.pendente} className={`${botaoPrincipal} bg-vermelho text-white`}>
+        {props.pendente ? "Retomando..." : "Retomar conversa"}
       </button>
     );
   }

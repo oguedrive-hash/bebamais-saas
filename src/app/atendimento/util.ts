@@ -11,6 +11,29 @@ export const ROTULO_ASSUNTO: Record<Assunto, string> = {
   outro: "Outro",
 };
 
+/**
+ * Cor de cada situação do cliente, igual na lista e na conversa:
+ * vermelho = esperando · verde = comigo · azul = com o assistente ·
+ * roxo = com outra atendente (ou pelo celular) · cinza = finalizada.
+ * Classes escritas por extenso para o Tailwind encontrar.
+ */
+export type Situacao = "esperando" | "minha" | "assistente" | "outra" | "finalizada";
+
+export const COR_SITUACAO: Record<Situacao, { rotulo: string; barra: string; chip: string; cabecalho: string }> = {
+  esperando: { rotulo: "Esperando", barra: "border-l-red-600", chip: "bg-red-100 text-red-800", cabecalho: "bg-red-50 text-red-900" },
+  minha: { rotulo: "Com você", barra: "border-l-green-600", chip: "bg-green-100 text-green-800", cabecalho: "bg-green-50 text-green-900" },
+  assistente: { rotulo: "Com o assistente", barra: "border-l-blue-500", chip: "bg-blue-100 text-blue-800", cabecalho: "bg-blue-50 text-blue-900" },
+  outra: { rotulo: "Com outra atendente", barra: "border-l-violet-500", chip: "bg-violet-100 text-violet-800", cabecalho: "bg-violet-50 text-violet-900" },
+  finalizada: { rotulo: "Finalizada", barra: "border-l-stone-300", chip: "bg-stone-200 text-stone-700", cabecalho: "bg-stone-100 text-stone-700" },
+};
+
+export function situacaoDe(c: { status: string; atribuidoA: string | null }, usuarioId: string): Situacao {
+  if (c.status === "aguardando") return "esperando";
+  if (c.status === "bot") return "assistente";
+  if (c.status === "atendendo") return c.atribuidoA === usuarioId ? "minha" : "outra";
+  return "finalizada";
+}
+
 /** Relógio que atualiza sozinho (para o "esperando há X min" andar). */
 export function useAgora(intervaloMs = 20000): number {
   const [agora, setAgora] = useState(() => Date.now());

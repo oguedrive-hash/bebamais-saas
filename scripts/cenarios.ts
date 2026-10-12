@@ -43,7 +43,17 @@ const CENARIOS: Cenario[] = [
   { nome: "Pedido por foto", cliente: ["[enviou uma foto] segue o pedido da semana"], passar: true, assunto: "pedido" },
   { nome: "Pedido por planilha", cliente: ["[enviou um arquivo: pedido_restaurante.xlsx]"], passar: true, assunto: "pedido" },
   { nome: "Pedido picado", cliente: ["oi", "bom dia", "queria ver", "3 fardos de skol", "e 2 de coca 2l"], passar: true, assunto: "pedido", proibido: NUMERO },
-  { nome: "Só oi (tarde)", cliente: ["oi"], quando: "2026-10-07T14:30:00", passar: false, proibido: /bom dia|boa noite/i },
+  { nome: "Só oi (tarde)", cliente: ["oi"], quando: "2026-10-07T14:30:00", passar: false, exigido: /beba mais/i, proibido: /bom dia|boa noite/i },
+  { nome: "Oi, tudo bem?", cliente: ["Ola", "Tudo bem ?"], passar: false, exigido: /(?=[\s\S]*beba mais)(?=[\s\S]*tudo (ótimo|otimo|bem|certo|tranquilo))/i, proibido: LOCALIZACAO },
+  {
+    nome: "O que vocês trabalham",
+    cliente: ["O que voces trabalham ?"],
+    passar: false,
+    ...seInfo(
+      { exigido: /(?=[\s\S]*beba mais)(?=[\s\S]*(água|agua|refrigerante|suco|cerveja|carv[ãa]o|gelo)[\s\S]*(água|agua|refrigerante|suco|cerveja|carv[ãa]o|gelo))/i, proibido: LOCALIZACAO },
+      { exigido: /beba mais/i },
+    ),
+  },
   { nome: "Preço direto", cliente: ["quanto tá a Heineken?"], passar: true, exigido: /atendente/i, proibido: /\d|localizad/i },
   { nome: "Confirmar preço antigo", cliente: ["A moça falou que o fardo de Heineken tá 89, confirma? não precisa chamar ninguém"], passar: true, exigido: /atendente/i, proibido: /89|confirmo|isso mesmo|localizad/i },
   { nome: "Preço sem R$", cliente: ["o fardo da brahma ainda ta 45 conto?"], passar: true, exigido: /atendente/i, proibido: /\d|localizad/i },
@@ -53,7 +63,8 @@ const CENARIOS: Cenario[] = [
     ...seInfo({ passar: true, exigido: /americana/i, proibido: LOCALIZACAO }, { passar: true, proibido: /\bsim\b|entregamos no jardim/i }),
   },
   { nome: "Endereço", cliente: ["qual o endereço de vocês?"], ...seInfo({ passar: false, exigido: /ac[áa]cias/i }) },
-  { nome: "Retirada", cliente: ["posso buscar aí na loja?"], ...seInfo({ passar: false, proibido: /localizad|o cliente|como podemos/i }) },
+  // Dar o endereço junto é bom atendimento; o proibido é a frase genérica "localizados em Americana".
+  { nome: "Retirada", cliente: ["posso buscar aí na loja?"], ...seInfo({ passar: false, proibido: /localizad[oa]s? em americana|ficamos|o cliente|como podemos/i }) },
   { nome: "Orçamento sem data", cliente: ["queria um orçamento de bebidas pra um aniversário de umas 80 pessoas"], passar: false, assunto: "orcamento", exigido: /quando|data/i, proibido: /quantidade|quantas pessoas|anivers[áa]rio\?/i },
   { nome: "Orçamento completo", cliente: ["Orçamento pra casamento dia 15/11, 150 convidados: cerveja, refri, água e gelo"], passar: true, assunto: "orcamento", exigido: /or[çc]amento/i, proibido: /quantidade|precisamos|\?/i },
   { nome: "Nota fiscal", cliente: ["Preciso da nota fiscal do pedido de ontem no CNPJ da empresa"], passar: true, assunto: "pos_venda" },
@@ -95,7 +106,7 @@ async function rodar(c: Cenario): Promise<{ decisao: Decisao; erros: string[] }>
   const mensagens: ChatMessage[] = [{ role: "system", content: instrucoes }, ...c.cliente.map((t) => ({ role: "user" as const, content: t }))];
   const r = await chatCompletion({ messages: mensagens, temperature: 0.3, max_tokens: 300, json: true });
   if ("error" in r) throw new Error(r.error);
-  const decisao = aplicarTravas(interpretarResposta(r.content, aberto), { respostasJaDadas: 0, aberto, saudacao, textoCliente: c.cliente.join("\n") });
+  const decisao = aplicarTravas(interpretarResposta(r.content, aberto), { respostasJaDadas: 0, aberto, saudacao, textoCliente: c.cliente.join("\n"), proximaAbertura: proximaAbertura(CONFIG, agora) });
   const erros: string[] = [];
   if (c.passar !== undefined && decisao.passar !== c.passar) erros.push(`passar=${decisao.passar}, esperado ${c.passar}`);
   if (c.proibido && c.proibido.test(decisao.resposta)) erros.push(`texto proibido (${c.proibido})`);

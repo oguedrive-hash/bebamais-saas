@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { ClienteResumo, MensagemPainel } from "@/lib/atendimento/painel";
 import { Conversa } from "./conversa";
-import { tempoDesde, useAgora, ROTULO_ASSUNTO } from "./util";
+import { tempoDesde, useAgora, ROTULO_ASSUNTO, COR_SITUACAO, situacaoDe, type Situacao } from "./util";
 
 interface Props {
   usuario: { id: string; nome: string; admin: boolean };
@@ -16,6 +16,11 @@ interface Props {
   atendentes: { id: string; nome: string }[];
   respostasRapidas: string[];
   busca: string | null;
+  /** "agora" = quem está em atendimento; "todas" = visão geral, inclusive finalizadas. */
+  aba: "agora" | "todas";
+  limite: number;
+  temMais: boolean;
+  paginaTodas: number;
 }
 
 /** Atualiza a tela sozinha quando chega mensagem ou muda o estado de um cliente. */
@@ -53,9 +58,10 @@ function useAtualizacaoAoVivo(orgId: string | null) {
 }
 
 /** Toca um aviso curto quando um cliente novo entra na fila de espera. */
-function useAvisoDeClienteNovo(idsEsperando: string[]) {
+function useAvisoDeClienteNovo(idsEsperando: string[] | null) {
   const vistos = useRef<Set<string> | null>(null);
   useEffect(() => {
+    if (!idsEsperando) return;
     const atual = new Set(idsEsperando);
     if (vistos.current) {
       const novos = idsEsperando.filter((id) => !vistos.current!.has(id));
@@ -87,7 +93,7 @@ function tocarAviso() {
 }
 
 export function Painel(props: Props) {
-  const { usuario, clientes, conversa, busca } = props;
+  const { usuario, clientes, conversa, busca, aba } = props;
   useAtualizacaoAoVivo(props.orgId);
   const agora = useAgora(20000);
 
@@ -102,10 +108,35 @@ export function Painel(props: Props) {
   }, [clientes, usuario.id]);
 
   const idsEsperando = useMemo(() => grupos.esperando.map((c) => c.id), [grupos.esperando]);
-  useAvisoDeClienteNovo(idsEsperando);
+  // Na busca a lista não é a fila: lá o aviso sonoro fica quieto.
+  useAvisoDeClienteNovo(busca ? null : idsEsperando);
 
   const selecionado = conversa?.cliente.id ?? null;
-  const link = (id: string) => `/atendimento?c=${id}${busca ? `&busca=${encodeURIComponent(busca)}` : ""}`;
+  const endereco = (extra: { c?: string; aba?: "agora" | "todas"; limite?: number }) => {
+    const p = new URLSearchParams();
+    if (extra.c) p.set("c", extra.c);
+    if (busca) p.set("busca", busca);
+    const qualAba = extra.aba ?? aba;
+    if (qualAba === "todas") {
+      p.set("aba", "todas");
+      const l = extra.limite ?? props.limite;
+      if (l > props.paginaTodas) p.set("limite", String(l));
+    }
+    const q = p.toString();
+    return q ? `/atendimento?${q}` : "/atendimento";
+  };
+  const link = (id: string) => endereco({ c: id });
+  const item = (c: ClienteResumo, mostrarSituacao = false) => (
+    <ItemCliente
+      key={c.id}
+      c={c}
+      href={link(c.id)}
+      ativo={c.id === selecionado}
+      agora={agora}
+      situacao={situacaoDe(c, usuario.id)}
+      mostrarSituacao={mostrarSituacao}
+    />
+  );
 
   return (
     <div className="h-full flex">
@@ -120,48 +151,65 @@ export function Painel(props: Props) {
           />
           <button className="rounded-lg bg-preto text-white text-sm px-3 font-heading font-semibold">Buscar</button>
         </form>
-        {busca && (
+        {busca ? (
           <Link href="/atendimento" className="px-4 py-2 text-sm text-vermelho font-semibold border-b border-cinza-claro">
             ← Voltar para os atendimentos de agora
           </Link>
+        ) : (
+          <nav className="flex border-b border-cinza-claro text-sm font-heading font-semibold">
+            <AbaLink href={endereco({ aba: "agora" })} ativa={aba === "agora"}>
+              Agora{grupos.esperando.length > 0 && aba === "agora" ? ` (${grupos.esperando.length} esperando)` : ""}
+            </AbaLink>
+            <AbaLink href={endereco({ aba: "todas", limite: props.paginaTodas })} ativa={aba === "todas"}>
+              Todas as conversas
+            </AbaLink>
+          </nav>
         )}
 
         <div className="flex-1 overflow-y-auto">
           {busca ? (
             <Grupo titulo="Resultado da busca" vazio="Nenhum cliente encontrado.">
-              {clientes.map((c) => (
-                <ItemCliente key={c.id} c={c} href={link(c.id)} ativo={c.id === selecionado} agora={agora} />
-              ))}
+              {clientes.map((c) => item(c, true))}
             </Grupo>
+          ) : aba === "todas" ? (
+            <>
+              <p className="px-4 py-2 text-xs text-cinza-medio border-b border-cinza-claro">
+                Todas as conversas desde que o número foi conectado, da mais recente para a mais antiga. Clique numa finalizada para retomar.
+              </p>
+              {clientes.length === 0 && <p className="px-4 py-3 text-sm text-cinza-medio">Nenhuma conversa ainda.</p>}
+              {clientes.map((c) => item(c, true))}
+              {props.temMais && (
+                <Link
+                  href={endereco({ aba: "todas", limite: props.limite + props.paginaTodas })}
+                  scroll={false}
+                  className="block px-4 py-3 text-center text-sm font-semibold text-vermelho border-t border-cinza-claro hover:bg-offwhite"
+                >
+                  Carregar mais conversas
+                </Link>
+              )}
+            </>
           ) : (
             <>
               <Grupo
                 titulo="Esperando atendente"
+                situacao="esperando"
                 destaque={grupos.esperando.length > 0}
                 contagem={grupos.esperando.length}
                 vazio="Ninguém esperando agora."
               >
-                {grupos.esperando.map((c) => (
-                  <ItemCliente key={c.id} c={c} href={link(c.id)} ativo={c.id === selecionado} agora={agora} />
-                ))}
+                {grupos.esperando.map((c) => item(c))}
               </Grupo>
-              <Grupo titulo="Minhas conversas" contagem={grupos.meus.length} vazio="Você não está atendendo ninguém.">
-                {grupos.meus.map((c) => (
-                  <ItemCliente key={c.id} c={c} href={link(c.id)} ativo={c.id === selecionado} agora={agora} />
-                ))}
+              <Grupo titulo="Minhas conversas" situacao="minha" contagem={grupos.meus.length} vazio="Você não está atendendo ninguém.">
+                {grupos.meus.map((c) => item(c))}
               </Grupo>
               {grupos.assistente.length > 0 && (
-                <Grupo titulo="Com o assistente agora" contagem={grupos.assistente.length} discreto>
-                  {grupos.assistente.map((c) => (
-                    <ItemCliente key={c.id} c={c} href={link(c.id)} ativo={c.id === selecionado} agora={agora} />
-                  ))}
+                <Grupo titulo="Com o assistente agora" situacao="assistente" contagem={grupos.assistente.length}>
+                  {grupos.assistente.map((c) => item(c))}
                 </Grupo>
               )}
               {grupos.outras.length > 0 && (
-                <Grupo titulo="Com outras atendentes" contagem={grupos.outras.length} discreto>
-                  {grupos.outras.map((c) => (
-                    <ItemCliente key={c.id} c={c} href={link(c.id)} ativo={c.id === selecionado} agora={agora} />
-                  ))}
+                <Grupo titulo="Com outras atendentes" situacao="outra" contagem={grupos.outras.length}>
+                  {grupos.outras.map((c) => item(c))}
                 </Grupo>
               )}
             </>
@@ -179,7 +227,7 @@ export function Painel(props: Props) {
             mensagens={conversa.mensagens}
             atendentes={props.atendentes}
             respostasRapidas={props.respostasRapidas}
-            voltarHref={busca ? `/atendimento?busca=${encodeURIComponent(busca)}` : "/atendimento"}
+            voltarHref={endereco({})}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center p-8">
@@ -189,6 +237,13 @@ export function Painel(props: Props) {
                 Os clientes em <span className="text-vermelho font-semibold">vermelho</span> estão esperando. Clique em um e depois em
                 <span className="font-semibold"> “Pegar este cliente”</span>.
               </p>
+              <ul className="mt-4 flex flex-wrap justify-center gap-1.5">
+                {(Object.keys(COR_SITUACAO) as Situacao[]).map((s) => (
+                  <li key={s} className={`text-[11px] font-semibold rounded px-1.5 py-0.5 ${COR_SITUACAO[s].chip}`}>
+                    {COR_SITUACAO[s].rotulo}
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
         )}
@@ -197,22 +252,32 @@ export function Painel(props: Props) {
   );
 }
 
+function AbaLink(props: { href: string; ativa: boolean; children: React.ReactNode }) {
+  return (
+    <Link
+      href={props.href}
+      className={`flex-1 px-3 py-2.5 text-center border-b-2 transition ${
+        props.ativa ? "border-vermelho text-preto" : "border-transparent text-cinza-medio hover:text-preto hover:bg-offwhite"
+      }`}
+    >
+      {props.children}
+    </Link>
+  );
+}
+
 function Grupo(props: {
   titulo: string;
+  situacao?: Situacao;
   contagem?: number;
   destaque?: boolean;
-  discreto?: boolean;
   vazio?: string;
   children: React.ReactNode;
 }) {
   const temItens = Array.isArray(props.children) ? props.children.length > 0 : !!props.children;
+  const cor = props.destaque ? "bg-vermelho text-white" : props.situacao ? COR_SITUACAO[props.situacao].cabecalho : "bg-offwhite text-preto";
   return (
     <div className="border-b border-cinza-claro">
-      <div
-        className={`px-4 py-2 flex items-center justify-between text-xs font-heading font-bold uppercase tracking-wide ${
-          props.destaque ? "bg-vermelho text-white" : props.discreto ? "bg-offwhite text-cinza-medio" : "bg-offwhite text-preto"
-        }`}
-      >
+      <div className={`px-4 py-2 flex items-center justify-between text-xs font-heading font-bold uppercase tracking-wide ${cor}`}>
         <span>{props.titulo}</span>
         {typeof props.contagem === "number" && <span>{props.contagem}</span>}
       </div>
@@ -221,14 +286,31 @@ function Grupo(props: {
   );
 }
 
-function ItemCliente({ c, href, ativo, agora }: { c: ClienteResumo; href: string; ativo: boolean; agora: number }) {
+/** Rótulo da situação no chip (na aba "Todas" e na busca): diz com quem está. */
+function rotuloSituacao(c: ClienteResumo, s: Situacao): string {
+  if (s === "outra") {
+    if (!c.atribuidoA && c.atribuidoNome === "Pelo celular") return "Pelo celular";
+    if (c.atribuidoNome) return `Com ${c.atribuidoNome}`;
+  }
+  return COR_SITUACAO[s].rotulo;
+}
+
+function ItemCliente(props: {
+  c: ClienteResumo;
+  href: string;
+  ativo: boolean;
+  agora: number;
+  situacao: Situacao;
+  mostrarSituacao: boolean;
+}) {
+  const { c, href, ativo, agora, situacao } = props;
   const esperando = c.status === "aguardando";
   return (
     <Link
       href={href}
-      className={`block px-4 py-3 border-t border-cinza-claro/60 first:border-t-0 transition ${
-        ativo ? "bg-dourado/15" : esperando ? "bg-red-50 hover:bg-red-100" : "hover:bg-offwhite"
-      }`}
+      className={`block pl-3 pr-4 py-3 border-l-4 rounded-none border-t border-t-cinza-claro/60 first:border-t-0 transition ${
+        COR_SITUACAO[situacao].barra
+      } ${ativo ? "bg-dourado/15" : esperando ? "bg-red-50 hover:bg-red-100" : "hover:bg-offwhite"}`}
     >
       <div className="flex items-center justify-between gap-2">
         <span className="font-heading font-semibold text-preto truncate">{c.nome}</span>
@@ -241,6 +323,9 @@ function ItemCliente({ c, href, ativo, agora }: { c: ClienteResumo; href: string
         ) : null}
       </div>
       <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+        {props.mostrarSituacao && (
+          <span className={`text-[11px] font-semibold rounded px-1.5 py-0.5 ${COR_SITUACAO[situacao].chip}`}>{rotuloSituacao(c, situacao)}</span>
+        )}
         {c.assunto && (
           <span className="text-[11px] font-semibold rounded bg-preto/80 text-white px-1.5 py-0.5">{ROTULO_ASSUNTO[c.assunto]}</span>
         )}
@@ -249,8 +334,10 @@ function ItemCliente({ c, href, ativo, agora }: { c: ClienteResumo; href: string
             {c.numeroApelido}
           </span>
         )}
-        {c.status === "atendendo" && c.atribuidoNome && (
-          <span className="text-[11px] text-cinza-medio">com {c.atribuidoNome}</span>
+        {!props.mostrarSituacao && c.status === "atendendo" && c.atribuidoNome && (
+          <span className="text-[11px] text-cinza-medio">
+            {!c.atribuidoA && c.atribuidoNome === "Pelo celular" ? "pelo celular" : `com ${c.atribuidoNome}`}
+          </span>
         )}
       </div>
       {c.ultimaMensagem && (
