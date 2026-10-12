@@ -18,9 +18,9 @@ export default async function AssistentePage({ params }: { params: Promise<{ id:
   return (
     <div className="max-w-3xl">
       <h1 className="text-4xl font-heading font-bold text-preto">Assistente</h1>
-      <p className="text-sm text-cinza-medio mt-1 mb-8">
-        O assistente responde o cliente na hora, entende o que ele precisa e passa a conversa para uma atendente.
-        Ele nunca passa preço nem fecha pedido.
+      <p className="text-cinza-medio mt-2 mb-8">
+        O assistente responde o cliente na hora no WhatsApp, entende o que ele precisa e passa a conversa para uma
+        atendente. Ele nunca passa preço nem fecha pedido. Aqui você ensina a ele sobre a loja.
       </p>
       <FormAssistente
         orgId={org.id}

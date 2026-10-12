@@ -52,14 +52,15 @@ export default async function AdminLayout({
               <Logo />
             </Link>
             <nav className="hidden md:flex items-center gap-7">
+              <NavLink href="/admin" exact>Primeiros passos</NavLink>
               <NavLink href={cfg("assistente")}>Assistente</NavLink>
-              <NavLink href={cfg("numeros")}>Números</NavLink>
+              <NavLink href={cfg("numeros")}>Números de WhatsApp</NavLink>
               <NavLink href={cfg("usuarios")}>Atendentes</NavLink>
               <Link
                 href="/atendimento"
                 className="text-sm font-heading font-medium text-cinza-medio hover:text-preto transition"
               >
-                ← Voltar ao atendimento
+                ← Voltar para as conversas
               </Link>
             </nav>
           </div>
@@ -83,6 +84,16 @@ export default async function AdminLayout({
             </form>
           </div>
         </div>
+        {/* No celular o menu de cima não cabe: vira uma faixa que rola para o lado. */}
+        <nav className="md:hidden flex gap-5 overflow-x-auto px-6 pb-4 whitespace-nowrap">
+          <NavLink href="/admin" exact>Primeiros passos</NavLink>
+          <NavLink href={cfg("assistente")}>Assistente</NavLink>
+          <NavLink href={cfg("numeros")}>Números</NavLink>
+          <NavLink href={cfg("usuarios")}>Atendentes</NavLink>
+          <Link href="/atendimento" className="text-sm font-heading font-medium text-cinza-medio">
+            ← Conversas
+          </Link>
+        </nav>
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8">{children}</main>

@@ -243,6 +243,47 @@ export function avisoDeEsperaDevido(
   return i;
 }
 
+/** Domingo de Páscoa (algoritmo de Meeus/Jones/Butcher), como "AAAA-MM-DD". */
+function pascoa(ano: number): string {
+  const a = ano % 19, b = Math.floor(ano / 100), c = ano % 100, d = Math.floor(b / 4), e = b % 4;
+  const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mes = Math.floor((h + l - 7 * m + 114) / 31), dia = ((h + l - 7 * m + 114) % 31) + 1;
+  return `${ano}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+}
+
+function somarDias(iso: string, dias: number): string {
+  const t = Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10))) + dias * 864e5;
+  return new Date(t).toISOString().slice(0, 10);
+}
+
+/**
+ * Feriados nacionais (datas oficiais) de `desde` até 12 meses depois, para o
+ * admin cadastrar com um clique. Carnaval e Corpus Christi são ponto facultativo:
+ * ficam de fora (a loja adiciona à mão se fechar). `desde` = "AAAA-MM-DD".
+ */
+export function feriadosNacionais(desde: string): { data: string; nome: string }[] {
+  const ano = Number(desde.slice(0, 4));
+  const ate = `${ano + 1}${desde.slice(4)}`;
+  const lista: { data: string; nome: string }[] = [];
+  for (const a of [ano, ano + 1]) {
+    lista.push(
+      { data: `${a}-01-01`, nome: "Confraternização Universal" },
+      { data: somarDias(pascoa(a), -2), nome: "Sexta-feira Santa" },
+      { data: `${a}-04-21`, nome: "Tiradentes" },
+      { data: `${a}-05-01`, nome: "Dia do Trabalho" },
+      { data: `${a}-09-07`, nome: "Independência do Brasil" },
+      { data: `${a}-10-12`, nome: "Nossa Senhora Aparecida" },
+      { data: `${a}-11-02`, nome: "Finados" },
+      { data: `${a}-11-15`, nome: "Proclamação da República" },
+      { data: `${a}-11-20`, nome: "Dia da Consciência Negra" },
+      { data: `${a}-12-25`, nome: "Natal" },
+    );
+  }
+  return lista.filter((f) => f.data >= desde && f.data < ate).sort((x, y) => x.data.localeCompare(y.data));
+}
+
 export const MENSAGENS_ESPERA = [
   "Só um instante, já já uma atendente fala com você.",
   "Desculpe a demora! Nossas atendentes estão finalizando outros pedidos e já vão te responder.",

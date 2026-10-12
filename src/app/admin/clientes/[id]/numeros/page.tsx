@@ -29,9 +29,9 @@ export default async function NumerosPage({
         <h1 className="text-4xl font-heading font-bold text-preto">
           Números de WhatsApp
         </h1>
-        <p className="text-sm text-cinza-medio mt-1">
-          {cliente.name} — todos os números caem no mesmo painel de atendimento.
-          A resposta sai sempre pelo número em que o cliente escreveu.
+        <p className="text-cinza-medio mt-2">
+          Aqui ficam os WhatsApps da {cliente.name} ligados ao sistema. As conversas de todos eles aparecem juntas no painel
+          de atendimento, e a resposta sempre sai pelo mesmo número em que o cliente escreveu.
         </p>
       </div>
 

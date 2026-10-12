@@ -9,6 +9,7 @@ import {
   avisoDeEsperaDevido,
   decidirEntrada,
   estaAberto,
+  feriadosNacionais,
   normalizarConfig,
   proximaAbertura,
 } from "../src/lib/atendimento/regras";
@@ -255,4 +256,14 @@ test("loja fechada: conversa que fica com o assistente avisa que está fechada",
   assert.equal(t.passar, false);
   const aberto = aplicarTravas(d("Olá, boa tarde! Como podemos ajudar?", "outro"), ctx(0));
   assert.equal(aberto.resposta.includes("fechad"), false);
+});
+
+test("feriados nacionais dos próximos 12 meses, com a Sexta-feira Santa certa", () => {
+  const f = feriadosNacionais("2026-10-12");
+  assert.equal(f[0].data, "2026-10-12");
+  assert.equal(f[0].nome, "Nossa Senhora Aparecida");
+  assert.deepEqual(f.map((x) => x.data).slice(1, 5), ["2026-11-02", "2026-11-15", "2026-11-20", "2026-12-25"]);
+  assert.equal(f.find((x) => x.nome === "Sexta-feira Santa")?.data, "2027-03-26"); // Páscoa 2027 = 28/03
+  assert.equal(f.at(-1)?.data, "2027-09-07"); // 12/10/2027 já fica de fora (12 meses)
+  assert.equal(feriadosNacionais("2026-01-01").find((x) => x.nome === "Sexta-feira Santa")?.data, "2026-04-03"); // Páscoa 2026 = 05/04
 });

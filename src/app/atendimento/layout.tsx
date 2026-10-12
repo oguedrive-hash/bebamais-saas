@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { logoutAction } from "@/app/login/actions";
 import { Logo } from "@/components/logo";
 import { usuarioAtual } from "@/lib/atendimento/painel";
+import { ComoFunciona } from "./como-funciona";
 
 export default async function AtendimentoLayout({ children }: { children: React.ReactNode }) {
   const usuario = await usuarioAtual();
@@ -17,6 +18,7 @@ export default async function AtendimentoLayout({ children }: { children: React.
             <span className="hidden sm:inline text-lg font-heading font-semibold text-preto">Atendimento</span>
           </div>
           <div className="flex items-center gap-5">
+            <ComoFunciona />
             {usuario.role === "admin" && (
               <Link href="/admin" className="text-sm font-heading font-medium text-cinza-medio hover:text-vermelho">
                 Configurações

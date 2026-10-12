@@ -14,12 +14,54 @@ import {
 
 type NumeroView = NumeroRow & { conexao: string };
 
-function Status({ conexao }: { conexao: string }) {
-  if (conexao === "open") return <span className="text-sm font-semibold text-green-700">● Conectado</span>;
-  if (conexao === "connecting") return <span className="text-sm font-semibold text-yellow-700">● Conectando</span>;
-  if (conexao === "close") return <span className="text-sm font-semibold text-red-700">● Desconectado</span>;
-  return <span className="text-sm text-cinza-medio">● Sem informação</span>;
+/** Quem o assistente atende num número. Vem de ia_ativa + numeros_teste. */
+type Modo = "ninguem" | "teste" | "todos";
+
+/** "19989578988" → "(19) 98957-8988" (só para mostrar). */
+function formatarTelefone(digitos: string | null): string {
+  const d = (digitos ?? "").replace(/\D/g, "");
+  const local = d.startsWith("55") && d.length >= 12 ? d.slice(2) : d;
+  if (local.length === 11) return `(${local.slice(0, 2)}) ${local.slice(2, 7)}-${local.slice(7)}`;
+  if (local.length === 10) return `(${local.slice(0, 2)}) ${local.slice(2, 6)}-${local.slice(6)}`;
+  return d;
 }
+
+/**
+ * Lista de telefones de teste como a pessoa digitou ("(19) 99271-6446, 19 98888-7777")
+ * → só dígitos, um por item. Separa por vírgula, ponto e vírgula ou linha (nunca por
+ * espaço: "(19) 99271-6446" é UM telefone).
+ */
+function telefonesDeTeste(texto: string): { lista: string[]; invalidos: string[] } {
+  const itens = texto.split(/[,;\n]+/).map((t) => t.trim()).filter(Boolean);
+  const lista: string[] = [];
+  const invalidos: string[] = [];
+  for (const t of itens) {
+    const d = t.replace(/\D/g, "");
+    if (d.length >= 10) lista.push(d);
+    else invalidos.push(t);
+  }
+  return { lista: [...new Set(lista)], invalidos };
+}
+
+function modoDe(n: NumeroRow): Modo {
+  if (!n.ia_ativa) return "ninguem";
+  return telefonesDeTeste(n.numeros_teste ?? "").lista.length ? "teste" : "todos";
+}
+
+function Status({ conexao }: { conexao: string }) {
+  if (conexao === "open") {
+    return <span className="rounded-full bg-green-50 text-green-800 border border-green-200 px-3 py-1 text-sm font-semibold">● Conectado e funcionando</span>;
+  }
+  if (conexao === "connecting") {
+    return <span className="rounded-full bg-amber-50 text-amber-800 border border-amber-200 px-3 py-1 text-sm font-semibold">● Esperando ler o QR Code</span>;
+  }
+  if (conexao === "close") {
+    return <span className="rounded-full bg-red-50 text-red-800 border border-red-200 px-3 py-1 text-sm font-semibold">● Desconectado</span>;
+  }
+  return <span className="rounded-full bg-offwhite text-cinza-medio border border-cinza-claro px-3 py-1 text-sm">● Não foi possível verificar</span>;
+}
+
+const campo = "w-full rounded-lg border border-cinza-claro px-3 py-2 focus:outline-none focus:border-vermelho";
 
 export function NumerosManager({
   organizationId,
@@ -65,7 +107,7 @@ export function NumerosManager({
     const t = setInterval(async () => {
       if ((await estadoConexao(qr.instance)) === "open") {
         setQr(null);
-        setAviso("Número conectado!");
+        setAviso("Número conectado! Agora escolha, no cartão dele, quem o assistente atende.");
         router.refresh();
       }
     }, 4000);
@@ -77,40 +119,62 @@ export function NumerosManager({
       {erro && <div className="rounded-lg bg-red-50 border border-red-200 text-red-800 px-4 py-3 text-sm">{erro}</div>}
       {aviso && <div className="rounded-lg bg-green-50 border border-green-200 text-green-800 px-4 py-3 text-sm">{aviso}</div>}
 
-      {inicial.length === 0 && <p className="text-cinza-medio">Nenhum número cadastrado ainda.</p>}
+      {inicial.length === 0 && (
+        <div className="rounded-2xl border border-dashed border-cinza-claro bg-white p-5 text-cinza-medio">
+          Nenhum número ainda. Comece adicionando o WhatsApp da loja (ou um chip de teste) logo abaixo.
+        </div>
+      )}
 
       {inicial.map((n) => (
         <CartaoNumero
-          key={n.id}
+          key={`${n.id}-${n.ia_ativa}-${n.numeros_teste ?? ""}-${n.apelido ?? ""}-${n.persona_nome ?? ""}`}
           n={n}
           pendente={pendente}
-          onSalvar={(patch) => rodar(() => atualizarNumero(organizationId, n.id, patch), "Salvo.")}
+          onSalvar={(patch, msg) => rodar(() => atualizarNumero(organizationId, n.id, patch), msg)}
           onConectar={() => abrirQr(n.instance_name)}
-          onReconfigurar={() => rodar(() => reconfigurarConexao(n.instance_name), "Conexão reconfigurada.")}
+          onReconfigurar={() => rodar(() => reconfigurarConexao(n.instance_name), "Conexão refeita. Mande uma mensagem de teste para conferir se chega no painel.")}
           onExcluir={() => {
-            if (window.confirm(`Excluir o número "${n.apelido ?? n.numero}"? Ele para de receber mensagens no painel.`)) {
-              rodar(() => excluirNumero(organizationId, n.id, n.instance_name), "Número excluído.");
+            const nome = n.apelido ?? formatarTelefone(n.numero);
+            if (
+              window.confirm(
+                `Remover o número "${nome}" do sistema?\n\n` +
+                  "As mensagens desse WhatsApp param de chegar no painel e o assistente para de responder nele. " +
+                  "As conversas antigas continuam salvas. Para usar de novo, será preciso adicionar e ler o QR Code outra vez.",
+              )
+            ) {
+              rodar(() => excluirNumero(organizationId, n.id, n.instance_name), "Número removido.");
             }
           }}
         />
       ))}
 
       <div className="rounded-2xl border border-cinza-claro bg-white p-5">
-        <p className="font-heading font-semibold text-preto mb-3">Adicionar número</p>
+        <p className="font-heading font-bold text-lg text-preto">Adicionar um número de WhatsApp</p>
+        <ol className="mt-2 mb-4 text-sm text-cinza-medio list-decimal pl-5 space-y-0.5">
+          <li>Preencha o telefone e um apelido.</li>
+          <li>Clique em “Adicionar e conectar”: vai aparecer um QR Code.</li>
+          <li>No celular desse número, leia o QR Code pelo WhatsApp (as instruções aparecem na tela).</li>
+        </ol>
         <div className="grid md:grid-cols-3 gap-3">
-          <label className="text-sm">
-            <span className="block text-cinza-medio mb-1">Telefone com DDD</span>
-            <input value={novo.numero} onChange={(e) => setNovo({ ...novo, numero: e.target.value })} placeholder="19 99999-9999" className="w-full rounded-lg border border-cinza-claro px-3 py-2" />
+          <label className="text-sm flex flex-col">
+            <span className="block font-semibold text-preto mb-0.5">Telefone com DDD</span>
+            <span className="block text-xs text-cinza-medio mb-1">O número do WhatsApp que vai atender.</span>
+            <input value={novo.numero} onChange={(e) => setNovo({ ...novo, numero: e.target.value })} placeholder="(19) 99999-9999" className={`${campo} mt-auto`} />
           </label>
-          <label className="text-sm">
-            <span className="block text-cinza-medio mb-1">Nome curto (aparece para as atendentes)</span>
-            <input value={novo.apelido} onChange={(e) => setNovo({ ...novo, apelido: e.target.value })} placeholder="Loja" className="w-full rounded-lg border border-cinza-claro px-3 py-2" />
+          <label className="text-sm flex flex-col">
+            <span className="block font-semibold text-preto mb-0.5">Apelido do número</span>
+            <span className="block text-xs text-cinza-medio mb-1">Só a equipe vê. Ex.: Loja, Vendas, Chip de teste.</span>
+            <input value={novo.apelido} onChange={(e) => setNovo({ ...novo, apelido: e.target.value })} placeholder="Loja" className={`${campo} mt-auto`} />
           </label>
-          <label className="text-sm">
-            <span className="block text-cinza-medio mb-1">Nome do assistente (opcional)</span>
-            <input value={novo.nomeAssistente} onChange={(e) => setNovo({ ...novo, nomeAssistente: e.target.value })} placeholder="Assistente Beba Mais" className="w-full rounded-lg border border-cinza-claro px-3 py-2" />
+          <label className="text-sm flex flex-col">
+            <span className="block font-semibold text-preto mb-0.5">Nome do assistente</span>
+            <span className="block text-xs text-cinza-medio mb-1">Opcional. Como ele se chama, se o cliente perguntar.</span>
+            <input value={novo.nomeAssistente} onChange={(e) => setNovo({ ...novo, nomeAssistente: e.target.value })} placeholder="Assistente Beba Mais" className={`${campo} mt-auto`} />
           </label>
         </div>
+        <p className="mt-3 text-xs text-cinza-medio">
+          Por segurança, o número novo começa com o assistente <strong>desligado</strong>. Depois de conectar, escolha no cartão dele quem o assistente atende.
+        </p>
         <button
           disabled={pendente}
           onClick={() =>
@@ -131,19 +195,35 @@ export function NumerosManager({
 
       {qr && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setQr(null)}>
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full text-center" onClick={(e) => e.stopPropagation()}>
-            <p className="font-heading font-bold text-lg mb-2">Conectar o WhatsApp</p>
-            <p className="text-sm text-cinza-medio mb-4">
-              No celular do número: WhatsApp → Aparelhos conectados → Conectar um aparelho → aponte para o código.
-            </p>
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+            <p className="font-heading font-bold text-lg mb-3 text-center">Conectar o WhatsApp</p>
+            <ol className="text-sm text-preto list-decimal pl-5 space-y-1 mb-4">
+              <li>Pegue o celular com o WhatsApp deste número.</li>
+              <li>
+                Abra o WhatsApp e toque em <strong>⋮</strong> (Android) ou em <strong>Configurações</strong> (iPhone).
+              </li>
+              <li>
+                Toque em <strong>Aparelhos conectados</strong> → <strong>Conectar um aparelho</strong>.
+              </li>
+              <li>Aponte a câmera do celular para o código abaixo.</li>
+            </ol>
             {qr.base64 ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={qr.base64} alt="QR Code" className="mx-auto w-64 h-64" />
+              <img src={qr.base64} alt="QR Code para conectar o WhatsApp" className="mx-auto w-64 h-64" />
             ) : (
-              <p className="text-sm">Código ainda não disponível. Feche e tente de novo.</p>
+              <p className="text-sm text-center">O código ainda não ficou pronto. Feche esta janela e clique em “Conectar” de novo.</p>
             )}
-            {qr.pairing && <p className="mt-3 text-sm">Ou use o código: <strong className="tracking-widest">{qr.pairing}</strong></p>}
-            <button onClick={() => setQr(null)} className="mt-5 rounded-lg border border-cinza-claro px-4 py-2 font-semibold">Fechar</button>
+            {qr.pairing && (
+              <p className="mt-3 text-sm text-center">
+                Sem câmera? Use o código: <strong className="tracking-widest">{qr.pairing}</strong>
+              </p>
+            )}
+            <p className="mt-3 text-xs text-cinza-medio text-center">Esta janela fecha sozinha quando conectar.</p>
+            <div className="text-center">
+              <button onClick={() => setQr(null)} className="mt-4 rounded-lg border border-cinza-claro px-4 py-2 font-semibold">
+                Fechar
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -151,77 +231,191 @@ export function NumerosManager({
   );
 }
 
+function OpcaoModo(props: {
+  valor: Modo;
+  atual: Modo;
+  titulo: string;
+  selo?: string;
+  texto: string;
+  onEscolher: (m: Modo) => void;
+  children?: React.ReactNode;
+}) {
+  const ativo = props.valor === props.atual;
+  return (
+    <label
+      className={`flex gap-3 rounded-lg px-4 py-3 cursor-pointer transition ${
+        ativo ? "border-2 border-vermelho bg-red-50/40" : "border border-cinza-claro hover:bg-offwhite"
+      }`}
+    >
+      <input type="radio" checked={ativo} onChange={() => props.onEscolher(props.valor)} className="mt-1 h-4 w-4 accent-[#cc1b1b]" />
+      <span className="flex-1">
+        <span className="font-semibold text-preto">{props.titulo}</span>
+        {props.selo && <span className="ml-2 text-[11px] font-semibold rounded bg-amber-100 text-amber-800 px-1.5 py-0.5">{props.selo}</span>}
+        <span className="block text-sm text-cinza-medio">{props.texto}</span>
+        {ativo && props.children}
+      </span>
+    </label>
+  );
+}
+
 function CartaoNumero(props: {
   n: NumeroView;
   pendente: boolean;
-  onSalvar: (patch: Partial<NumeroRow>) => void;
+  onSalvar: (patch: Partial<NumeroRow>, mensagem: string) => void;
   onConectar: () => void;
   onReconfigurar: () => void;
   onExcluir: () => void;
 }) {
   const { n } = props;
+  const modoInicial = modoDe(n);
+  const testesIniciais = telefonesDeTeste(n.numeros_teste ?? "").lista.map(formatarTelefone).join(", ");
+  const [modo, setModo] = useState<Modo>(modoInicial);
+  const [testes, setTestes] = useState(testesIniciais);
   const [apelido, setApelido] = useState(n.apelido ?? "");
   const [persona, setPersona] = useState(n.persona_nome ?? "");
-  const [testes, setTestes] = useState(n.numeros_teste ?? "");
+  const [erro, setErro] = useState<string | null>(null);
+
+  const alterado =
+    modo !== modoInicial || testes !== testesIniciais || apelido !== (n.apelido ?? "") || persona !== (n.persona_nome ?? "");
+
+  function salvar() {
+    setErro(null);
+    const { lista, invalidos } = telefonesDeTeste(testes);
+    if (modo === "teste") {
+      if (invalidos.length) {
+        setErro(`Confira estes telefones (precisam ter DDD): ${invalidos.join(", ")}`);
+        return;
+      }
+      if (!lista.length) {
+        setErro("Coloque pelo menos um telefone de teste, ou escolha outra opção.");
+        return;
+      }
+    }
+    if (modo === "todos" && modoInicial !== "todos") {
+      const ok = window.confirm(
+        "O assistente vai responder TODOS os clientes que escreverem para este número.\n\nUse isso só quando os testes estiverem aprovados. Confirmar?",
+      );
+      if (!ok) return;
+    }
+    const mensagens: Record<Modo, string> = {
+      ninguem: "Salvo. O assistente está desligado neste número: as mensagens vão direto para as atendentes.",
+      teste: `Salvo. O assistente responde só ${lista.length === 1 ? "o telefone de teste" : `os ${lista.length} telefones de teste`}.`,
+      todos: "Salvo. O assistente responde todos os clientes deste número.",
+    };
+    props.onSalvar(
+      {
+        apelido: apelido.trim() || null,
+        persona_nome: persona.trim() || null,
+        ia_ativa: modo !== "ninguem",
+        // "Todos" apaga a lista; "Ninguém" guarda a lista para voltar ao teste depois.
+        numeros_teste: modo === "todos" ? null : lista.join(", ") || null,
+      },
+      mensagens[modo],
+    );
+  }
+
   return (
-    <div className="rounded-2xl border border-cinza-claro bg-white p-5 space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="rounded-2xl border border-cinza-claro bg-white p-5 space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="font-heading font-bold text-lg text-preto">{n.apelido || "Sem nome"}</p>
-          <p className="text-sm text-cinza-medio">{n.numero}</p>
+          <p className="font-heading font-bold text-lg text-preto">{n.apelido || "Número sem apelido"}</p>
+          <p className="text-sm text-cinza-medio">{formatarTelefone(n.numero)}</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Status conexao={n.conexao} />
           {n.conexao !== "open" && (
             <button onClick={props.onConectar} disabled={props.pendente} className="rounded-lg bg-preto text-white px-4 py-2 text-sm font-semibold disabled:opacity-50">
-              Conectar (QR Code)
+              Conectar (ler QR Code)
             </button>
           )}
         </div>
       </div>
 
-      <label className="flex items-center gap-3 rounded-lg bg-offwhite px-4 py-3 cursor-pointer">
-        <input type="checkbox" checked={n.ia_ativa} onChange={(e) => props.onSalvar({ ia_ativa: e.target.checked })} className="h-5 w-5" />
-        <span>
-          <span className="font-semibold">Assistente responde neste número</span>
-          <span className="block text-sm text-cinza-medio">Desligado: as mensagens vão direto para a fila das atendentes.</span>
-        </span>
-      </label>
-
-      <div className="grid md:grid-cols-2 gap-3">
-        <label className="text-sm">
-          <span className="block text-cinza-medio mb-1">Nome curto</span>
-          <input value={apelido} onChange={(e) => setApelido(e.target.value)} className="w-full rounded-lg border border-cinza-claro px-3 py-2" />
-        </label>
-        <label className="text-sm">
-          <span className="block text-cinza-medio mb-1">Nome do assistente</span>
-          <input value={persona} onChange={(e) => setPersona(e.target.value)} placeholder="Assistente virtual" className="w-full rounded-lg border border-cinza-claro px-3 py-2" />
-        </label>
-      </div>
-      <label className="text-sm block">
-        <span className="block text-cinza-medio mb-1">
-          Modo teste: o assistente só responde estes telefones (separe por vírgula). Deixe vazio para responder todos.
-        </span>
-        <input value={testes} onChange={(e) => setTestes(e.target.value)} placeholder="19999998888, 19988887777" className="w-full rounded-lg border border-cinza-claro px-3 py-2" />
-      </label>
-
-      <div className="flex flex-wrap gap-2 justify-between">
-        <button
-          onClick={() => props.onSalvar({ apelido: apelido.trim() || null, persona_nome: persona.trim() || null, numeros_teste: testes.trim() || null })}
-          disabled={props.pendente}
-          className="rounded-lg bg-vermelho text-white px-4 py-2 text-sm font-heading font-bold disabled:opacity-50"
+      <div className="space-y-2">
+        <p className="font-heading font-semibold text-preto">1. Quem o assistente atende neste número?</p>
+        <OpcaoModo
+          valor="ninguem"
+          atual={modo}
+          onEscolher={setModo}
+          titulo="Ninguém"
+          texto="O assistente fica desligado. Toda mensagem vai direto para a fila das atendentes."
+        />
+        <OpcaoModo
+          valor="teste"
+          atual={modo}
+          onEscolher={setModo}
+          titulo="Só os telefones de teste"
+          selo="use enquanto testa"
+          texto="O assistente responde só estes telefones. Os outros clientes vão direto para as atendentes."
         >
-          Salvar
-        </button>
-        <div className="flex gap-2">
-          <button onClick={props.onReconfigurar} disabled={props.pendente} className="rounded-lg border border-cinza-claro px-3 py-2 text-sm">
-            Reconfigurar conexão
-          </button>
-          <button onClick={props.onExcluir} disabled={props.pendente} className="rounded-lg border border-red-200 text-red-700 px-3 py-2 text-sm">
-            Excluir
-          </button>
+          <input
+            value={testes}
+            onChange={(e) => setTestes(e.target.value)}
+            placeholder="(19) 99999-8888, (19) 98888-7777"
+            className={`${campo} mt-2 text-sm`}
+            aria-label="Telefones de teste"
+          />
+          <span className="block mt-1 text-xs text-cinza-medio">Com DDD. Para mais de um, separe por vírgula.</span>
+        </OpcaoModo>
+        <OpcaoModo
+          valor="todos"
+          atual={modo}
+          onEscolher={setModo}
+          titulo="Todos os clientes"
+          texto="O assistente responde todo mundo que escrever para este número. Use quando estiver tudo aprovado."
+        />
+      </div>
+
+      <div className="space-y-2">
+        <p className="font-heading font-semibold text-preto">2. Nomes</p>
+        <div className="grid md:grid-cols-2 gap-3">
+          <label className="text-sm flex flex-col">
+            <span className="block font-semibold text-preto mb-0.5">Apelido do número</span>
+            <span className="block text-xs text-cinza-medio mb-1">Só a equipe vê. Mostra no painel por qual número o cliente escreveu.</span>
+            <input value={apelido} onChange={(e) => setApelido(e.target.value)} placeholder="Loja" className={`${campo} mt-auto`} />
+          </label>
+          <label className="text-sm flex flex-col">
+            <span className="block font-semibold text-preto mb-0.5">Nome do assistente</span>
+            <span className="block text-xs text-cinza-medio mb-1">Como ele se chama, se o cliente perguntar.</span>
+            <input value={persona} onChange={(e) => setPersona(e.target.value)} placeholder="Assistente Beba Mais" className={`${campo} mt-auto`} />
+          </label>
         </div>
       </div>
+
+      {erro && <div className="rounded-lg bg-red-50 border border-red-200 text-red-800 px-4 py-2 text-sm">{erro}</div>}
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          onClick={salvar}
+          disabled={props.pendente || !alterado}
+          className="rounded-lg bg-vermelho text-white px-5 py-2.5 text-sm font-heading font-bold disabled:opacity-40"
+        >
+          {props.pendente ? "Salvando..." : "Salvar alterações"}
+        </button>
+        {alterado ? (
+          <span className="text-sm font-semibold text-amber-700">Você tem alterações não salvas.</span>
+        ) : (
+          <span className="text-sm text-cinza-medio">Tudo salvo.</span>
+        )}
+      </div>
+
+      <details className="border-t border-cinza-claro pt-3 text-sm">
+        <summary className="cursor-pointer text-cinza-medio font-semibold hover:text-preto">Problemas com este número?</summary>
+        <div className="mt-3 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-cinza-medio">As mensagens pararam de chegar no painel, mesmo com o número conectado?</span>
+            <button onClick={props.onReconfigurar} disabled={props.pendente} className="rounded-lg border border-cinza-claro px-3 py-2 font-semibold disabled:opacity-50">
+              Consertar conexão
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-cinza-medio">Não vai mais usar este número no sistema?</span>
+            <button onClick={props.onExcluir} disabled={props.pendente} className="rounded-lg border border-red-200 text-red-700 px-3 py-2 font-semibold disabled:opacity-50">
+              Remover número
+            </button>
+          </div>
+        </div>
+      </details>
     </div>
   );
 }

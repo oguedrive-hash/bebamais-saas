@@ -1,5 +1,4 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { PageHeader } from "@/components/page-header";
 import { emailParaUsuario } from "@/lib/usuarios";
 import { GestaoUsuarios, type UsuarioRow } from "./gestao-usuarios";
 
@@ -17,13 +16,14 @@ export default async function UsuariosPage({
   const { id: orgId } = await params;
   const admin = createAdminClient();
 
-  const [{ data: profiles }, { data: authList }] = await Promise.all([
+  const [{ data: profiles }, { data: authList }, { data: org }] = await Promise.all([
     admin
       .from("profiles")
       .select("id, nome, role, created_at")
       .eq("organization_id", orgId)
       .order("created_at", { ascending: true }),
     admin.auth.admin.listUsers({ page: 1, perPage: 200 }),
+    admin.from("organizations").select("name").eq("id", orgId).maybeSingle(),
   ]);
 
   const emailPorId = new Map(
@@ -42,14 +42,15 @@ export default async function UsuariosPage({
   });
 
   return (
-    <div>
-      <div className="mb-4">
-        <PageHeader
-          titulo="Usuários do painel"
-          descricao="Quem da equipe acessa o sistema — login por usuário e senha"
-        />
+    <div className="max-w-3xl">
+      <div className="mb-6">
+        <h1 className="text-4xl font-heading font-bold text-preto">Atendentes e acessos</h1>
+        <p className="text-cinza-medio mt-2">
+          Crie aqui o login de cada pessoa da equipe. Ela entra no painel pelo mesmo endereço deste sistema, com o usuário
+          e a senha que você criar. Depois de criar, use “Copiar instruções” para mandar o passo a passo para ela.
+        </p>
       </div>
-      <GestaoUsuarios usuarios={usuarios} organizationId={orgId} />
+      <GestaoUsuarios usuarios={usuarios} organizationId={orgId} empresa={org?.name?.trim() || "loja"} />
     </div>
   );
 }

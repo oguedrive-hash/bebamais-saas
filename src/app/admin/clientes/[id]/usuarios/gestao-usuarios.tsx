@@ -27,18 +27,90 @@ function senhaAleatoria(): string {
   return s + String(10 + (rnd[8] % 90));
 }
 
+/** Passo a passo para mandar à pessoa (sem a senha: ela vai em outra mensagem). */
+function instrucoesDeAcesso(nome: string, usuario: string, empresa: string): string {
+  const primeiro = nome.trim().split(/\s+/)[0] || "";
+  return [
+    `Olá${primeiro ? `, ${primeiro}` : ""}! Este é o seu acesso ao painel de atendimento da ${empresa}:`,
+    "",
+    `Endereço: ${window.location.origin}`,
+    `Usuário: ${usuario}`,
+    "Senha: vou te mandar em outra mensagem.",
+    "",
+    "Como atender:",
+    "1. Entre no endereço com seu usuário e senha.",
+    "2. Clientes em vermelho estão esperando: clique em um e depois em “Pegar este cliente”.",
+    "3. Responda pela caixa de mensagem, como no WhatsApp.",
+    "4. Quando resolver, clique em “Finalizar atendimento”.",
+  ].join("\n");
+}
+
+/** `texto` pode ser uma função: só é montado no clique (usa o endereço do navegador). */
+function BotaoCopiar(props: { texto: string | (() => string); rotulo: string; className?: string }) {
+  const [copiado, setCopiado] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        const texto = typeof props.texto === "function" ? props.texto() : props.texto;
+        try {
+          await navigator.clipboard.writeText(texto);
+          setCopiado(true);
+          setTimeout(() => setCopiado(false), 2500);
+        } catch {
+          window.prompt("Copie o texto abaixo:", texto);
+        }
+      }}
+      className={props.className ?? "rounded-lg border border-cinza-claro bg-white px-3 py-1.5 text-sm font-heading font-semibold hover:border-preto"}
+    >
+      {copiado ? "Copiado ✓" : props.rotulo}
+    </button>
+  );
+}
+
+/** Cartão mostrado logo depois de criar o acesso ou trocar a senha. */
+function CartaoAcesso(props: { acesso: { nome: string; usuario: string; senha: string }; empresa: string; onFechar: () => void }) {
+  const { acesso } = props;
+  return (
+    <div className="mb-4 rounded-2xl border-2 border-green-300 bg-green-50 p-5 space-y-3">
+      <p className="font-heading font-bold text-green-900">Acesso de {acesso.nome} pronto. Agora mande para ela:</p>
+      <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 text-sm">
+        <dt className="text-cinza-medio">Endereço</dt>
+        <dd className="font-mono">{typeof window !== "undefined" ? window.location.origin : ""}</dd>
+        <dt className="text-cinza-medio">Usuário</dt>
+        <dd className="font-mono">{acesso.usuario}</dd>
+        <dt className="text-cinza-medio">Senha</dt>
+        <dd className="font-mono">{acesso.senha}</dd>
+      </dl>
+      <div className="flex flex-wrap gap-2">
+        <BotaoCopiar texto={() => instrucoesDeAcesso(acesso.nome, acesso.usuario, props.empresa)} rotulo="1. Copiar instruções (sem a senha)" />
+        <BotaoCopiar texto={acesso.senha} rotulo="2. Copiar a senha" />
+        <button type="button" onClick={props.onFechar} className="px-3 py-1.5 text-sm text-cinza-medio hover:text-preto">
+          Fechar
+        </button>
+      </div>
+      <p className="text-xs text-cinza-medio">
+        Mande as instruções e a senha em mensagens separadas. Esta senha só aparece agora: se perder, use “Trocar senha”.
+      </p>
+    </div>
+  );
+}
+
 export function GestaoUsuarios({
   usuarios,
   organizationId,
+  empresa,
 }: {
   usuarios: UsuarioRow[];
   organizationId: string;
+  empresa: string;
 }) {
   const router = useRouter();
   const [modalNovo, setModalNovo] = useState(false);
   const [resetando, setResetando] = useState<UsuarioRow | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
+  const [acesso, setAcesso] = useState<{ nome: string; usuario: string; senha: string } | null>(null);
   const [pending, startTransition] = useTransition();
 
   function remover(u: UsuarioRow) {
@@ -68,20 +140,22 @@ export function GestaoUsuarios({
     <div className="max-w-3xl">
       <div className="flex items-center justify-between mb-3">
         <p className="text-sm text-cinza-medio">
-          {usuarios.length} usuário{usuarios.length !== 1 ? "s" : ""} com acesso
+          {usuarios.length} {usuarios.length !== 1 ? "pessoas" : "pessoa"} com acesso
         </p>
         <button
           type="button"
           onClick={() => {
             setSucesso(null);
+            setAcesso(null);
             setModalNovo(true);
           }}
           className="px-4 py-2.5 rounded-lg bg-laranja hover:bg-laranja-escuro text-white text-sm font-heading font-semibold transition"
         >
-          + Novo usuário
+          + Criar acesso
         </button>
       </div>
 
+      {acesso && <CartaoAcesso acesso={acesso} empresa={empresa} onFechar={() => setAcesso(null)} />}
       {sucesso && (
         <p className="mb-3 text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
           {sucesso}
@@ -98,9 +172,9 @@ export function GestaoUsuarios({
           <thead>
             <tr className="bg-offwhite border-b border-cinza-claro text-left text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider">
               <th className="px-4 py-3">Nome</th>
-              <th className="px-4 py-3">Usuário</th>
-              <th className="px-4 py-3">Papel</th>
-              <th className="px-4 py-3 text-right">Ações</th>
+              <th className="px-4 py-3">Usuário (para entrar)</th>
+              <th className="px-4 py-3">Tipo de acesso</th>
+              <th className="px-4 py-3 text-right"></th>
             </tr>
           </thead>
           <tbody>
@@ -125,16 +199,22 @@ export function GestaoUsuarios({
                   </span>
                 </td>
                 <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                  <BotaoCopiar
+                    texto={() => instrucoesDeAcesso(u.nome, u.usuario, empresa)}
+                    rotulo="Copiar instruções"
+                    className="text-xs text-cinza-medio hover:text-preto font-heading font-semibold mr-3"
+                  />
                   <button
                     type="button"
                     onClick={() => {
                       setSucesso(null);
+                      setAcesso(null);
                       setResetando(u);
                     }}
                     disabled={pending}
                     className="text-xs text-cinza-medio hover:text-preto font-heading font-semibold mr-3 disabled:opacity-50"
                   >
-                    Resetar senha
+                    Trocar senha
                   </button>
                   <button
                     type="button"
@@ -142,7 +222,7 @@ export function GestaoUsuarios({
                     disabled={pending}
                     className="text-xs text-red-600 hover:text-red-700 font-heading font-semibold disabled:opacity-50"
                   >
-                    Remover
+                    Remover acesso
                   </button>
                 </td>
               </tr>
@@ -150,7 +230,7 @@ export function GestaoUsuarios({
             {usuarios.length === 0 && (
               <tr>
                 <td colSpan={4} className="px-4 py-8 text-center text-cinza-medio">
-                  Nenhum usuário ainda — crie o primeiro acesso da equipe.
+                  Ninguém da equipe tem acesso ainda. Clique em “+ Criar acesso”.
                 </td>
               </tr>
             )}
@@ -162,9 +242,9 @@ export function GestaoUsuarios({
         <NovoUsuarioModal
           organizationId={organizationId}
           onFechar={() => setModalNovo(false)}
-          onCriado={(msg) => {
+          onCriado={(novoAcesso) => {
             setModalNovo(false);
-            setSucesso(msg);
+            setAcesso(novoAcesso);
             router.refresh();
           }}
         />
@@ -173,9 +253,9 @@ export function GestaoUsuarios({
         <ResetSenhaModal
           usuario={resetando}
           onFechar={() => setResetando(null)}
-          onOk={(msg) => {
+          onOk={(senha) => {
+            setAcesso({ nome: resetando.nome, usuario: resetando.usuario, senha });
             setResetando(null);
-            setSucesso(msg);
           }}
         />
       )}
@@ -190,7 +270,7 @@ function NovoUsuarioModal({
 }: {
   organizationId: string;
   onFechar: () => void;
-  onCriado: (msg: string) => void;
+  onCriado: (acesso: { nome: string; usuario: string; senha: string }) => void;
 }) {
   const [nome, setNome] = useState("");
   const [usuario, setUsuario] = useState("");
@@ -215,9 +295,7 @@ function NovoUsuarioModal({
           setErro(r.error);
           return;
         }
-        onCriado(
-          `Usuário criado! Anote e repasse: usuário "${r.usuario}" · senha "${senha}"`,
-        );
+        onCriado({ nome: nome.trim(), usuario: r.usuario, senha });
       } catch {
         setErro("Falha de conexão — tente de novo.");
       }
@@ -234,12 +312,12 @@ function NovoUsuarioModal({
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-lg font-heading font-bold text-preto mb-4">
-          Novo usuário
+          Criar acesso
         </h2>
         <div className="space-y-4">
           <div>
             <label className="block text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1.5">
-              Nome
+              Nome da pessoa
             </label>
             <input
               value={nome}
@@ -251,7 +329,7 @@ function NovoUsuarioModal({
           </div>
           <div>
             <label className="block text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1.5">
-              Usuário (pra entrar no sistema)
+              Usuário (o que ela digita para entrar)
             </label>
             <input
               value={usuario}
@@ -262,7 +340,7 @@ function NovoUsuarioModal({
           </div>
           <div>
             <label className="block text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1.5">
-              Senha (gerada — pode trocar)
+              Senha (já vem uma sugestão; pode trocar)
             </label>
             <div className="flex gap-2">
               <input
@@ -282,15 +360,15 @@ function NovoUsuarioModal({
           </div>
           <div>
             <label className="block text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1.5">
-              Papel
+              Tipo de acesso
             </label>
             <select
               value={role}
               onChange={(e) => setRole(e.target.value as "client" | "admin")}
               className="w-full px-3 py-2.5 rounded-lg border border-cinza-claro text-sm bg-white focus:outline-none focus:border-laranja transition"
             >
-              <option value="client">Atendente (usa o painel)</option>
-              <option value="admin">Administrador (configura tudo)</option>
+              <option value="client">Atendente (só atende os clientes)</option>
+              <option value="admin">Administrador (também mexe nas configurações)</option>
             </select>
           </div>
           {erro && (
@@ -313,7 +391,7 @@ function NovoUsuarioModal({
               disabled={pending || !nome.trim() || !usuario.trim()}
               className="px-4 py-2 rounded-lg bg-laranja hover:bg-laranja-escuro text-white text-sm font-heading font-semibold disabled:opacity-50 transition"
             >
-              {pending ? "Criando..." : "Criar usuário"}
+              {pending ? "Criando..." : "Criar acesso"}
             </button>
           </div>
         </div>
@@ -329,7 +407,7 @@ function ResetSenhaModal({
 }: {
   usuario: UsuarioRow;
   onFechar: () => void;
-  onOk: (msg: string) => void;
+  onOk: (senha: string) => void;
 }) {
   const [senha, setSenha] = useState(senhaAleatoria());
   const [erro, setErro] = useState<string | null>(null);
@@ -345,9 +423,7 @@ function ResetSenhaModal({
           setErro(r.error);
           return;
         }
-        onOk(
-          `Senha de ${usuario.nome} trocada! Anote e repasse: "${senha}"`,
-        );
+        onOk(senha);
       } catch {
         setErro("Falha de conexão — tente de novo.");
       }
@@ -364,7 +440,7 @@ function ResetSenhaModal({
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-lg font-heading font-bold text-preto mb-1">
-          Resetar senha
+          Trocar senha
         </h2>
         <p className="text-sm text-cinza-medio mb-4">
           {usuario.nome} ({usuario.usuario})

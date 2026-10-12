@@ -60,7 +60,7 @@ export async function adicionarNumero(
   if (err) return { error: err };
   const numero = dados.numero.replace(/\D/g, "");
   if (numero.length < 10) return { error: "Informe o telefone com DDD." };
-  if (!dados.apelido.trim()) return { error: "Dê um nome curto para o número (ex.: Loja, Vendas)." };
+  if (!dados.apelido.trim()) return { error: "Dê um apelido para o número (ex.: Loja, Vendas, Chip de teste)." };
 
   const instanceName = `atendimento_${randomUUID().slice(0, 8)}`;
   const criada = await evoCriarInstancia(instanceName);
@@ -74,6 +74,9 @@ export async function adicionarNumero(
     persona_nome: dados.nomeAssistente?.trim() || null,
     papel: "atendimento",
     estado: "ativo",
+    // Número novo começa SEM assistente: o admin escolhe depois quem ele atende
+    // (só telefones de teste, ou todos). Evita a IA responder cliente real sem querer.
+    ia_ativa: false,
   });
   if (error) {
     await evoDeletarInstancia(instanceName);
