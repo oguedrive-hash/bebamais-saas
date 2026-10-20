@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { grupoDaMensagem, numeroDoParticipante } from "../src/lib/atendimento/grupos";
 import { ehInstanciaAprendizado, linhaDaMensagem } from "../src/lib/aprendizado/captura";
 import { calcularPadroes, normalizarFrase, type MensagemCaptada } from "../src/lib/aprendizado/padroes";
+import { assinar, assinarLegenda, nomeDaAssinatura } from "../src/lib/atendimento/assinatura";
 
 const ORG = "org-1";
 
@@ -141,4 +142,24 @@ test("padrões: sem mensagens não quebra", () => {
   assert.equal(p.mensagens, 0);
   assert.equal(p.respostaMedianaMin, null);
   assert.deepEqual(p.frasesEquipe, []);
+});
+
+test("assinatura: primeiro nome em maiúsculas na primeira linha", () => {
+  assert.equal(assinar("Ana Paula Souza", "Seu pedido saiu!"), "*ANA*:\nSeu pedido saiu!");
+  assert.equal(assinar("  joyce ", "Oi"), "*JOYCE*:\nOi");
+  assert.equal(assinar("Lúcia", "Oi"), "*LÚCIA*:\nOi");
+});
+
+test("assinatura: nome genérico ou vazio não assina", () => {
+  assert.equal(assinar("Administrador", "Oi"), "Oi");
+  assert.equal(assinar("Atendente", "Oi"), "Oi");
+  assert.equal(assinar("", "Oi"), "Oi");
+  assert.equal(assinar(null, "Oi"), "Oi");
+  assert.equal(nomeDaAssinatura("*Ana*"), "ANA", "asterisco no nome não quebra o negrito");
+});
+
+test("assinatura: legenda de foto, com e sem texto", () => {
+  assert.equal(assinarLegenda("Ana", "comprovante"), "*ANA*:\ncomprovante");
+  assert.equal(assinarLegenda("Ana", undefined), "*ANA*");
+  assert.equal(assinarLegenda("Administrador", undefined), undefined);
 });

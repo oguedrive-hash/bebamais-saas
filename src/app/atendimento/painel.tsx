@@ -347,6 +347,7 @@ export function Painel(props: Props) {
             grupo={props.grupoAberto.grupo}
             mensagens={props.grupoAberto.mensagens}
             voltarHref={endereco({})}
+            usuarioNome={usuario.nome}
           />
         ) : conversa ? (
           <Conversa

@@ -12,6 +12,7 @@ import {
   pegarCliente,
 } from "./actions";
 import { ROTULO_ASSUNTO, dataCurta, horaCurta, tempoDesde, useAgora } from "./util";
+import { nomeDaAssinatura } from "@/lib/atendimento/assinatura";
 
 interface Props {
   usuario: { id: string; nome: string; admin: boolean };
@@ -84,6 +85,7 @@ export function Conversa({ usuario, cliente, mensagens, atendentes, respostasRap
       {meu ? (
         <Escrever
           respostasRapidas={respostasRapidas}
+          assinatura={{ quem: "O cliente", nome: usuario.nome }}
           onErro={setErro}
           onEnviar={(texto, arquivo) => {
             if (!arquivo) return enviarMensagemAction(cliente.id, texto);
@@ -330,11 +332,14 @@ export function Escrever({
   onErro,
   onEnviar,
   placeholder = "Escreva a mensagem... (Enter envia)",
+  assinatura,
 }: {
   respostasRapidas: string[];
   onErro: (e: string | null) => void;
   onEnviar: (texto: string, arquivo: File | null) => Promise<{ ok: true } | { error: string }>;
   placeholder?: string;
+  /** Mostra como o nome de quem escreve aparece no WhatsApp ("*ANA*:"). */
+  assinatura?: { quem: string; nome: string };
 }) {
   const router = useRouter();
   const [texto, setTexto] = useState("");
@@ -467,7 +472,15 @@ export function Escrever({
           {enviando ? "Enviando..." : "Enviar"}
         </button>
       </div>
-      <p className="text-[11px] text-cinza-medio">Dica: para mandar o print do pedido, copie a imagem e cole aqui com Ctrl+V.</p>
+      <p className="text-[11px] text-cinza-medio">
+        {assinatura && nomeDaAssinatura(assinatura.nome) ? (
+          <>
+            {assinatura.quem} vê seu nome no começo da mensagem:{" "}
+            <span className="font-mono text-preto">*{nomeDaAssinatura(assinatura.nome)}*:</span> ·{" "}
+          </>
+        ) : null}
+        Dica: para mandar o print do pedido, copie a imagem e cole aqui com Ctrl+V.
+      </p>
     </div>
   );
 }

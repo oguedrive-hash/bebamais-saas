@@ -15,6 +15,7 @@ import { INSTANCE_NAME, ORG_ID } from "@/lib/caio/config";
 import { normalizarMensagem, type EvoKey, type EvoMensagem } from "./inbound";
 import { salvarArquivo, tipoPorMime } from "./arquivos";
 import { foiEnviadoPeloSistema, registrarEnvioDoSistema } from "./whatsapp";
+import { assinar, assinarLegenda } from "./assinatura";
 
 /** O nome do grupo é conferido de novo uma vez por dia (alguém pode ter renomeado). */
 const NOME_VALE_POR_MS = 24 * 60 * 60 * 1000;
@@ -225,7 +226,7 @@ export async function enviarTextoGrupo(opts: {
   if (!texto) return { error: "Mensagem vazia" };
   const rota = await rotaDoGrupo(opts.grupoId);
   if ("error" in rota) return rota;
-  const r = await confirmarEnvio(rota, await evoSendText({ instance: rota.instance, telefone: rota.jid, texto }));
+  const r = await confirmarEnvio(rota, await evoSendText({ instance: rota.instance, telefone: rota.jid, texto: assinar(opts.remetenteNome, texto) }));
   await registrarSaida(rota, {
     remetenteNome: opts.remetenteNome,
     tipo: "texto",
@@ -256,7 +257,7 @@ export async function enviarArquivoGrupo(opts: {
       media: opts.conteudo.toString("base64"),
       mediatype: tipo === "imagem" ? "image" : tipo === "video" ? "video" : "document",
       mimetype: opts.mime,
-      caption: legenda,
+      caption: assinarLegenda(opts.remetenteNome, legenda),
       fileName: opts.nome,
     }),
   );

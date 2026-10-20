@@ -11,7 +11,9 @@ export function GrupoConversa({
   grupo,
   mensagens,
   voltarHref,
+  usuarioNome,
 }: {
+  usuarioNome: string;
   grupo: GrupoResumo;
   mensagens: MensagemPainel[];
   voltarHref: string;
@@ -49,6 +51,7 @@ export function GrupoConversa({
 
       <Escrever
         respostasRapidas={[]}
+        assinatura={{ quem: "O grupo", nome: usuarioNome }}
         onErro={setErro}
         placeholder="Escreva para o grupo... (Enter envia)"
         onEnviar={(texto, arquivo) => {

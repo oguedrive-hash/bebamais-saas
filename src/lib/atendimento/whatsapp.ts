@@ -16,6 +16,7 @@ import {
 } from "@/lib/caio/evolution-api";
 import { INSTANCE_NAME } from "@/lib/caio/config";
 import { salvarArquivo, tipoPorMime } from "./arquivos";
+import { assinar, assinarLegenda } from "./assinatura";
 
 type Autor = "assistente" | "atendente" | "sistema";
 
@@ -164,8 +165,10 @@ export async function enviarTexto(opts: {
   if (!texto) return { error: "Mensagem vazia" };
   const rota = await rotaDoLead(opts.leadId);
   if ("error" in rota) return rota;
+  // Atendente assina com o nome ("*ANA*:"); no painel fica o texto puro.
+  const textoWhats = opts.autor === "atendente" ? assinar(opts.remetenteNome, texto) : texto;
   const r = await enviarComDestinos(rota, (dest) =>
-    evoSendText({ instance: rota.instance, telefone: dest, texto }),
+    evoSendText({ instance: rota.instance, telefone: dest, texto: textoWhats }),
   );
   await registrar({
     rota,
@@ -201,7 +204,7 @@ export async function enviarArquivo(opts: {
       media: base64,
       mediatype,
       mimetype: opts.mime,
-      caption: legenda,
+      caption: opts.autor === "atendente" ? assinarLegenda(opts.remetenteNome, legenda) : legenda,
       fileName: opts.nome,
     }),
   );

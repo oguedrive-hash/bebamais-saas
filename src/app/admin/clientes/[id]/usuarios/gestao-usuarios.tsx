@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { criarUsuario, resetarSenha, removerUsuario } from "./actions";
+import { criarUsuario, resetarSenha, removerUsuario, trocarNome } from "./actions";
+import { nomeDaAssinatura } from "@/lib/atendimento/assinatura";
 
 export type UsuarioRow = {
   id: string;
@@ -108,6 +109,7 @@ export function GestaoUsuarios({
   const router = useRouter();
   const [modalNovo, setModalNovo] = useState(false);
   const [resetando, setResetando] = useState<UsuarioRow | null>(null);
+  const [renomeando, setRenomeando] = useState<UsuarioRow | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
   const [acesso, setAcesso] = useState<{ nome: string; usuario: string; senha: string } | null>(null);
@@ -209,6 +211,18 @@ export function GestaoUsuarios({
                     onClick={() => {
                       setSucesso(null);
                       setAcesso(null);
+                      setRenomeando(u);
+                    }}
+                    disabled={pending}
+                    className="text-xs text-cinza-medio hover:text-preto font-heading font-semibold mr-3 disabled:opacity-50"
+                  >
+                    Trocar nome
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSucesso(null);
+                      setAcesso(null);
                       setResetando(u);
                     }}
                     disabled={pending}
@@ -245,6 +259,18 @@ export function GestaoUsuarios({
           onCriado={(novoAcesso) => {
             setModalNovo(false);
             setAcesso(novoAcesso);
+            router.refresh();
+          }}
+        />
+      )}
+      {renomeando && (
+        <TrocarNomeModal
+          usuario={renomeando}
+          organizationId={organizationId}
+          onFechar={() => setRenomeando(null)}
+          onOk={(nome) => {
+            setSucesso(`Nome trocado para ${nome}.`);
+            setRenomeando(null);
             router.refresh();
           }}
         />
@@ -326,6 +352,7 @@ function NovoUsuarioModal({
               autoFocus
               className="w-full px-3 py-2.5 rounded-lg border border-cinza-claro text-sm focus:outline-none focus:border-laranja transition"
             />
+            <ExemploAssinatura nome={nome} />
           </div>
           <div>
             <label className="block text-xs font-heading font-semibold text-cinza-medio uppercase tracking-wider mb-1.5">
@@ -481,6 +508,95 @@ function ResetSenhaModal({
             className="px-4 py-2 rounded-lg bg-laranja hover:bg-laranja-escuro text-white text-sm font-heading font-semibold disabled:opacity-50 transition"
           >
             {pending ? "Trocando..." : "Trocar senha"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Mostra como o nome aparece para o cliente no WhatsApp. */
+function ExemploAssinatura({ nome }: { nome: string }) {
+  const assinatura = nomeDaAssinatura(nome);
+  return (
+    <p className="mt-1.5 text-xs text-cinza-medio">
+      O cliente vê o primeiro nome no começo de cada mensagem dela
+      {assinatura ? (
+        <>
+          : <span className="font-mono text-preto">*{assinatura}*:</span>
+        </>
+      ) : (
+        "."
+      )}
+    </p>
+  );
+}
+
+function TrocarNomeModal({
+  usuario,
+  organizationId,
+  onFechar,
+  onOk,
+}: {
+  usuario: UsuarioRow;
+  organizationId: string;
+  onFechar: () => void;
+  onOk: (nome: string) => void;
+}) {
+  const [nome, setNome] = useState(usuario.nome === "—" ? "" : usuario.nome);
+  const [erro, setErro] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function salvar() {
+    if (pending) return;
+    setErro(null);
+    startTransition(async () => {
+      try {
+        const r = await trocarNome({ userId: usuario.id, organizationId, nome });
+        if ("error" in r) {
+          setErro(r.error);
+          return;
+        }
+        onOk(nome.trim());
+      } catch {
+        setErro("Falha de conexão — tente de novo.");
+      }
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-preto/40 flex items-center justify-center p-4" onClick={() => !pending && onFechar()}>
+      <div className="bg-white rounded-2xl border border-cinza-claro p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-lg font-heading font-bold text-preto mb-1">Trocar nome</h2>
+        <p className="text-sm text-cinza-medio mb-4">
+          Usuário para entrar: <span className="font-mono">{usuario.usuario}</span> (não muda)
+        </p>
+        <input
+          value={nome}
+          onChange={(e) => setNome(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && salvar()}
+          placeholder="ex: Maria Silva"
+          autoFocus
+          className="w-full px-3 py-2.5 rounded-lg border border-cinza-claro text-sm focus:outline-none focus:border-laranja transition"
+        />
+        <ExemploAssinatura nome={nome} />
+        {erro && <p className="mt-3 text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{erro}</p>}
+        <div className="flex items-center justify-end gap-2 mt-5">
+          <button
+            type="button"
+            onClick={onFechar}
+            disabled={pending}
+            className="px-4 py-2 rounded-lg border border-cinza-claro text-sm font-heading font-semibold text-cinza-medio hover:text-preto transition"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={salvar}
+            disabled={pending || !nome.trim()}
+            className="px-4 py-2 rounded-lg bg-laranja hover:bg-laranja-escuro text-white text-sm font-heading font-semibold disabled:opacity-50 transition"
+          >
+            {pending ? "Salvando..." : "Salvar nome"}
           </button>
         </div>
       </div>
