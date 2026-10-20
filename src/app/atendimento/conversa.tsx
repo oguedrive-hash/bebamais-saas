@@ -82,7 +82,18 @@ export function Conversa({ usuario, cliente, mensagens, atendentes, respostasRap
       <ListaMensagens mensagens={mensagens} />
 
       {meu ? (
-        <Escrever clienteId={cliente.id} respostasRapidas={respostasRapidas} onErro={setErro} />
+        <Escrever
+          respostasRapidas={respostasRapidas}
+          onErro={setErro}
+          onEnviar={(texto, arquivo) => {
+            if (!arquivo) return enviarMensagemAction(cliente.id, texto);
+            const fd = new FormData();
+            fd.set("leadId", cliente.id);
+            fd.set("arquivo", arquivo);
+            fd.set("legenda", texto);
+            return enviarArquivoAction(fd);
+          }}
+        />
       ) : (
         <div className="bg-white border-t border-cinza-claro p-4 text-center text-sm text-cinza-medio">
           {cliente.status === "atendendo" && comOutra
@@ -202,7 +213,7 @@ function FaixaDeStatus(props: {
   );
 }
 
-function ListaMensagens({ mensagens }: { mensagens: MensagemPainel[] }) {
+export function ListaMensagens({ mensagens }: { mensagens: MensagemPainel[] }) {
   const fimRef = useRef<HTMLDivElement>(null);
   const ultimaId = mensagens[mensagens.length - 1]?.id;
   useEffect(() => {
@@ -313,14 +324,17 @@ function Conteudo({ m }: { m: MensagemPainel }) {
   return texto ?? <p className="text-sm text-cinza-medio">(mensagem sem texto)</p>;
 }
 
-function Escrever({
-  clienteId,
+/** Caixa de escrever (texto, foto ou arquivo). Serve para cliente e para grupo: quem usa diz como enviar. */
+export function Escrever({
   respostasRapidas,
   onErro,
+  onEnviar,
+  placeholder = "Escreva a mensagem... (Enter envia)",
 }: {
-  clienteId: string;
   respostasRapidas: string[];
   onErro: (e: string | null) => void;
+  onEnviar: (texto: string, arquivo: File | null) => Promise<{ ok: true } | { error: string }>;
+  placeholder?: string;
 }) {
   const router = useRouter();
   const [texto, setTexto] = useState("");
@@ -357,16 +371,7 @@ function Escrever({
     if (!arquivo && !texto.trim()) return;
     onErro(null);
     iniciar(async () => {
-      let r: { ok: true } | { error: string };
-      if (arquivo) {
-        const fd = new FormData();
-        fd.set("leadId", clienteId);
-        fd.set("arquivo", arquivo);
-        fd.set("legenda", texto);
-        r = await enviarArquivoAction(fd);
-      } else {
-        r = await enviarMensagemAction(clienteId, texto);
-      }
+      const r = await onEnviar(texto, arquivo);
       if ("error" in r) {
         onErro(r.error);
         return;
@@ -382,7 +387,9 @@ function Escrever({
     <div className="bg-white border-t border-cinza-claro p-3 space-y-2">
       {respostasRapidas.length > 0 && (
         <div className="flex gap-2 overflow-x-auto pb-1">
-          <span className="shrink-0 text-xs text-cinza-medio self-center">Respostas prontas:</span>
+          <span className="shrink-0 text-xs text-cinza-medio self-center" title="Frases prontas para você mandar com um clique. O assistente não usa.">
+            Suas respostas prontas:
+          </span>
           {respostasRapidas.map((r) => (
             <button
               key={r}
@@ -448,7 +455,7 @@ function Escrever({
             }
           }}
           rows={2}
-          placeholder={arquivo ? "Legenda (opcional)" : "Escreva a mensagem... (Enter envia)"}
+          placeholder={arquivo ? "Legenda (opcional)" : placeholder}
           className="flex-1 resize-none rounded-lg border border-cinza-claro px-3 py-2 text-[15px] focus:outline-none focus:border-vermelho"
         />
         <button

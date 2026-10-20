@@ -9,6 +9,7 @@ const PASSOS = [
   "Precisa que outra pessoa continue? Use “Passar para outra atendente”.",
   "Resolveu? Clique em “Finalizar atendimento”. Se o cliente escrever de novo, o assistente atende primeiro.",
   "Quer falar com alguém de uma conversa antiga? Abra “Todas as conversas”, clique no cliente e em “Retomar conversa”.",
+  "Os grupos do WhatsApp (financeiro, estoque...) ficam na aba “Grupos”. O assistente não responde neles, e qualquer pessoa da equipe pode ler e responder.",
 ];
 
 const SIGNIFICADO: Record<Situacao, string> = {
@@ -50,7 +51,8 @@ export function ComoFunciona() {
               ))}
             </ul>
             <p className="mt-5 text-xs text-cinza-medio">
-              Se alguém da loja responder pelo celular, o assistente sai daquela conversa sozinho.
+              Se alguém da loja responder pelo celular, o assistente sai daquela conversa sozinho. Se aparecer uma faixa
+              vermelha “WhatsApp desconectado” no alto da tela, avise o administrador.
             </p>
             <div className="text-right mt-4">
               <button type="button" onClick={() => setAberto(false)} className="rounded-lg bg-vermelho text-white px-5 py-2 font-heading font-bold">

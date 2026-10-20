@@ -6,6 +6,8 @@
  *   agenda a resposta.
  * - Do PRÓPRIO número (alguém respondeu pelo celular ou WhatsApp Web): guarda no
  *   histórico e tira o assistente da conversa, para ele nunca falar junto.
+ *
+ * Mensagens de GRUPO não passam por aqui: vão para a aba "Grupos" (ver grupos.ts).
  */
 import { createAdminClient } from "@/lib/supabase/admin";
 import { evoBaixarMidia } from "@/lib/caio/evolution-api";
@@ -14,8 +16,17 @@ import { salvarArquivo } from "./arquivos";
 import { foiEnviadoPeloSistema } from "./whatsapp";
 import { decidirEntrada, normalizarConfig, type AtendStatus } from "./regras";
 import { agendarResposta } from "./assistente";
+import { transcrever } from "./transcricao";
 
-export type EvoKey = { remoteJid?: string; remoteJidAlt?: string; fromMe?: boolean; id?: string };
+export type EvoKey = {
+  remoteJid?: string;
+  remoteJidAlt?: string;
+  fromMe?: boolean;
+  id?: string;
+  /** Em grupo: quem mandou a mensagem. */
+  participant?: string;
+  participantAlt?: string;
+};
 type Msg = Record<string, unknown> | undefined;
 export type EvoMensagem = { key?: EvoKey; pushName?: string; message?: Msg; messageType?: string };
 
@@ -86,29 +97,6 @@ export function normalizarMensagem(bruta: Msg): Normalizada {
   }
   if (m.stickerMessage) return { tipo: "texto", texto: "(figurinha)", midia: null, ignorar: false };
   return { tipo: "texto", texto: null, midia: null, ignorar: true };
-}
-
-/** Transcreve áudio com o Whisper (texto vai para o histórico e para o assistente). */
-async function transcrever(base64: string, mime: string): Promise<string | null> {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) return null;
-  try {
-    const form = new FormData();
-    form.set("file", new File([Buffer.from(base64, "base64")], "audio.ogg", { type: mime || "audio/ogg" }));
-    form.set("model", process.env.OPENAI_WHISPER_MODEL ?? "whisper-1");
-    form.set("language", "pt");
-    const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}` },
-      body: form,
-      signal: AbortSignal.timeout(60000),
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { text?: string };
-    return data.text?.trim() || null;
-  } catch {
-    return null;
-  }
 }
 
 function maisRecente(a: string | null, b: string | null): string | null {

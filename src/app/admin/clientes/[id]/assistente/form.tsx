@@ -117,7 +117,7 @@ export function FormAssistente(props: {
       <Secao
         numero={1}
         titulo="Informações da loja"
-        ajuda="É tudo o que o assistente sabe sobre a loja. Ele usa para tirar dúvidas simples; o que não estiver escrito aqui, ele passa para uma atendente."
+        ajuda="É o “cérebro” do assistente: tudo o que ele sabe sobre a loja. Ele usa para tirar dúvidas simples; o que não estiver escrito aqui, ele passa para uma atendente."
       >
         <ul className="text-sm text-cinza-medio list-disc pl-5 space-y-0.5">
           <li>Escreva como se explicasse para uma atendente nova: um assunto por bloco, frases curtas.</li>
@@ -283,8 +283,8 @@ export function FormAssistente(props: {
 
       <Secao
         numero={7}
-        titulo="Respostas prontas para as atendentes"
-        ajuda="Frases que aparecem como botões na tela de atendimento, para a atendente mandar com um clique. Uma por linha, até 12."
+        titulo="Respostas prontas (atalhos das atendentes)"
+        ajuda="Frases que aparecem como botões na tela de conversa, para a ATENDENTE mandar com um clique. O assistente NÃO usa estas frases: o que ele sabe vem só das “Informações da loja” (item 1). Uma por linha, até 12."
       >
         <textarea
           value={respostas}

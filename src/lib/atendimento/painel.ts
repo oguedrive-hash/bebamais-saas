@@ -243,6 +243,111 @@ export async function carregarConversa(leadId: string): Promise<{ cliente: Clien
   };
 }
 
+export interface GrupoResumo {
+  id: string;
+  nome: string;
+  numeroApelido: string | null;
+  ultimaMensagem: string | null;
+  ultimaMensagemEm: string | null;
+  /** A última mensagem foi da própria loja (painel ou celular)? Então não há nada novo para ler. */
+  ultimaDaLoja: boolean;
+}
+
+/** Grupos do WhatsApp (aba "Grupos"), do mais movimentado agora para o mais parado. */
+export async function listarGrupos(): Promise<GrupoResumo[]> {
+  const supabase = await createClient();
+  const { data: grupos } = await supabase
+    .from("grupos")
+    .select("id, nome, instance_name, ultima_atividade_em, created_at")
+    .order("ultima_atividade_em", { ascending: false, nullsFirst: false })
+    .limit(100);
+  if (!grupos?.length) return [];
+  const [{ data: msgs }, apelidos] = await Promise.all([
+    supabase
+      .from("grupo_mensagens")
+      .select("grupo_id, tipo, conteudo, direcao, remetente_nome, created_at")
+      .in("grupo_id", grupos.map((g) => g.id))
+      .order("created_at", { ascending: false })
+      .limit(400),
+    apelidosDosNumeros(),
+  ]);
+  const ultima = new Map<string, { tipo: string; conteudo: string | null; direcao: string; remetente_nome: string | null; created_at: string }>();
+  for (const m of msgs ?? []) if (!ultima.has(m.grupo_id)) ultima.set(m.grupo_id, m);
+  return grupos.map((g) => {
+    const u = ultima.get(g.id);
+    const quem = u?.direcao === "saida" ? "Você" : u?.remetente_nome?.trim();
+    return {
+      id: g.id,
+      nome: g.nome?.trim() || "Grupo sem nome",
+      numeroApelido: apelidos[g.instance_name] ?? null,
+      ultimaMensagem: u ? `${quem ? `${quem}: ` : ""}${previa(u)}` : null,
+      ultimaMensagemEm: u?.created_at ?? g.ultima_atividade_em ?? g.created_at,
+      ultimaDaLoja: u?.direcao === "saida",
+    };
+  });
+}
+
+export async function carregarGrupo(grupoId: string): Promise<{ grupo: GrupoResumo; mensagens: MensagemPainel[] } | null> {
+  const supabase = await createClient();
+  const { data: g } = await supabase
+    .from("grupos")
+    .select("id, nome, instance_name, ultima_atividade_em, created_at")
+    .eq("id", grupoId)
+    .maybeSingle();
+  if (!g) return null;
+  const { data: msgs } = await supabase
+    .from("grupo_mensagens")
+    .select("id, direcao, autor, remetente_nome, remetente_numero, tipo, conteudo, arquivo_path, arquivo_nome, falha_envio, created_at")
+    .eq("grupo_id", grupoId)
+    .order("created_at", { ascending: false })
+    .limit(200);
+  const lista = (msgs ?? []).reverse();
+  const [links, apelidos] = await Promise.all([
+    linksAssinados(lista.map((m) => m.arquivo_path).filter(Boolean) as string[]),
+    apelidosDosNumeros(),
+  ]);
+  const ult = lista[lista.length - 1];
+  return {
+    grupo: {
+      id: g.id,
+      nome: g.nome?.trim() || "Grupo sem nome",
+      numeroApelido: apelidos[g.instance_name] ?? null,
+      ultimaMensagem: null,
+      ultimaMensagemEm: ult?.created_at ?? g.ultima_atividade_em ?? g.created_at,
+      ultimaDaLoja: ult?.direcao === "saida",
+    },
+    mensagens: lista.map((m) => {
+      const deMembro = m.direcao === "entrada";
+      return {
+        id: m.id,
+        doCliente: deMembro,
+        autor: m.autor,
+        remetente: deMembro
+          ? m.remetente_nome?.trim() || (m.remetente_numero ? formatarTelefone(m.remetente_numero) : "Alguém do grupo")
+          : m.autor === "celular"
+            ? "Pelo celular"
+            : m.remetente_nome?.trim() || "Loja",
+        tipo: m.tipo ?? "texto",
+        texto: m.conteudo,
+        arquivoUrl: m.arquivo_path ? links[m.arquivo_path] ?? null : null,
+        arquivoNome: m.arquivo_nome,
+        falhou: m.falha_envio === true,
+        em: m.created_at,
+      };
+    }),
+  };
+}
+
+/** Números da loja que caíram (desconectados): aparecem num aviso vermelho para toda a equipe. */
+export async function numerosDesconectados(): Promise<string[]> {
+  const { data } = await createAdminClient()
+    .from("org_numeros")
+    .select("apelido, numero, status_conexao, ativo")
+    .eq("ativo", true)
+    .eq("status_conexao", "close");
+  return (data ?? []).map((n) => n.apelido?.trim() || (n.numero ? formatarTelefone(n.numero) : "da loja"));
+}
+
 export async function listarAtendentes(orgId: string | null): Promise<{ id: string; nome: string }[]> {
   if (!orgId) return [];
   const { data } = await createAdminClient()

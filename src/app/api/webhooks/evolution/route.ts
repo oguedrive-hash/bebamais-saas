@@ -7,9 +7,16 @@
  * nada é processado — ninguém de fora consegue injetar mensagens falsas.
  */
 import { NextResponse, type NextRequest, after } from "next/server";
-import { assertTenantConfig } from "@/lib/caio/config";
+import { assertTenantConfig, ORG_ID } from "@/lib/caio/config";
 import { webhookAutorizado } from "@/lib/seguranca";
 import { atualizarConexao, processarMensagem, type EvoMensagem } from "@/lib/atendimento/inbound";
+import { grupoDaMensagem, processarMensagemDeGrupo } from "@/lib/atendimento/grupos";
+import {
+  atualizarConexaoAprendizado,
+  ehInstanciaAprendizado,
+  registrarMensagemAprendizado,
+  type MensagemEvo,
+} from "@/lib/aprendizado/captura";
 
 export async function POST(request: NextRequest) {
   if (!webhookAutorizado(request.nextUrl.searchParams.get("token"))) {
@@ -31,6 +38,29 @@ export async function POST(request: NextRequest) {
   const instance = typeof body.instance === "string" ? body.instance : "";
   if (!instance) return NextResponse.json({ ok: true });
   const evento = (body.event ?? "").toLowerCase().replace(/_/g, ".");
+  const lista = Array.isArray(body.data) ? body.data : [body.data];
+
+  // APRENDIZADO: o WhatsApp da loja conectado só para LER. Desvia ANTES de tudo:
+  // nada daqui vira cliente, e o assistente nunca responde. Ver lib/aprendizado.
+  if (ehInstanciaAprendizado(instance)) {
+    if (evento === "connection.update") {
+      const conn = body.data as { state?: string; wuid?: string } | undefined;
+      after(() =>
+        atualizarConexaoAprendizado(ORG_ID, instance, conn?.state ?? "", conn?.wuid ?? null).catch((e) =>
+          console.error("[aprendizado] conexão:", e),
+        ),
+      );
+    } else if (evento === "messages.upsert") {
+      for (const d of lista) {
+        after(() =>
+          registrarMensagemAprendizado(d as MensagemEvo, ORG_ID, instance).catch((e) =>
+            console.error("[aprendizado] mensagem:", e),
+          ),
+        );
+      }
+    }
+    return NextResponse.json({ ok: true });
+  }
 
   if (evento === "connection.update") {
     const estado = (body.data as { state?: string } | undefined)?.state ?? "";
@@ -42,12 +72,12 @@ export async function POST(request: NextRequest) {
     // Responde 200 na hora e processa em segundo plano (baixar foto, transcrever
     // áudio e esperar o cliente terminar de digitar levam alguns segundos; se o
     // webhook demorar, a Evolution acha que falhou e reenvia).
-    const lista = Array.isArray(body.data) ? body.data : [body.data];
     for (const d of lista) {
+      const msg = d as EvoMensagem;
+      // Grupo vai para a aba "Grupos": o assistente nunca responde em grupo.
+      const processar = grupoDaMensagem(msg?.key) ? processarMensagemDeGrupo : processarMensagem;
       after(() =>
-        processarMensagem(instance, d as EvoMensagem).catch((e) =>
-          console.error("[webhook:evolution] erro:", e),
-        ),
+        processar(instance, msg).catch((e) => console.error("[webhook:evolution] erro:", e)),
       );
     }
   }

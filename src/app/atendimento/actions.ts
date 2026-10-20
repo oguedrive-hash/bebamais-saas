@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { usuarioAtual, type UsuarioPainel } from "@/lib/atendimento/painel";
 import { enviarArquivo, enviarTexto } from "@/lib/atendimento/whatsapp";
+import { enviarArquivoGrupo, enviarTextoGrupo } from "@/lib/atendimento/grupos";
 import { TAMANHO_MAX_BYTES } from "@/lib/atendimento/arquivos";
 
 type Resultado = { ok: true } | { error: string };
@@ -131,6 +132,47 @@ export async function passarCliente(leadId: string, paraId: string | null): Prom
   }
   revalidatePath("/atendimento");
   return { ok: true };
+}
+
+/**
+ * Grupo: qualquer pessoa da equipe pode responder (não existe "pegar" grupo).
+ * A regra de acesso do banco só deixa ver grupos da mesma empresa.
+ */
+async function contextoGrupo(grupoId: string): Promise<{ usuario: UsuarioPainel } | { error: string }> {
+  const usuario = await usuarioAtual();
+  if (!usuario) return { error: "Sua sessão expirou. Entre de novo." };
+  const supabase = await createClient();
+  const { data } = await supabase.from("grupos").select("id").eq("id", grupoId).maybeSingle();
+  if (!data) return { error: "Grupo não encontrado." };
+  return { usuario };
+}
+
+export async function enviarMensagemGrupoAction(grupoId: string, texto: string): Promise<Resultado> {
+  const ctx = await contextoGrupo(grupoId);
+  if ("error" in ctx) return ctx;
+  const r = await enviarTextoGrupo({ grupoId, texto, remetenteNome: ctx.usuario.nome });
+  revalidatePath("/atendimento");
+  return "error" in r ? { error: `Não foi enviada: ${r.error}` } : { ok: true };
+}
+
+export async function enviarArquivoGrupoAction(formData: FormData): Promise<Resultado> {
+  const grupoId = String(formData.get("grupoId") ?? "");
+  const arquivo = formData.get("arquivo");
+  const legenda = String(formData.get("legenda") ?? "");
+  if (!(arquivo instanceof File) || arquivo.size === 0) return { error: "Escolha uma foto ou arquivo." };
+  if (arquivo.size > TAMANHO_MAX_BYTES) return { error: "Arquivo grande demais (máximo 15 MB)." };
+  const ctx = await contextoGrupo(grupoId);
+  if ("error" in ctx) return ctx;
+  const r = await enviarArquivoGrupo({
+    grupoId,
+    conteudo: Buffer.from(await arquivo.arrayBuffer()),
+    mime: arquivo.type || "application/octet-stream",
+    nome: arquivo.name || "arquivo",
+    legenda,
+    remetenteNome: ctx.usuario.nome,
+  });
+  revalidatePath("/atendimento");
+  return "error" in r ? { error: `Não foi enviado: ${r.error}` } : { ok: true };
 }
 
 export async function finalizarAtendimento(leadId: string): Promise<Resultado> {

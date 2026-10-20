@@ -56,6 +56,7 @@ export default async function AdminLayout({
               <NavLink href={cfg("assistente")}>Assistente</NavLink>
               <NavLink href={cfg("numeros")}>Números de WhatsApp</NavLink>
               <NavLink href={cfg("usuarios")}>Atendentes</NavLink>
+              <NavLink href={cfg("aprendizado")}>Aprendizado</NavLink>
               <Link
                 href="/atendimento"
                 className="text-sm font-heading font-medium text-cinza-medio hover:text-preto transition"
@@ -90,6 +91,7 @@ export default async function AdminLayout({
           <NavLink href={cfg("assistente")}>Assistente</NavLink>
           <NavLink href={cfg("numeros")}>Números</NavLink>
           <NavLink href={cfg("usuarios")}>Atendentes</NavLink>
+          <NavLink href={cfg("aprendizado")}>Aprendizado</NavLink>
           <Link href="/atendimento" className="text-sm font-heading font-medium text-cinza-medio">
             ← Conversas
           </Link>

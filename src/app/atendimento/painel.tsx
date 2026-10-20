@@ -1,23 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import type { ClienteResumo, MensagemPainel } from "@/lib/atendimento/painel";
+import type { ClienteResumo, GrupoResumo, MensagemPainel } from "@/lib/atendimento/painel";
 import { Conversa } from "./conversa";
+import { GrupoConversa } from "./grupo";
 import { tempoDesde, useAgora, ROTULO_ASSUNTO, COR_SITUACAO, situacaoDe, type Situacao } from "./util";
+
+/** "agora" = quem está em atendimento; "todas" = visão geral, inclusive finalizadas; "grupos" = grupos do WhatsApp. */
+export type Aba = "agora" | "todas" | "grupos";
 
 interface Props {
   usuario: { id: string; nome: string; admin: boolean };
   orgId: string | null;
   clientes: ClienteResumo[];
   conversa: { cliente: ClienteResumo; mensagens: MensagemPainel[] } | null;
+  grupos: GrupoResumo[];
+  grupoAberto: { grupo: GrupoResumo; mensagens: MensagemPainel[] } | null;
+  /** Números da loja desconectados (aviso vermelho para toda a equipe). */
+  numerosCaidos: string[];
   atendentes: { id: string; nome: string }[];
   respostasRapidas: string[];
   busca: string | null;
-  /** "agora" = quem está em atendimento; "todas" = visão geral, inclusive finalizadas. */
-  aba: "agora" | "todas";
+  aba: Aba;
   limite: number;
   temMais: boolean;
   paginaTodas: number;
@@ -44,6 +51,7 @@ function useAtualizacaoAoVivo(orgId: string | null) {
         .channel("painel-atendimento")
         .on("postgres_changes", { event: "*", schema: "public", table: "mensagens", ...filtro }, atualizar)
         .on("postgres_changes", { event: "*", schema: "public", table: "leads", ...filtro }, atualizar)
+        .on("postgres_changes", { event: "*", schema: "public", table: "grupo_mensagens", ...filtro }, atualizar)
         .subscribe();
     })();
     // Garantia: mesmo se o tempo real cair, a tela se atualiza a cada 15 segundos.
@@ -70,6 +78,76 @@ function useAvisoDeClienteNovo(idsEsperando: string[] | null) {
     vistos.current = atual;
     document.title = idsEsperando.length ? `(${idsEsperando.length}) Esperando - Atendimento` : "Atendimento";
   }, [idsEsperando]);
+}
+
+/**
+ * Grupos com mensagem nova: guarda neste navegador quando cada grupo foi aberto
+ * pela última vez. Grupo nunca aberto conta a partir da primeira vez que o painel
+ * foi aberto aqui (para não marcar o histórico inteiro como novo).
+ */
+const CHAVE_GRUPOS_VISTOS = "bebamais:grupos-vistos";
+type Vistos = { inicio: string; grupos: Record<string, string> };
+
+const ouvintesVistos = new Set<() => void>();
+
+/** Texto guardado (a "foto" que o React compara); vazio no servidor ou sem armazenamento. */
+function fotoVistos(): string {
+  try {
+    return localStorage.getItem(CHAVE_GRUPOS_VISTOS) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function assinarVistos(avisar: () => void) {
+  ouvintesVistos.add(avisar);
+  window.addEventListener("storage", avisar); // outra aba marcou um grupo como lido
+  return () => {
+    ouvintesVistos.delete(avisar);
+    window.removeEventListener("storage", avisar);
+  };
+}
+
+function lerVistos(foto: string): Vistos | null {
+  try {
+    const salvo = JSON.parse(foto || "null");
+    if (salvo && typeof salvo.inicio === "string" && salvo.grupos && typeof salvo.grupos === "object") return salvo;
+  } catch {
+    /* guardado estragado: começa do zero */
+  }
+  return null;
+}
+
+/** Marca o grupo como lido agora (ou só começa a contagem, se nunca foi aberto nada aqui). */
+function marcarVisto(grupoId: string | null) {
+  const atual = lerVistos(fotoVistos()) ?? { inicio: new Date().toISOString(), grupos: {} };
+  if (grupoId) atual.grupos[grupoId] = new Date().toISOString();
+  try {
+    localStorage.setItem(CHAVE_GRUPOS_VISTOS, JSON.stringify(atual));
+  } catch {
+    return; // navegador sem armazenamento: fica sem a bolinha de "novo"
+  }
+  ouvintesVistos.forEach((avisar) => avisar());
+}
+
+function useGruposNovos(grupos: GrupoResumo[], abertoId: string | null): Set<string> {
+  const foto = useSyncExternalStore(assinarVistos, fotoVistos, () => "");
+  const vistos = useMemo(() => lerVistos(foto), [foto]);
+  // Grupo aberto = lido até agora (inclusive o que chegar enquanto ele está aberto).
+  const ultimaDoAberto = grupos.find((g) => g.id === abertoId)?.ultimaMensagemEm ?? null;
+  useEffect(() => {
+    marcarVisto(abertoId);
+  }, [abertoId, ultimaDoAberto]);
+  return useMemo(() => {
+    const novos = new Set<string>();
+    if (!vistos) return novos;
+    for (const g of grupos) {
+      if (g.id === abertoId || g.ultimaDaLoja || !g.ultimaMensagemEm) continue;
+      const desde = vistos.grupos[g.id] ?? vistos.inicio;
+      if (g.ultimaMensagemEm > desde) novos.add(g.id);
+    }
+    return novos;
+  }, [grupos, vistos, abertoId]);
 }
 
 function tocarAviso() {
@@ -111,8 +189,10 @@ export function Painel(props: Props) {
   // Na busca a lista não é a fila: lá o aviso sonoro fica quieto.
   useAvisoDeClienteNovo(busca ? null : idsEsperando);
 
-  const selecionado = conversa?.cliente.id ?? null;
-  const endereco = (extra: { c?: string; aba?: "agora" | "todas"; limite?: number }) => {
+  const grupoAbertoId = props.grupoAberto?.grupo.id ?? null;
+  const gruposNovos = useGruposNovos(props.grupos, grupoAbertoId);
+  const selecionado = conversa?.cliente.id ?? grupoAbertoId;
+  const endereco = (extra: { c?: string; g?: string; aba?: Aba; limite?: number }) => {
     const p = new URLSearchParams();
     if (extra.c) p.set("c", extra.c);
     if (busca) p.set("busca", busca);
@@ -121,6 +201,9 @@ export function Painel(props: Props) {
       p.set("aba", "todas");
       const l = extra.limite ?? props.limite;
       if (l > props.paginaTodas) p.set("limite", String(l));
+    } else if (qualAba === "grupos") {
+      p.set("aba", "grupos");
+      if (extra.g) p.set("g", extra.g);
     }
     const q = p.toString();
     return q ? `/atendimento?${q}` : "/atendimento";
@@ -139,7 +222,22 @@ export function Painel(props: Props) {
   );
 
   return (
-    <div className="h-full flex">
+    <div className="h-full flex flex-col">
+      {props.numerosCaidos.length > 0 && (
+        <div className="shrink-0 bg-red-600 text-white px-4 py-2.5 text-sm flex flex-wrap items-center justify-between gap-2">
+          <p>
+            <strong>⚠ WhatsApp desconectado: {props.numerosCaidos.join(", ")}.</strong> As mensagens{" "}
+            {props.numerosCaidos.length > 1 ? "desses números" : "desse número"} não estão chegando no painel.
+            {usuario.admin ? " Conecte de novo lendo o QR Code." : " Avise o administrador."}
+          </p>
+          {usuario.admin && (
+            <Link href="/admin" className="shrink-0 rounded-lg bg-white text-red-700 px-3 py-1 font-heading font-bold">
+              Conectar agora
+            </Link>
+          )}
+        </div>
+      )}
+    <div className="flex-1 min-h-0 flex">
       {/* Lista de clientes */}
       <aside className={`w-full md:w-[360px] shrink-0 border-r border-cinza-claro bg-white flex flex-col ${selecionado ? "hidden md:flex" : "flex"}`}>
         <form action="/atendimento" className="p-3 border-b border-cinza-claro flex gap-2">
@@ -158,10 +256,13 @@ export function Painel(props: Props) {
         ) : (
           <nav className="flex border-b border-cinza-claro text-sm font-heading font-semibold">
             <AbaLink href={endereco({ aba: "agora" })} ativa={aba === "agora"}>
-              Agora{grupos.esperando.length > 0 && aba === "agora" ? ` (${grupos.esperando.length} esperando)` : ""}
+              Agora{grupos.esperando.length > 0 && aba !== "todas" ? ` (${grupos.esperando.length})` : ""}
             </AbaLink>
             <AbaLink href={endereco({ aba: "todas", limite: props.paginaTodas })} ativa={aba === "todas"}>
               Todas as conversas
+            </AbaLink>
+            <AbaLink href={endereco({ aba: "grupos" })} ativa={aba === "grupos"}>
+              Grupos{gruposNovos.size > 0 ? ` (${gruposNovos.size})` : ""}
             </AbaLink>
           </nav>
         )}
@@ -171,6 +272,27 @@ export function Painel(props: Props) {
             <Grupo titulo="Resultado da busca" vazio="Nenhum cliente encontrado.">
               {clientes.map((c) => item(c, true))}
             </Grupo>
+          ) : aba === "grupos" ? (
+            <>
+              <p className="px-4 py-2 text-xs text-cinza-medio border-b border-cinza-claro">
+                Grupos do WhatsApp da loja. O assistente não responde em grupos. Qualquer pessoa da equipe pode ler e responder.
+              </p>
+              {props.grupos.length === 0 && (
+                <p className="px-4 py-3 text-sm text-cinza-medio">
+                  Nenhum grupo ainda. Quando alguém mandar mensagem num grupo de que o WhatsApp da loja participa, ele aparece aqui.
+                </p>
+              )}
+              {props.grupos.map((g) => (
+                <ItemGrupo
+                  key={g.id}
+                  g={g}
+                  href={endereco({ aba: "grupos", g: g.id })}
+                  ativo={g.id === grupoAbertoId}
+                  novo={gruposNovos.has(g.id)}
+                  agora={agora}
+                />
+              ))}
+            </>
           ) : aba === "todas" ? (
             <>
               <p className="px-4 py-2 text-xs text-cinza-medio border-b border-cinza-claro">
@@ -219,7 +341,14 @@ export function Painel(props: Props) {
 
       {/* Conversa aberta */}
       <section className={`flex-1 min-w-0 ${selecionado ? "flex" : "hidden md:flex"} flex-col`}>
-        {conversa ? (
+        {props.grupoAberto ? (
+          <GrupoConversa
+            key={props.grupoAberto.grupo.id}
+            grupo={props.grupoAberto.grupo}
+            mensagens={props.grupoAberto.mensagens}
+            voltarHref={endereco({})}
+          />
+        ) : conversa ? (
           <Conversa
             key={conversa.cliente.id}
             usuario={usuario}
@@ -231,6 +360,15 @@ export function Painel(props: Props) {
           />
         ) : (
           <div className="flex-1 flex items-center justify-center p-8">
+            {aba === "grupos" ? (
+              <div className="max-w-sm text-center">
+                <p className="text-xl font-heading font-semibold text-preto mb-2">Escolha um grupo na lista</p>
+                <p className="text-cinza-medio">
+                  Os grupos com <span className="font-semibold text-amber-700">mensagem nova</span> aparecem com uma bolinha amarela.
+                  Clique para ler e responder.
+                </p>
+              </div>
+            ) : (
             <div className="max-w-sm text-center">
               <p className="text-xl font-heading font-semibold text-preto mb-2">Escolha um cliente na lista</p>
               <p className="text-cinza-medio">
@@ -245,10 +383,43 @@ export function Painel(props: Props) {
                 ))}
               </ul>
             </div>
+            )}
           </div>
         )}
       </section>
     </div>
+    </div>
+  );
+}
+
+function ItemGrupo(props: { g: GrupoResumo; href: string; ativo: boolean; novo: boolean; agora: number }) {
+  const { g } = props;
+  return (
+    <Link
+      href={props.href}
+      className={`block pl-3 pr-4 py-3 border-l-4 border-t border-t-cinza-claro/60 first:border-t-0 transition ${
+        props.novo ? "border-l-amber-500" : "border-l-transparent"
+      } ${props.ativo ? "bg-dourado/15" : props.novo ? "bg-amber-50 hover:bg-amber-100" : "hover:bg-offwhite"}`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-heading font-semibold text-preto truncate">
+          <span aria-hidden>👥 </span>
+          {g.nome}
+        </span>
+        <span className="shrink-0 flex items-center gap-1.5">
+          {props.novo && <span className="h-2.5 w-2.5 rounded-full bg-amber-500" title="Mensagem nova" />}
+          {g.ultimaMensagemEm && <span className="text-xs text-cinza-medio">{tempoDesde(g.ultimaMensagemEm, props.agora)}</span>}
+        </span>
+      </div>
+      {g.numeroApelido && (
+        <span className="mt-1 inline-block text-[11px] font-semibold rounded border border-cinza-claro text-cinza-medio px-1.5 py-0.5">
+          {g.numeroApelido}
+        </span>
+      )}
+      {g.ultimaMensagem && (
+        <p className={`mt-1 text-sm truncate ${props.novo ? "text-preto font-semibold" : "text-cinza-medio"}`}>{g.ultimaMensagem}</p>
+      )}
+    </Link>
   );
 }
 
@@ -256,7 +427,7 @@ function AbaLink(props: { href: string; ativa: boolean; children: React.ReactNod
   return (
     <Link
       href={props.href}
-      className={`flex-1 px-3 py-2.5 text-center border-b-2 transition ${
+      className={`flex-auto whitespace-nowrap px-2 py-2.5 text-center border-b-2 transition ${
         props.ativa ? "border-vermelho text-preto" : "border-transparent text-cinza-medio hover:text-preto hover:bg-offwhite"
       }`}
     >
