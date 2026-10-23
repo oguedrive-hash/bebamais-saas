@@ -175,14 +175,17 @@ export async function atualizarConexaoAprendizado(
   numero?: string | null,
 ): Promise<void> {
   if (!estado) return;
+  const admin = createAdminClient();
   const upd: Record<string, unknown> = { status_conexao: estado, updated_at: new Date().toISOString() };
+  if (estado === "open" && numero) upd.numero = numero.replace(/@.*/, "").replace(/\D/g, "");
+  await admin.from("aprendizado_config").update(upd).eq("organization_id", organizationId).eq("instance_name", instance);
+  // A data de conexão é a da PRIMEIRA vez: as reconexões de toda noite não zeram os "dias captando".
   if (estado === "open") {
-    upd.conectado_em = new Date().toISOString();
-    if (numero) upd.numero = numero.replace(/@.*/, "").replace(/\D/g, "");
+    await admin
+      .from("aprendizado_config")
+      .update({ conectado_em: new Date().toISOString() })
+      .eq("organization_id", organizationId)
+      .eq("instance_name", instance)
+      .is("conectado_em", null);
   }
-  await createAdminClient()
-    .from("aprendizado_config")
-    .update(upd)
-    .eq("organization_id", organizationId)
-    .eq("instance_name", instance);
 }

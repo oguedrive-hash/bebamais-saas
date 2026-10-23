@@ -14,7 +14,7 @@ import { evoBaixarMidia } from "@/lib/caio/evolution-api";
 import { ORG_ID, INSTANCE_NAME } from "@/lib/caio/config";
 import { salvarArquivo } from "./arquivos";
 import { foiEnviadoPeloSistema } from "./whatsapp";
-import { decidirEntrada, normalizarConfig, type AtendStatus } from "./regras";
+import { decidirEntrada, ehContatoInterno, normalizarConfig, type AtendStatus } from "./regras";
 import { agendarResposta } from "./assistente";
 import { transcrever } from "./transcricao";
 
@@ -309,6 +309,16 @@ export async function processarMensagem(instance: string, d: EvoMensagem): Promi
         Object.assign(upd, { atend_status: "atendendo", atribuido_a: null, atribuido_nome: "Pelo celular", atribuido_em: agora.toISOString() });
       }
       upd.caio_responder_em = null;
+    } else if (ehContatoInterno(telefone, cfg)) {
+      // Dono, financeiro, motorista, fornecedor: fica registrado em "Todas as conversas",
+      // mas o assistente não responde e não entra na fila de espera.
+      Object.assign(upd, {
+        ultima_msg_lead_em: agora.toISOString(),
+        evolution_instance: instance,
+        atend_status: atual.atend_status === "atendendo" ? "atendendo" : "finalizado",
+        caio_responder_em: null,
+      });
+      if (!atual.nome && d.pushName?.trim()) upd.nome = d.pushName.trim();
     } else {
       const naListaDeTeste =
         numero.testes.length === 0 ||

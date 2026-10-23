@@ -44,12 +44,16 @@ export function FormAssistente(props: {
   const [informacoes, setInformacoes] = useState(props.informacoesIniciais);
   const [config, setConfig] = useState(props.configInicial);
   const [respostas, setRespostas] = useState(props.respostasIniciais.join("\n"));
+  const [internos, setInternos] = useState(props.configInicial.contatos_internos.join("\n"));
   const [novaData, setNovaData] = useState("");
   const [msg, setMsg] = useState<{ tipo: "ok" | "erro"; texto: string } | null>(null);
   const [pendente, iniciar] = useTransition();
   // O que está salvo no banco: base para saber se há alteração pendente.
-  const [salvo, setSalvo] = useState(() => JSON.stringify([props.informacoesIniciais, props.configInicial, props.respostasIniciais.join("\n")]));
-  const alterado = JSON.stringify([informacoes, config, respostas]) !== salvo;
+  const [salvo, setSalvo] = useState(() =>
+    JSON.stringify([props.informacoesIniciais, props.configInicial, props.respostasIniciais.join("\n"), props.configInicial.contatos_internos.join("\n")]),
+  );
+  const alterado = JSON.stringify([informacoes, config, respostas, internos]) !== salvo;
+  const internosValidos = internos.split("\n").filter((l) => l.replace(/\D/g, "").length >= 10).length;
 
   // Avisa antes de fechar ou recarregar a página com alteração não salva.
   useEffect(() => {
@@ -77,12 +81,12 @@ export function FormAssistente(props: {
     iniciar(async () => {
       const r = await salvarAssistente(props.orgId, {
         informacoes,
-        config,
+        config: { ...config, contatos_internos: internos.split("\n").filter((l) => l.trim()) },
         respostasRapidas: respostas.split("\n"),
       });
       if ("error" in r) setMsg({ tipo: "erro", texto: r.error });
       else {
-        setSalvo(JSON.stringify([informacoes, config, respostas]));
+        setSalvo(JSON.stringify([informacoes, config, respostas, internos]));
         setMsg({ tipo: "ok", texto: "Salvo! O assistente já está usando as novas informações." });
       }
     });
@@ -292,6 +296,25 @@ export function FormAssistente(props: {
           rows={7}
           className="w-full rounded-lg border border-cinza-claro px-3 py-2 text-sm focus:outline-none focus:border-vermelho"
         />
+      </Secao>
+
+      <Secao
+        numero={8}
+        titulo="Telefones que o assistente não responde"
+        ajuda="Dono, financeiro, motoristas, fornecedores e outras pessoas da equipe que escrevem para o WhatsApp da loja. O assistente não responde esses telefones e a conversa não entra na fila de espera: ela fica só em “Todas as conversas”. Um telefone por linha, com DDD. Pode escrever o nome junto."
+      >
+        <textarea
+          value={internos}
+          onChange={(e) => setInternos(e.target.value)}
+          rows={5}
+          placeholder={"Osmar (19) 99999-0000\nFinanceiro (19) 98888-0000\nMotorista Celso (19) 97777-0000"}
+          className="w-full rounded-lg border border-cinza-claro px-3 py-2 text-sm focus:outline-none focus:border-vermelho"
+        />
+        <p className="text-xs text-cinza-medio">
+          {internosValidos
+            ? `${internosValidos} telefone(s) na lista.`
+            : "Nenhum telefone na lista: o assistente responde todo mundo que não for dos telefones de teste."}
+        </p>
       </Secao>
 
       {/* Barra de salvar: fica sempre visível no rodapé da tela. */}

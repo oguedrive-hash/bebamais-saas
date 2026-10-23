@@ -39,6 +39,12 @@ export interface AtendimentoConfig {
   cidade: string;
   /** Datas em que a loja não abre (feriados), no formato "2026-10-12", horário de São Paulo. */
   dias_fechados: string[];
+  /**
+   * Telefones da equipe e de parceiros (dono, financeiro, motoristas, fornecedores),
+   * um por linha, como o admin escreveu ("Osmar 19 99999-0000"). O assistente não
+   * responde esses telefones e a conversa não entra na fila de espera.
+   */
+  contatos_internos: string[];
 }
 
 export const CONFIG_PADRAO: AtendimentoConfig = {
@@ -56,6 +62,7 @@ export const CONFIG_PADRAO: AtendimentoConfig = {
   assistente_ativo: true,
   cidade: "Americana/SP",
   dias_fechados: [],
+  contatos_internos: [],
 };
 
 /** Mescla o que veio do banco com o padrão (campos ausentes/errados viram padrão). */
@@ -84,7 +91,37 @@ export function normalizarConfig(raw: unknown): AtendimentoConfig {
     dias_fechados: Array.isArray(r.dias_fechados)
       ? [...new Set(r.dias_fechados.filter((d): d is string => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d)))].sort().slice(-60)
       : [],
+    contatos_internos: Array.isArray(r.contatos_internos)
+      ? r.contatos_internos
+          .filter((l): l is string => typeof l === "string" && l.replace(/\D/g, "").length >= 8)
+          .map((l) => l.trim().slice(0, 80))
+          .slice(0, 100)
+      : [],
   };
+}
+
+/**
+ * Telefone em partes comparáveis: DDD (se houver) e os 8 últimos dígitos. Assim
+ * "+55 19 99999-0000", "19999990000" e o formato antigo sem o 9 ("551999990000")
+ * são o mesmo telefone.
+ */
+function partesTelefone(t: string): { ddd: string | null; final: string } {
+  let d = t.replace(/\D/g, "");
+  if (d.length >= 12 && d.startsWith("55")) d = d.slice(2);
+  return { ddd: d.length >= 10 ? d.slice(0, 2) : null, final: d.slice(-8) };
+}
+
+export function mesmoTelefone(a: string, b: string): boolean {
+  const x = partesTelefone(a);
+  const y = partesTelefone(b);
+  if (x.final.length < 8 || x.final !== y.final) return false;
+  return !x.ddd || !y.ddd || x.ddd === y.ddd;
+}
+
+/** O telefone é da lista de contatos internos (o assistente não responde)? */
+export function ehContatoInterno(telefone: string, cfg: Pick<AtendimentoConfig, "contatos_internos">): boolean {
+  if (!telefone) return false;
+  return cfg.contatos_internos.some((linha) => mesmoTelefone(telefone, linha));
 }
 
 export function horaValida(h: unknown): h is string {

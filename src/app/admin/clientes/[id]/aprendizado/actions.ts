@@ -31,7 +31,7 @@ function caminho(organizationId: string) {
 async function configAtual(organizationId: string) {
   const { data } = await createAdminClient()
     .from("aprendizado_config")
-    .select("instance_name, status_conexao")
+    .select("instance_name, status_conexao, conectado_em")
     .eq("organization_id", organizationId)
     .maybeSingle();
   return data;
@@ -51,7 +51,7 @@ export async function conectarAprendizado(
       .from("aprendizado_config")
       .insert({ organization_id: organizationId, instance_name: instance, status_conexao: "connecting" });
     if (error) return { error: error.message };
-    cfg = { instance_name: instance, status_conexao: "connecting" };
+    cfg = { instance_name: instance, status_conexao: "connecting", conectado_em: null };
   }
   const criado = await evoCriarInstanciaAprendizado(cfg.instance_name);
   if ("error" in criado) return { error: `Não foi possível criar a conexão: ${criado.error}` };
@@ -71,7 +71,8 @@ export async function situacaoAprendizado(
   const estado = await evoConnectionState(cfg.instance_name);
   if (estado === "unknown") return { estado };
   const upd: Record<string, unknown> = { status_conexao: estado, updated_at: new Date().toISOString() };
-  if (estado === "open" && cfg.status_conexao !== "open") upd.conectado_em = new Date().toISOString();
+  // Data da PRIMEIRA conexão: reconectar não zera os "dias captando".
+  if (estado === "open" && !cfg.conectado_em) upd.conectado_em = new Date().toISOString();
   await createAdminClient().from("aprendizado_config").update(upd).eq("organization_id", organizationId);
   if (estado === "open" && cfg.status_conexao !== "open") revalidatePath(caminho(organizationId));
   return { estado };
