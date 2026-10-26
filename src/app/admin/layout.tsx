@@ -27,7 +27,7 @@ export default async function AdminLayout({
 
   // Bloqueia acesso de quem não é admin
   if (profile?.role !== "admin") {
-    redirect("/dashboard");
+    redirect("/atendimento");
   }
 
   // Single-tenant: a org única vem do env (mesma fonte do resto do clone).
@@ -52,19 +52,16 @@ export default async function AdminLayout({
               <Logo />
             </Link>
             <nav className="hidden md:flex items-center gap-7">
-              {/* Single-tenant (Beba Mais): links DIRETOS pra config da org
-                  única — sem hub "cliente" no meio. "Métricas globais"
-                  (multi-cliente da Facilita) foi removida. */}
-              <NavLink href={cfg("caio")}>Atendente</NavLink>
-              <NavLink href={cfg("followup")}>Follow-up</NavLink>
-              <NavLink href={cfg("numeros")}>Números</NavLink>
-              <NavLink href={cfg("usuarios")}>Usuários</NavLink>
-              <NavLink href={cfg("editar")}>Empresa</NavLink>
+              <NavLink href="/admin" exact>Primeiros passos</NavLink>
+              <NavLink href={cfg("assistente")}>Assistente</NavLink>
+              <NavLink href={cfg("numeros")}>Números de WhatsApp</NavLink>
+              <NavLink href={cfg("usuarios")}>Atendentes</NavLink>
+              <NavLink href={cfg("aprendizado")}>Aprendizado</NavLink>
               <Link
-                href="/dashboard"
+                href="/atendimento"
                 className="text-sm font-heading font-medium text-cinza-medio hover:text-preto transition"
               >
-                ← Painel do cliente
+                ← Voltar para as conversas
               </Link>
             </nav>
           </div>
@@ -88,6 +85,17 @@ export default async function AdminLayout({
             </form>
           </div>
         </div>
+        {/* No celular o menu de cima não cabe: vira uma faixa que rola para o lado. */}
+        <nav className="md:hidden flex gap-5 overflow-x-auto px-6 pb-4 whitespace-nowrap">
+          <NavLink href="/admin" exact>Primeiros passos</NavLink>
+          <NavLink href={cfg("assistente")}>Assistente</NavLink>
+          <NavLink href={cfg("numeros")}>Números</NavLink>
+          <NavLink href={cfg("usuarios")}>Atendentes</NavLink>
+          <NavLink href={cfg("aprendizado")}>Aprendizado</NavLink>
+          <Link href="/atendimento" className="text-sm font-heading font-medium text-cinza-medio">
+            ← Conversas
+          </Link>
+        </nav>
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8">{children}</main>

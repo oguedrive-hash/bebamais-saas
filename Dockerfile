@@ -38,9 +38,6 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-# ffmpeg pra compressao de video no upload de followup
-RUN apk add --no-cache ffmpeg
-
 # Copia só o que o standalone precisa
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./

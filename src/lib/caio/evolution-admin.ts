@@ -48,7 +48,13 @@ async function req(
   }
 }
 
-const WEBHOOK_URL = `${APP_BASE_URL}/api/webhooks/evolution`;
+// O token na URL é o que autentica o webhook (a Evolution não assina as chamadas).
+// Sem WEBHOOK_SECRET o webhook recusa tudo — ver src/lib/seguranca.ts.
+// WEBHOOK_BASE_URL permite a Evolution chamar o painel pela rede interna do Docker.
+const WEBHOOK_BASE = (process.env.WEBHOOK_BASE_URL?.trim() || APP_BASE_URL).replace(/\/+$/, "");
+const WEBHOOK_URL = `${WEBHOOK_BASE}/api/webhooks/evolution?token=${encodeURIComponent(
+  process.env.WEBHOOK_SECRET?.trim() ?? "",
+)}`;
 
 /** Configura o webhook da instância (MESSAGES_UPSERT + CONNECTION_UPDATE → painel).
  * MESSAGES_UPSERT: inbound do lead. CONNECTION_UPDATE: detecta queda do número
@@ -101,6 +107,18 @@ export async function evoQrCode(
   return { base64: d?.base64, pairingCode: d?.pairingCode ?? null };
 }
 
+/**
+ * Desconecta o WhatsApp (logout) sem apagar a instância: o número continua
+ * cadastrado e volta a funcionar lendo o QR Code de novo. Já desconectado = ok.
+ */
+export async function evoDesconectar(
+  instance: string,
+): Promise<{ ok: true } | { error: string }> {
+  const r = await req("DELETE", `/instance/logout/${instance}`);
+  if ("error" in r && !/not connected|not open|close/i.test(r.error)) return r;
+  return { ok: true };
+}
+
 /** Desloga e deleta a instância na Evolution (best-effort). */
 export async function evoDeletarInstancia(
   instance: string,
@@ -109,4 +127,71 @@ export async function evoDeletarInstancia(
   const r = await req("DELETE", `/instance/delete/${instance}`);
   if ("error" in r && !/not found|does not exist/i.test(r.error)) return r;
   return { ok: true };
+}
+
+/** Nome (assunto) de um grupo do WhatsApp, para a aba "Grupos". null se não conseguir. */
+export async function evoNomeDoGrupo(instance: string, grupoJid: string): Promise<string | null> {
+  const r = await req("GET", `/group/findGroupInfos/${instance}?groupJid=${encodeURIComponent(grupoJid)}`);
+  if ("error" in r) return null;
+  const nome = (r.data as { subject?: unknown } | null)?.subject;
+  return typeof nome === "string" && nome.trim() ? nome.trim() : null;
+}
+
+/**
+ * Cria a instância do APRENDIZADO: o WhatsApp da loja conectado só para LER
+ * (ver src/lib/aprendizado/captura.ts). Mesmo modelo da iBrasileira.
+ *
+ * As configurações protegem o celular de quem atende: `readMessages:false`
+ * (não marca nada como lido — a equipe continua vendo o que não respondeu),
+ * `alwaysOnline:false` (não aparece "online" o tempo todo), `groupsIgnore`
+ * (grupo não interessa) e `syncFullHistory` (traz as conversas antigas ao
+ * conectar, para não precisar esperar dias de captura).
+ */
+export async function evoCriarInstanciaAprendizado(
+  instanceName: string,
+): Promise<{ ok: true } | { error: string }> {
+  const configuracoes = {
+    rejectCall: false,
+    groupsIgnore: true,
+    alwaysOnline: false,
+    readMessages: false,
+    readStatus: false,
+    syncFullHistory: true,
+  };
+  const r = await req("POST", "/instance/create", {
+    instanceName,
+    integration: "WHATSAPP-BAILEYS",
+    qrcode: true,
+    ...configuracoes,
+  });
+  if ("error" in r && !/already|exists|in use/i.test(r.error)) return r;
+  // De novo pelo endpoint próprio: garante as configurações mesmo se a
+  // instância já existia ou se o create ignorou algum campo.
+  await req("POST", `/settings/set/${instanceName}`, configuracoes);
+  return evoConfigurarWebhook(instanceName);
+}
+
+/**
+ * Uma página das mensagens que a Evolution guardou da instância (inclui o
+ * histórico trazido na conexão). Devolve os registros crus e quantas páginas há.
+ */
+export async function evoBuscarMensagens(
+  instance: string,
+  pagina: number,
+  porPagina = 200,
+): Promise<{ registros: unknown[]; paginas: number } | { error: string }> {
+  const r = await req("POST", `/chat/findMessages/${instance}`, {
+    where: {},
+    page: pagina,
+    offset: porPagina,
+  });
+  if ("error" in r) return r;
+  const d = r.data as
+    | { messages?: { records?: unknown[]; pages?: number }; records?: unknown[]; pages?: number }
+    | unknown[]
+    | null;
+  if (Array.isArray(d)) return { registros: d, paginas: 1 };
+  const registros = d?.messages?.records ?? d?.records ?? [];
+  const paginas = Number(d?.messages?.pages ?? d?.pages ?? 1) || 1;
+  return { registros, paginas };
 }

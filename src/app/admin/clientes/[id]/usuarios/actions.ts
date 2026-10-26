@@ -132,6 +132,32 @@ export async function resetarSenha(input: {
   return { ok: true };
 }
 
+/**
+ * Troca o nome da pessoa. É o nome que o cliente vê no WhatsApp ("*ANA*:") e
+ * o que aparece no painel ("com Ana").
+ */
+export async function trocarNome(input: {
+  userId: string;
+  organizationId: string;
+  nome: string;
+}): Promise<{ ok: true } | { error: string }> {
+  const ctx = await exigirAdmin();
+  if ("error" in ctx) return ctx;
+  const alvo = await validarAlvo(ctx, input.userId);
+  if ("error" in alvo) return alvo;
+  const nome = input.nome.trim().replace(/\s+/g, " ");
+  if (!nome) return { error: "Informe o nome" };
+  if (nome.length > 60) return { error: "Nome muito comprido (máximo 60 letras)" };
+  const admin = createAdminClient();
+  const { error } = await admin.from("profiles").update({ nome }).eq("id", input.userId);
+  if (error) return { error: error.message };
+  // Quem já está com ela passa a mostrar o nome novo no painel.
+  await admin.from("leads").update({ atribuido_nome: nome }).eq("atribuido_a", input.userId);
+  revalidatePath(`/admin/clientes/${input.organizationId}/usuarios`);
+  revalidatePath("/atendimento");
+  return { ok: true };
+}
+
 export async function removerUsuario(input: {
   userId: string;
   organizationId: string;

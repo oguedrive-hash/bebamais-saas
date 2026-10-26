@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { listarNumeros } from "./actions";
@@ -26,20 +25,13 @@ export default async function NumerosPage({
 
   return (
     <div className="max-w-4xl">
-      <Link
-        href={`/admin/clientes/${id}`}
-        className="inline-flex items-center text-sm text-cinza-medio hover:text-laranja font-heading font-medium mb-4 transition"
-      >
-        ← Voltar pros detalhes
-      </Link>
-
       <div className="mb-8">
         <h1 className="text-4xl font-heading font-bold text-preto">
-          Números do atendente IA
+          Números de WhatsApp
         </h1>
-        <p className="text-sm text-cinza-medio mt-1">
-          {cliente.name} — pool de números (atendimento, prospecção e backup).
-          Cada número é uma instância na Evolution, com persona e voz próprias.
+        <p className="text-cinza-medio mt-2">
+          Aqui ficam os WhatsApps da {cliente.name} ligados ao sistema. As conversas de todos eles aparecem juntas no painel
+          de atendimento, e a resposta sempre sai pelo mesmo número em que o cliente escreveu.
         </p>
       </div>
 
