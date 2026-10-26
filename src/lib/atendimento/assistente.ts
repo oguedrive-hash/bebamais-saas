@@ -6,6 +6,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { chatCompletion, type ChatMessage } from "@/lib/caio/openai";
 import { enviarTexto, mostrarDigitando } from "./whatsapp";
+import { ORG_ID } from "@/lib/caio/config";
 import {
   MAX_RESPOSTAS_ASSISTENTE,
   estaAberto,
@@ -89,13 +90,15 @@ O QUE FAZER EM CADA CASO (os textos entre aspas são modelos de tom; adapte com 
 - Dúvida que as INFORMAÇÕES DA LOJA respondem (horário, endereço, retirada, formas de pagamento): responda com a informação COMPLETA, com todos os itens escritos (ex.: "Aceitamos Pix, dinheiro e cartão."), e termine com "Podemos ajudar em algo mais?". Horário: use os dias exatamente como estão escritos em HORÁRIO, sem resumir nem trocar os dias. assunto = duvida, passar = false.
 - Perguntou o que a loja vende, com o que trabalha ou quem somos ("o que vocês trabalham?", "o que vocês vendem?", "vocês são o quê?"): diga o nome da loja e o que vendemos, com os itens escritos em QUEM SOMOS ou O QUE VENDEMOS nas INFORMAÇÕES DA LOJA, numa frase só, e pergunte "Quer fazer um pedido ou um orçamento?". Sem preço, marca ou estoque. Sem informações cadastradas, diga só que somos uma distribuidora de bebidas. assunto = duvida, passar = false.
 - Pergunta se entregamos em um bairro ou cidade da região: responda com a área de entrega escrita. Se o cliente não disse a cidade e o bairro pode ser de outra cidade, condicione sem repetir o nome da cidade: "Entregamos em todos os bairros de Americana. Uma atendente confirma o seu endereço com você." Se a cidade for uma das que a atendente confirma, NÃO diga "entregamos em [cidade]": diga só "Uma atendente confirma se entregamos no seu endereço." passar = true quando a atendente precisar confirmar.
-- Pergunta sobre preço (mesmo sem "R$", como "ainda tá 45?"), se tem um produto, estoque ou prazo de entrega: "Uma atendente já vai te passar essa informação." assunto = duvida, passar = true. Não fale de localização.
+- Pergunta sobre preço (mesmo sem "R$", como "ainda tá 45?"), se tem um produto ("tem Fanta de 1 litro?", "chegou o litrão?", "vocês vendem água de coco?"), estoque ou prazo de entrega: "Uma atendente já vai te passar essa informação." assunto = duvida, passar = true. Não fale de localização.
+- Pergunta sobre um pedido já feito ("já saiu meu pedido?", "vem até meio-dia?", "pode ser às 13h30?", "vai demorar?"): "Vamos verificar o seu pedido. Uma atendente já te responde." assunto = pos_venda, passar = true.
 - Entrega em outro estado ou país (Bahia, Dubai): não diga sim nem não e não diga onde entregamos. Em tom formal: "Estamos localizados em ${opts.cidade}. Uma atendente já vai entrar em contato para te atender melhor." assunto = duvida, passar = true. Nunca "ficamos" ou "somos daqui de".
 - Produto ou serviço que claramente não tem nada a ver com bebidas (cafezinho, pão de queijo, roupa): isso é pergunta sobre a loja, não conversa fora do assunto. Não diga sim nem não: "Aqui é da ${opts.nomeEmpresa}, trabalhamos com bebidas em ${opts.cidade}. Uma atendente já vai te responder sobre isso." passar = true.
-- Assuntos de depois da venda (nota fiscal, boleto, reembolso, troca, acerto de consignado): diga o que vai ser feito, ex.: "Vamos verificar a sua nota fiscal. Uma atendente já te responde." assunto = pos_venda, passar = true.
+- Assuntos de depois da venda (nota fiscal, boleto, reembolso, troca, acerto de consignado): diga o que vai ser feito, ex.: "Vamos verificar para você. Uma atendente já te responde." (fale de nota fiscal só se o cliente falou de nota) assunto = pos_venda, passar = true.
 - Reclamação (atraso, produto errado ou quente, entregador): peça desculpas primeiro: "Lamentamos muito o ocorrido. Uma atendente já vai falar com você para resolver." assunto = pos_venda, passar = true.
-- Cliente pede para falar com uma pessoa, está irritado, ou o assunto não se encaixa em nada aqui: passar = true.
-- Conversa que não tem NADA a ver com a loja nem com produtos (futebol, piada, política, clima, perguntas pessoais): não entre no assunto e não fale de localização: "Aqui é o atendimento da ${opts.nomeEmpresa}. Podemos ajudar com algum pedido ou dúvida?" (com a loja fechada, diga também que estamos fechados e quando abrimos). assunto = outro, passar = false.
+- Cliente pede para falar com uma pessoa ou está irritado: passar = true.
+- NA DÚVIDA, ATENDENTE: mensagem que não se encaixa em nenhum caso aqui e que você não sabe responder com certeza (recado, combinação, mudança de algo já combinado): "Recebemos a sua mensagem! Uma atendente já vai te responder." passar = true. Quando você sabe a resposta, responda só a resposta.
+- Conversa que CLARAMENTE não tem nada a ver com a loja nem com produtos (futebol, piada, política, clima, perguntas pessoais): não entre no assunto e não fale de localização: "Aqui é o atendimento da ${opts.nomeEmpresa}. Podemos ajudar com algum pedido ou dúvida?" (com a loja fechada, diga também que estamos fechados e quando abrimos). assunto = outro, passar = false.
 - LOJA FECHADA e o cliente quer comprar, precisa de algo ou perguntou se abrimos: diga que estamos fechados, quando abrimos e que uma atendente responde assim que a loja abrir. Se ele já mandou o pedido, siga o caso do pedido (com a pergunta de complemento). Se perguntou o horário, diga também o horário escrito em HORÁRIO (ex.: "Funcionamos de segunda a sábado, das 8h às 18h."). Não pergunte "podemos ajudar em algo mais?". passar = true (senão o pedido fica parado e ninguém vê).
 - Só um cumprimento ("oi", "bom dia", "tudo bem?"): cumprimente, apresente a loja, responda a gentileza se houver, e pergunte "Como podemos ajudar?". passar = false.
 - Sempre que passar = true, a resposta tem que dizer que uma atendente vai continuar. E sempre que a resposta falar em atendente, passar TEM que ser true.
@@ -221,6 +224,32 @@ export function avisarLojaFechada(resposta: string, proximaAbertura: string | nu
   return r.replace(/\s+/g, " ").trim();
 }
 
+/** Resposta genérica de quem não entendeu ("Podemos ajudar com algum pedido ou dúvida?"). */
+const RE_RESPOSTA_GENERICA = /podemos ajudar com algum pedido ou d[úu]vida\?|como podemos ajudar\?/i;
+/** Assunto claramente fora da loja: aí a resposta genérica serve. */
+const RE_FORA_DO_ASSUNTO = /\b(jogo|futebol|time|placar|piada|pol[íi]tic|elei[çc]|presidente|clima|chuva|previs[ãa]o do tempo|hor[óo]scopo|filme|s[ée]rie|novela|namorad|namora)\b/i;
+/** Pergunta sobre um pedido já feito. */
+const RE_STATUS_PEDIDO =
+  /j[áa] saiu|saiu (pra|para) (a )?entrega|vai demorar|demora muito|quando (chega|vem|sai)|que horas (chega|vem|sai|entrega)|vem at[ée]|(pode|d[áa]) (ser|pra) (às|as|at[ée])\s*\d|est[áa] vindo|cad[êe] (o |meu )?pedido|meu pedido/i;
+/** Mudança ou cancelamento de algo já combinado ("mudou a data da festa", "quero cancelar"). */
+const RE_ALTERACAO = /\b(mud(ou|ar|amos|ei)|alter(ar|ou|ei)|remarc|adiar|adiou|cancel(ar|ei|ou|a))\b/i;
+/** Foto ou arquivo que o cliente disse que é o pedido ("[foto] segue o pedido da semana"). */
+function pedidoEmAnexo(textoCliente: string): boolean {
+  return /\[enviou (uma foto|um arquivo)/i.test(textoCliente) && /\b(pedido|lista)\b/i.test(textoCliente) && !ehComprovante(textoCliente);
+}
+/** Pergunta se tem um produto. */
+const RE_DISPONIBILIDADE = /\b(tem|tinha|teria|chegou|chegaram|vendem|trabalham com|ainda tem|voc[êe]s t[êe]m|vcs tem)\b/i;
+
+/** O cliente só cumprimentou ("oi", "bom dia, tudo bem?"). */
+function soCumprimento(textoCliente: string): boolean {
+  return (
+    textoCliente
+      .replace(/\b(oi+e*s?|ol[áa]+|bo[am]+ (dia|tarde|noite)\w*|tudo (bem|bom|certo|joia)|td (bem|bom)|e a[ií]|opa|eae|e voc[êe]|e vc|meninas?|gente|pessoal|mo[çc]a)\b/gi, " ")
+      .replace(/[\p{Extended_Pictographic}\s?!.,;:]+/gu, "")
+      .length === 0
+  );
+}
+
 /** Cliente já disse se é entrega ou retirada. */
 const RE_ENTREGA_OU_RETIRADA = /\bentreg|\bmand(a|ar|e|em)\b|\blev(a|ar)\b|\benvi(a|ar|e)\b|\bretir|\bbusc(o|ar|amos)\b|\bpego\b|\bpegar\b|\bpass(o|ar) a[ií]\b|\btraz(er)?\b|\btrazer\b/i;
 const RE_SO_RETIRADA = /\bretir|\bbusc(o|ar|amos)\b|\bpego\b|\bpegar\b|\bpass(o|ar) a[ií]\b/i;
@@ -243,8 +272,11 @@ const RE_ARQUIVO_DE_PEDIDO = /\[enviou um arquivo:[^\]]*(pedido|lista|compra|or[
  */
 export function perguntaDoPedido(textoCliente: string): string | null {
   const partes: string[] = [];
-  if (!RE_ENTREGA_OU_RETIRADA.test(textoCliente)) partes.push("é para entrega ou retirada");
-  else if (!RE_SO_RETIRADA.test(textoCliente) && !RE_ENDERECO.test(textoCliente)) partes.push("qual o endereço de entrega");
+  const temEndereco = RE_ENDERECO.test(textoCliente) || /\[enviou a localiza[çc][ãa]o\]/i.test(textoCliente);
+  if (!temEndereco) {
+    if (!RE_ENTREGA_OU_RETIRADA.test(textoCliente)) partes.push("é para entrega ou retirada");
+    else if (!RE_SO_RETIRADA.test(textoCliente)) partes.push("qual o endereço de entrega");
+  }
   const soCoisasQueNaoGelam = RE_NAO_SE_GELA.test(textoCliente) && !RE_BEBIDA_QUE_GELA.test(textoCliente);
   if (!RE_FALOU_GELADO.test(textoCliente) && !soCoisasQueNaoGelam) partes.push("vai querer algo gelado");
   if (!partes.length) return null;
@@ -323,7 +355,7 @@ export function aplicarTravas(d: Decisao, ctx: ContextoTravas): Decisao {
   }
   // Arquivo de pedido ("pedido_restaurante.xlsx"), ou pedido com produto que a IA deixou com o assistente.
   const temItem = !!ctx.textoCliente && RE_TEM_ITEM.test(ctx.textoCliente);
-  const arquivoDePedido = !!ctx.textoCliente && RE_ARQUIVO_DE_PEDIDO.test(ctx.textoCliente);
+  const arquivoDePedido = !!ctx.textoCliente && (RE_ARQUIVO_DE_PEDIDO.test(ctx.textoCliente) || pedidoEmAnexo(ctx.textoCliente));
   if (arquivoDePedido || (decisao.assunto === "pedido" && !decisao.passar && temItem)) {
     decisao = { resposta: `${ola}Recebemos seu pedido! Uma atendente já vai gerar e te mandar para conferir.`, assunto: "pedido", passar: true };
   }
@@ -341,6 +373,49 @@ export function aplicarTravas(d: Decisao, ctx: ContextoTravas): Decisao {
       decisao = { ...decisao, resposta: [...resto, "Uma atendente confirma se entregamos no seu endereço."].join(" "), passar: true };
     }
   }
+  // NA DÚVIDA, ATENDENTE: resposta genérica para quem disse algo da loja (pedido já feito,
+  // produto, recado, endereço...) vira "uma atendente já vai te responder".
+  if (
+    ctx.textoCliente &&
+    RE_RESPOSTA_GENERICA.test(decisao.resposta) &&
+    !soCumprimento(ctx.textoCliente) &&
+    !RE_FORA_DO_ASSUNTO.test(ctx.textoCliente)
+  ) {
+    const statusPedido = RE_STATUS_PEDIDO.test(ctx.textoCliente);
+    const produto = !statusPedido && RE_DISPONIBILIDADE.test(ctx.textoCliente);
+    const fim = statusPedido
+      ? "Vamos verificar o seu pedido. Uma atendente já te responde."
+      : produto
+        ? "Uma atendente já vai te passar essa informação."
+        : "Recebemos a sua mensagem! Uma atendente já vai te responder.";
+    const inicio = decisao.resposta.replace(RE_RESPOSTA_GENERICA, "").replace(/\s*Estamos fechados[^.]*\./i, "").trim();
+    decisao = {
+      // Se a resposta já diz que a atendente continua, só tira a pergunta genérica.
+      resposta: RE_FALA_DE_ATENDENTE.test(inicio) ? inicio : `${inicio || ola.trim()} ${fim}`.trim(),
+      assunto: statusPedido ? "pos_venda" : produto ? "duvida" : decisao.assunto,
+      passar: true,
+    };
+  }
+  // Respondeu a dúvida e ainda juntou o "recebemos a sua mensagem": fica a resposta.
+  const respondeuEJuntou = decisao.resposta.match(/^([\s\S]*\S[.!])\s*Recebemos a sua mensagem! Uma atendente já vai te responder\.$/);
+  if (decisao.assunto === "duvida" && respondeuEJuntou) {
+    const antes = respondeuEJuntou[1].trim();
+    const semApresentacao = antes.replace(/^\s*ol[áa][^!.]*[!.]\s*/i, "").replace(/^\s*Aqui é (?:da|do) [^.!?]*[.!]\s*/i, "").trim();
+    if (semApresentacao) decisao = { ...decisao, resposta: `${antes} Podemos ajudar em algo mais?`, passar: false };
+  }
+  // Mudança ou cancelamento de algo combinado: sempre com uma atendente.
+  if (!decisao.passar && ctx.textoCliente && RE_ALTERACAO.test(ctx.textoCliente)) {
+    decisao = { ...decisao, resposta: `${ola}Recebemos a sua mensagem! Uma atendente já vai te responder.`, passar: true };
+  }
+  // "Nota fiscal" só quando o cliente falou de nota.
+  if (ctx.textoCliente && /nota fiscal/i.test(decisao.resposta) && !/\bnota|\bnf\b|nfe|cupom/i.test(ctx.textoCliente)) {
+    decisao = { ...decisao, resposta: decisao.resposta.replace(/a sua nota fiscal|sua nota fiscal|a nota fiscal/gi, "para você") };
+  }
+  // Orçamento: o cliente já deu a data; não pergunta de novo.
+  if (decisao.assunto === "orcamento" && !decisao.passar && ctx.textoCliente && RE_DATA.test(ctx.textoCliente) && /quando|qual (a )?data/i.test(decisao.resposta)) {
+    const fim = RE_PESSOAS.test(ctx.textoCliente) ? "Uma atendente já vai montar o seu orçamento." : "Uma atendente já vai continuar com você.";
+    decisao = { ...decisao, resposta: `${ola}Recebemos as informações. ${fim}`, passar: true };
+  }
   // Mantém o assunto da conversa quando a IA responde "outro" depois (ex.: orçamento em duas etapas).
   if (decisao.assunto === "outro" && ctx.assuntoAnterior && ctx.assuntoAnterior !== "outro") {
     decisao = { ...decisao, assunto: ctx.assuntoAnterior };
@@ -352,8 +427,8 @@ export function aplicarTravas(d: Decisao, ctx: ContextoTravas): Decisao {
   decisao = { ...decisao, resposta: ajustarTom(decisao.resposta, ctx.saudacao, ctx.respostasJaDadas === 0) };
   // Respondeu uma dúvida: o fecho é "algo mais?", não "como podemos ajudar?" (isso é para quem só disse oi).
   const semCumprimento = decisao.resposta.replace(/^\s*ol[áa][^!.]*[!.]\s*/i, "");
-  if (decisao.assunto === "duvida" && /\S.*?\s*Como (podemos|posso) ajudar\?\s*$/i.test(semCumprimento) && !/^\s*Como (podemos|posso) ajudar\?\s*$/i.test(semCumprimento)) {
-    decisao = { ...decisao, resposta: decisao.resposta.replace(/\s*Como (podemos|posso) ajudar\?\s*$/i, " Podemos ajudar em algo mais?") };
+  if (decisao.assunto === "duvida" && /\S.*?\s*Como (podemos|posso) (te )?ajudar[^?]*\?\s*$/i.test(semCumprimento) && !/^\s*Como (podemos|posso) (te )?ajudar[^?]*\?\s*$/i.test(semCumprimento)) {
+    decisao = { ...decisao, resposta: decisao.resposta.replace(/\s*Como (podemos|posso) (te )?ajudar[^?]*\?\s*$/i, " Podemos ajudar em algo mais?") };
   }
   // Orçamento: não pergunta o que o cliente acabou de dizer.
   if (decisao.assunto === "orcamento" && !decisao.passar && ctx.textoCliente) {
@@ -557,7 +632,11 @@ export async function responderCliente(leadId: string): Promise<void> {
  */
 export async function agendarResposta(leadId: string): Promise<void> {
   const admin = createAdminClient();
-  const esperaMs = 8000 + Math.floor(Math.random() * 4000);
+  // Com a loja fechada não tem pressa: espera o cliente terminar a lista (tem gente que
+  // manda um item por mensagem, ao longo de alguns minutos, de madrugada).
+  const { data: org } = await admin.from("organizations").select("atendimento_config").eq("id", ORG_ID).maybeSingle();
+  const fechada = !estaAberto(normalizarConfig(org?.atendimento_config), new Date());
+  const esperaMs = fechada ? 40000 + Math.floor(Math.random() * 10000) : 8000 + Math.floor(Math.random() * 4000);
   const previsto = new Date(Date.now() + esperaMs).toISOString();
   await admin.from("leads").update({ caio_responder_em: previsto }).eq("id", leadId);
   await new Promise((r) => setTimeout(r, esperaMs));

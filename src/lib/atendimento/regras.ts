@@ -118,6 +118,41 @@ export function mesmoTelefone(a: string, b: string): boolean {
   return !x.ddd || !y.ddd || x.ddd === y.ddd;
 }
 
+/**
+ * Mensagem que é só agradecimento ou "ok" ("Obrigada 🙏", "Eu que agradeço", "Ok!").
+ * Chega umas 37 por dia, quase sempre depois de a conversa terminar: não reabre a
+ * conversa nem faz o assistente cumprimentar de novo.
+ */
+/** Um pedaço de agradecimento ("muito obrigada", "ok", "igualmente"...), no começo do texto. */
+const RE_PARTE_AGRADECIMENTO =
+  /^(muito obrigad[oa]s?|obrigad[oa]s?|obg|brigad[oa]|eu (que|q) agrade[çc]o|agrade[çc]o|de nada|por nada|valeu|vlw|okay|ok+|blz|beleza|certinho|certo|correto|isso mesmo|isso|perfeito|show|top|combinado|t[áa] bom|t[áa] [óo]timo|igualmente|(pra |para )?(voc[êe]|vc) (tamb[ée]m|tbm)|am[ée]m|deus aben[çc]oe|tenha um [óo]timo dia|[óo]timo dia|bom descanso|e)(\s+|$)/i;
+
+export function ehSoAgradecimento(texto: string | null | undefined): boolean {
+  let t = (texto ?? "")
+    .replace(/\p{Extended_Pictographic}|\p{Emoji_Modifier}|\u200d|\ufe0f/gu, " ")
+    .replace(/[\s!.,;:]+/g, " ")
+    .trim();
+  if (!t) return /\p{Extended_Pictographic}/u.test(texto ?? ""); // só emoji (👍, 🙏)
+  // "Ok, obrigada!", "Muito obrigado, igualmente": tira um pedaço de cada vez.
+  // Cumprimento junto vale ("Bom dia! Perfeito! Muito obrigada"), desde que tenha agradecimento.
+  let agradeceu = false;
+  for (let i = 0; i < 10 && t; i++) {
+    const cumprimento = t.match(RE_CUMPRIMENTO_JUNTO);
+    if (cumprimento) {
+      t = t.slice(cumprimento[0].length).trim();
+      continue;
+    }
+    const m = t.match(RE_PARTE_AGRADECIMENTO);
+    if (!m) return false;
+    agradeceu = true;
+    t = t.slice(m[0].length).trim();
+  }
+  return agradeceu && t.length === 0;
+}
+
+/** Cumprimento que pode vir junto do agradecimento. */
+const RE_CUMPRIMENTO_JUNTO = /^(oi+e*s?|ol[áa]|bo[am]+ (dia|tarde|noite)\w*|tudo (bem|bom)|td bem|meninas?|gente|pessoal|mo[çc]a)(\s+|$)/i;
+
 /** O telefone é da lista de contatos internos (o assistente não responde)? */
 export function ehContatoInterno(telefone: string, cfg: Pick<AtendimentoConfig, "contatos_internos">): boolean {
   if (!telefone) return false;

@@ -156,16 +156,32 @@ const CENARIOS: Cenario[] = [
     ...seInfo({ exigido: /atendente/i, proibido: /alguns bairros|\bsim\b|entregamos (em|para) nova odessa/i }),
   },
   { nome: "Pede o Pix", cliente: ["boa tarde", "tudo bem?", "me passa o PIX para pagamento"], quando: "2026-10-20T15:24:00", passar: true, exigido: /pix/i, proibido: /dinheiro|cart[ãa]o|aceitamos/i },
-  { nome: "PDF do banco", cliente: ["[enviou um arquivo: sicredi_1792759007160.pdf]"], quando: "2026-10-23T09:36:00", passar: true, exigido: /comprovante/i, proibido: /foto|pedido/i },
+  { nome: "PDF do banco", cliente: ["[enviou um arquivo: sicredi_000000000.pdf]"], quando: "2026-10-23T09:36:00", passar: true, exigido: /comprovante/i, proibido: /foto|pedido/i },
   { nome: "Vídeo sem texto", cliente: ["[enviou um vídeo]"], quando: "2026-10-21T11:45:00", passar: true, proibido: /foto|pedido|comprovante/i },
   {
     nome: "Comprovante e pedido juntos",
-    cliente: ["[enviou um arquivo: SICOOB_2026_21_10_PIX.pdf]", "Bom dia", "Pago", "Pedido de hoje: 2 galões de 20L para entrega"],
+    cliente: ["[enviou um arquivo: SICOOB_2026_PIX.pdf]", "Bom dia", "Pago", "Pedido de hoje: 2 galões de 20L para entrega"],
     quando: "2026-10-21T09:10:00",
     passar: true,
     exigido: /comprovante/i,
   },
   { nome: "Que horas fecham (fechado)", cliente: ["oie", "vcs fecham que horas ?"], quando: "2026-10-20T18:00:00", exigido: /18/, proibido: /ter[çc]a(-feira)? a s[áa]bado|fechad[oa]s? agora[\s\S]*fechad[oa]s? agora/i },
+  // --- 26/10: dias novos (fim de semana); na dúvida, atendente ---
+  { nome: "Já saiu meu pedido", cliente: ["Bom Dia", "Já saiu meu pedido?"], quando: "2026-10-23T11:01:00", passar: true, exigido: /pedido/i, proibido: /podemos ajudar|nota fiscal/i },
+  { nome: "Chegou o produto?", cliente: ["Olaa", "Chegou del vale de maracujá?"], quando: "2026-10-22T15:48:00", passar: true, exigido: /atendente/i, proibido: /podemos ajudar/i },
+  { nome: "Tem o produto?", cliente: ["Oi Moça", "Tem Fanta de 1 litro", "Laranja e uva"], quando: "2026-10-23T17:22:00", passar: true, exigido: /atendente/i, proibido: /podemos ajudar|\bsim\b|\bn[ãa]o temos/i },
+  { nome: "Endereço sem dizer entrega", cliente: ["Oi boa tarde", "Gostaria de 2 galão de água, de 10L", "Rua das Flores 120", "Jardim Exemplo"], quando: "2026-10-22T15:31:00", passar: true, assunto: "pedido", proibido: /\?|\d/ },
+  { nome: "Data da festa já dita", cliente: ["oiie", "tudo bemmm?", "viu, minha mae mudou a data da festa, vou pegar as bebidas dia 7/11"], quando: "2026-10-22T13:30:00", passar: true, proibido: /quando|qual (a )?data/i },
+  { nome: "Pagamento em nome de outro", cliente: ["Bom diaaa tudo bem com vc? Era para ter sido pago no dia mesmo, vai estar com o nome do Grupo Esperança"], quando: "2026-10-26T09:05:00", passar: true, proibido: /nota fiscal/i },
+  {
+    nome: "Recado de devolução (fechado)",
+    cliente: ["[enviou a localização] https://maps.google.com/?q=0,0", "Bommmmdia", "As caixas térmicas e o que sobrou está neste endereço", "Rua das Flores", "120"],
+    quando: "2026-10-26T07:42:00",
+    passar: true,
+    exigido: /fechad/i,
+    proibido: /podemos ajudar/i,
+  },
+  { nome: "Pedido sábado à noite", cliente: ["Boa noite vamos precisar de 1 fardo Coca cola zero lata com 12 1 fardo de guaraná antártica zero"], quando: "2026-10-24T22:50:00", passar: true, assunto: "pedido", exigido: /segunda/i },
 ];
 
 async function rodar(c: Cenario): Promise<{ decisao: Decisao; erros: string[] }> {

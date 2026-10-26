@@ -14,7 +14,7 @@ import { evoBaixarMidia } from "@/lib/caio/evolution-api";
 import { ORG_ID, INSTANCE_NAME } from "@/lib/caio/config";
 import { salvarArquivo } from "./arquivos";
 import { foiEnviadoPeloSistema } from "./whatsapp";
-import { decidirEntrada, ehContatoInterno, normalizarConfig, type AtendStatus } from "./regras";
+import { decidirEntrada, ehContatoInterno, ehSoAgradecimento, normalizarConfig, type AtendStatus } from "./regras";
 import { agendarResposta } from "./assistente";
 import { transcrever } from "./transcricao";
 
@@ -319,6 +319,11 @@ export async function processarMensagem(instance: string, d: EvoMensagem): Promi
         caio_responder_em: null,
       });
       if (!atual.nome && d.pushName?.trim()) upd.nome = d.pushName.trim();
+    } else if (n.tipo === "texto" && ehSoAgradecimento(texto) && (atual.atend_status === "finalizado" || atual.atend_status === "bot")) {
+      // "Obrigada", "eu que agradeço", "ok" depois do fim da conversa: fica registrado,
+      // mas não reabre a conversa nem faz o assistente cumprimentar de novo.
+      Object.assign(upd, { ultima_msg_lead_em: agora.toISOString(), evolution_instance: instance });
+      if (achado.novo && tentativa === 0) upd.atend_status = "finalizado";
     } else {
       const naListaDeTeste =
         numero.testes.length === 0 ||

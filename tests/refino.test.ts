@@ -139,8 +139,8 @@ test("pedido aberto: resposta da IA ganha a pergunta certa no fim", () => {
 });
 
 test("comprovante: PDF com nome de banco e PIX colado no nome", () => {
-  assert.equal(ehComprovante("[enviou um arquivo: sicredi_1792759007160.pdf]"), true);
-  assert.equal(ehComprovante("[enviou um arquivo: SICOOB_2026_21_10_09_09_55_PIX.pdf]"), true);
+  assert.equal(ehComprovante("[enviou um arquivo: sicredi_000000000.pdf]"), true);
+  assert.equal(ehComprovante("[enviou um arquivo: SICOOB_2026_PIX.pdf]"), true);
   assert.equal(ehComprovante("[enviou um arquivo: cardapio_pixel.pdf]"), false, "pixel não é pix");
 });
 
@@ -205,4 +205,111 @@ test("entrega fora de Americana: nunca afirma", () => {
     textoCliente: "Vocês entregam no Jardim Paulista?",
   });
   assert.match(americana.resposta, /todos os bairros de Americana/);
+});
+
+// --- 26/10: dias novos (fim de semana) ---
+import { ehSoAgradecimento } from "../src/lib/atendimento/regras";
+
+test("só agradecimento: não reabre a conversa", () => {
+  for (const t of ["Eu que agradeço", "Muito obrigada!!", "Ok, obrigada 🙏", "Obrigada 😊", "👍🏻", "Certinho, obrigado", "Ok!", "Igualmente, bom descanso", "Amém", "Obrigado vc tbm", "Correto"]) {
+    assert.equal(ehSoAgradecimento(t), true, t);
+  }
+  for (const t of ["Ok, me manda 2 fardos", "Obrigada, quero mais 1 galão", "Bom dia", "ok obrigado, qual o pix?", "Já saiu meu pedido?"]) {
+    assert.equal(ehSoAgradecimento(t), false, t);
+  }
+});
+
+test("na dúvida, atendente: pergunta de pedido já feito, produto e recado", () => {
+  const generica = { resposta: "Olá, bom dia! Aqui é da Beba Mais Distribuidora. Podemos ajudar com algum pedido ou dúvida?", assunto: "outro" as const, passar: false };
+  const status = aplicarTravas(generica, { ...aberto, textoCliente: "Bom Dia\nJá saiu meu pedido?" });
+  assert.equal(status.passar, true);
+  assert.match(status.resposta, /Vamos verificar o seu pedido/);
+  const produto = aplicarTravas(generica, { ...aberto, textoCliente: "Olaa\nChegou del vale de maracujá?" });
+  assert.equal(produto.passar, true);
+  assert.match(produto.resposta, /te passar essa informação/);
+  const recado = aplicarTravas(generica, { ...fechado, textoCliente: "[enviou a localização] https://maps.google.com/?q=1,2\nAs caixas térmicas e o que sobrou está neste endereço" });
+  assert.equal(recado.passar, true);
+  assert.match(recado.resposta, /Recebemos a sua mensagem/);
+  assert.match(recado.resposta, /fechados agora/);
+  // Só oi ou assunto fora da loja: a resposta genérica continua.
+  assert.equal(aplicarTravas(generica, { ...aberto, textoCliente: "Bom dia, tudo bem?" }).passar, false);
+  assert.equal(aplicarTravas(generica, { ...aberto, textoCliente: "quem ganhou o jogo ontem?" }).passar, false);
+});
+
+test("endereço sem a palavra entrega conta como entrega", () => {
+  assert.equal(perguntaDoPedido("Gostaria de 2 galão de água, de 10L\nRua das Flores 120\nJardim Exemplo"), null);
+  assert.equal(perguntaDoPedido("[enviou a localização] https://maps.google.com/?q=1,2\n2 fardos de coca"), "Vai querer algo gelado?");
+});
+
+test("nota fiscal só quando o cliente fala de nota", () => {
+  const d = aplicarTravas({ resposta: "Olá, bom dia! Vamos verificar a sua nota fiscal. Uma atendente já te responde.", assunto: "pos_venda", passar: true }, {
+    ...aberto,
+    textoCliente: "Era para ter sido pago no dia mesmo, vai estar com o nome do grupo",
+  });
+  assert.doesNotMatch(d.resposta, /nota fiscal/);
+  const comNota = aplicarTravas({ resposta: "Olá, bom dia! Vamos verificar a sua nota fiscal. Uma atendente já te responde.", assunto: "pos_venda", passar: true }, {
+    ...aberto,
+    textoCliente: "pode me enviar a NF e o boleto?",
+  });
+  assert.match(comNota.resposta, /nota fiscal/);
+});
+
+test("orçamento: não pergunta a data que o cliente já deu", () => {
+  const d = aplicarTravas({ resposta: "Olá, boa tarde! Para quando é o evento?", assunto: "orcamento", passar: false }, {
+    ...aberto,
+    textoCliente: "viu, minha mae mudou a data da festa, vou pegar as bebidas dia 7/11",
+  });
+  assert.equal(d.passar, true);
+  assert.doesNotMatch(d.resposta, /quando/);
+});
+
+test("foto com 'segue o pedido' é pedido", () => {
+  const d = aplicarTravas({ resposta: "Olá, bom dia! Recebemos a sua foto! Uma atendente já confere e te responde.", assunto: "outro", passar: true }, {
+    ...aberto,
+    textoCliente: "[enviou uma foto] segue o pedido da semana",
+  });
+  assert.equal(d.assunto, "pedido");
+  assert.match(d.resposta, /Recebemos seu pedido!/);
+});
+
+test("dúvida respondida não ganha 'recebemos a sua mensagem'", () => {
+  const d = aplicarTravas(
+    { resposta: "Olá, bom dia! Sim, você pode retirar o pedido na loja. Recebemos a sua mensagem! Uma atendente já vai te responder.", assunto: "duvida", passar: true },
+    { ...aberto, textoCliente: "posso buscar aí na loja?" },
+  );
+  assert.equal(d.passar, false);
+  assert.match(d.resposta, /pode retirar o pedido na loja\. Podemos ajudar em algo mais\?$/);
+});
+
+test("mudança ou cancelamento vai para a atendente", () => {
+  const d = aplicarTravas({ resposta: "Olá, boa tarde! Você já tem a lista de bebidas para o dia 7/11?", assunto: "orcamento", passar: false }, {
+    ...aberto,
+    textoCliente: "viu, minha mae mudou a data da festa, vou pegar as bebidas dia 7/11",
+  });
+  assert.equal(d.passar, true);
+  assert.match(d.resposta, /atendente/);
+});
+
+test("dúvida respondida: 'como podemos ajudar com o seu pedido?' vira 'algo mais?'", () => {
+  const d = aplicarTravas({ resposta: "Olá, bom dia! Sim, você pode retirar o pedido na loja. Como podemos ajudar com o seu pedido?", assunto: "duvida", passar: false }, {
+    ...aberto,
+    textoCliente: "posso buscar aí na loja?",
+  });
+  assert.match(d.resposta, /Podemos ajudar em algo mais\?$/);
+});
+
+test("agradecimento com cumprimento junto; cumprimento sozinho não", () => {
+  assert.equal(ehSoAgradecimento("Oies, bom dia! Perfeito!"), true);
+  assert.equal(ehSoAgradecimento("Boa tarde, muito obrigada 🙏"), true);
+  assert.equal(ehSoAgradecimento("Bom dia"), false, "só cumprimento abre conversa normalmente");
+  assert.equal(ehSoAgradecimento("Oi"), false);
+});
+
+test("resposta genérica que já fala da atendente não ganha frase repetida", () => {
+  const d = aplicarTravas(
+    { resposta: "Olá, bom dia! Recebemos a sua foto! Uma atendente já confere e te responde. Podemos ajudar com algum pedido ou dúvida?", assunto: "outro", passar: true },
+    { ...aberto, textoCliente: "[enviou uma foto]\nOoie\nTá pago ?\nSabem me informa" },
+  );
+  assert.equal((d.resposta.match(/Recebemos/g) ?? []).length, 1);
+  assert.doesNotMatch(d.resposta, /podemos ajudar/i);
 });
